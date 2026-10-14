@@ -1,6 +1,5 @@
-bin/
-obj/
+/src/*/bin/
+/src/*/obj/
 scratch/
 *.vhdx
-
 target/
