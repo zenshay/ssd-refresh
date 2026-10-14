@@ -1,0 +1,86 @@
+//! macOS：只支援掃描。F_NOCACHE 讀取；APFS 沒有能安全搬移使用中檔案的 API，所以不支援刷新。
+
+use super::{MoveStats, RelocOptions};
+use crate::common::{Layout, Meta, Priority, VolumeInfo};
+use crate::control::Control;
+use std::ffi::{CStr, CString};
+use std::fs::File;
+use std::io;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
+use std::os::unix::io::AsRawFd;
+use std::path::{Path, PathBuf};
+
+extern "C" {
+    fn setiopolicy_np(iotype: libc::c_int, scope: libc::c_int, policy: libc::c_int) -> libc::c_int;
+}
+
+pub fn open_direct(p: &Path) -> io::Result<File> {
+    let f = File::open(p)?;
+    unsafe { libc::fcntl(f.as_raw_fd(), libc::F_NOCACHE, 1) };
+    Ok(f)
+}
+
+pub fn has_other_writers(_p: &Path) -> Option<bool> {
+    None
+}
+
+/// macOS 查不到可靠的實體配置，整個檔案當成一段測速
+pub fn layout(_f: &File, _m: &Meta, _block: u64) -> io::Result<Layout> {
+    Ok(Layout { known: false, ..Default::default() })
+}
+
+pub fn set_thread_io_priority(p: Priority) {
+    // IOPOL_TYPE_DISK = 0、IOPOL_SCOPE_THREAD = 1；THROTTLE = 3、UTILITY = 4、DEFAULT = 0
+    let policy = match p {
+        Priority::VeryLow => 3,
+        Priority::Low => 4,
+        Priority::Normal => 0,
+    };
+    unsafe { setiopolicy_np(0, 1, policy) };
+}
+
+pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
+    let abs = std::fs::canonicalize(p)?;
+    let c = CString::new(abs.as_os_str().as_bytes()).unwrap();
+    let mut s: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(c.as_ptr(), &mut s) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let root = unsafe { CStr::from_ptr(s.f_mntonname.as_ptr()) }.to_string_lossy().into_owned();
+    let bs = s.f_bsize as u64;
+    Ok(VolumeInfo {
+        is_system: root == "/" || root == "/System/Volumes/Data",
+        root: PathBuf::from(&root),
+        device: unsafe { CStr::from_ptr(s.f_mntfromname.as_ptr()) }.to_string_lossy().into_owned(),
+        fs: unsafe { CStr::from_ptr(s.f_fstypename.as_ptr()) }.to_string_lossy().into_owned(),
+        block: bs,
+        total_bytes: s.f_blocks * bs,
+        free_bytes: s.f_bavail * bs,
+        id: std::fs::metadata(&abs)?.dev(),
+    })
+}
+
+pub fn refresh_check(_v: &VolumeInfo) -> Result<(), String> {
+    Err("macOS 不支援刷新：APFS 沒有能安全搬移使用中檔案的 API。掃描功能可以正常使用。".into())
+}
+
+pub fn refresh_warnings(_v: &VolumeInfo) -> Vec<String> {
+    vec![]
+}
+
+pub fn retrim_hint(_v: &VolumeInfo) -> String {
+    String::new()
+}
+
+pub struct Relocator;
+
+impl Relocator {
+    pub fn new(_vol: &VolumeInfo, _opt: &RelocOptions) -> io::Result<Relocator> {
+        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 不支援刷新"))
+    }
+
+    pub fn relocate(&mut self, _path: &Path, _file: &File, _layout: &Layout, _ctl: &Control, _st: &mut MoveStats, _log: &dyn Fn(&str)) -> io::Result<bool> {
+        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 不支援刷新"))
+    }
+}

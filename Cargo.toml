@@ -1,0 +1,33 @@
+[package]
+name = "ssd-refresh"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.83"
+description = "File-level SSD refresh: find files whose old data reads slowly and let the file system rewrite them safely"
+readme = "README.md"
+keywords = ["ssd", "defrag", "ntfs", "ext4", "storage"]
+categories = ["command-line-utilities", "filesystem"]
+
+[lib]
+name = "ssd_refresh"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ssd-refresh"
+path = "src/main.rs"
+
+[[bin]]
+name = "refresh-test"
+path = "src/bin/refresh-test.rs"
+
+[dependencies]
+sha2 = "0.10"
+ctrlc = "3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
