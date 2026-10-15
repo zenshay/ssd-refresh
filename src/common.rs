@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
-/// 檔案的一段連續資料，單位都是位元組。physical = None 表示沒有實體位置（稀疏、未寫入、延遲配置）。
+/// A contiguous piece of a file. All values are in bytes. `physical` is `None` when the
+/// piece has no location on disk (a hole, an unwritten or a delayed-allocation extent).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Extent {
     pub logical: u64,
@@ -8,7 +9,8 @@ pub struct Extent {
     pub physical: Option<u64>,
 }
 
-/// 檔案在磁碟上的配置。known = false 表示平台查不到配置（例如 macOS），整個檔案當成一段測速。
+/// Where a file's data lives. `known` is false when the platform cannot tell (macOS);
+/// the whole file is then timed as one piece.
 #[derive(Clone, Debug, Default)]
 pub struct Layout {
     pub extents: Vec<Extent>,
@@ -28,11 +30,12 @@ impl Layout {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Meta {
     pub size: u64,
+    /// (volume, file id): identifies hard links to the same file
     pub id: (u64, u64),
     pub links: u64,
     pub mtime: i128,
     pub ctime: i128,
-    /// 變更序號（NTFS 的 USN）；沒有就是 0
+    /// Change sequence number (the NTFS USN); 0 when not available
     pub seq: i64,
     pub reparse: bool,
     pub wof: bool,
@@ -42,7 +45,7 @@ pub struct Meta {
 }
 
 impl Meta {
-    /// 兩次讀取之間檔案有沒有被改過的跡象
+    /// Whether anything suggests the file was modified between the two snapshots.
     pub fn changed_since(&self, before: &Meta) -> bool {
         self.size != before.size || self.mtime != before.mtime || self.ctime != before.ctime || self.seq != before.seq
     }
@@ -52,14 +55,17 @@ impl Meta {
 pub enum Kind {
     Normal,
     Empty,
+    /// Data stored inside the file record (NTFS MFT) or the inode
     Resident,
     Sparse,
     Compressed,
     Encrypted,
+    /// Shares blocks with other files (reflink)
     Shared,
+    /// Windows Overlay Filter compressed system file
     Wof,
     Reparse,
-    /// 平台查不到配置；可以測速，不能刷新
+    /// The platform cannot report the layout; the file can be timed but not refreshed
     Unknown,
 }
 
@@ -119,12 +125,12 @@ impl Kind {
         Kind::Normal
     }
 
-    /// 可以測速
+    /// Can be timed by `scan`.
     pub fn measurable(self) -> bool {
         matches!(self, Kind::Normal | Kind::Sparse | Kind::Encrypted | Kind::Unknown)
     }
 
-    /// 可以刷新
+    /// Can be moved by `refresh`.
     pub fn movable(self) -> bool {
         matches!(self, Kind::Normal | Kind::Sparse | Kind::Encrypted)
     }
@@ -135,6 +141,7 @@ pub struct VolumeInfo {
     pub root: PathBuf,
     pub device: String,
     pub fs: String,
+    /// Cluster (block) size in bytes
     pub block: u64,
     pub total_bytes: u64,
     pub free_bytes: u64,
@@ -164,7 +171,7 @@ pub fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// 1234567890 → "1.2G"
+/// 1234567890 → "1.2G" (decimal units: 1G = 10^9 bytes)
 pub fn fmt_bytes(b: u64) -> String {
     let g = b as f64 / 1e9;
     if g >= 100.0 {
@@ -174,4 +181,17 @@ pub fn fmt_bytes(b: u64) -> String {
     } else {
         format!("{:.0}M", b as f64 / 1e6)
     }
+}
+
+/// 1295988 → "1,295,988"
+pub fn fmt_count(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }

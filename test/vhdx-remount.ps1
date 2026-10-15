@@ -1,5 +1,5 @@
-﻿#Requires -RunAsAdministrator
-# 【需要系統管理員】卸載再掛載測試 VHDX，清掉系統快取，讓之後的讀取一定來自磁碟。
+#Requires -RunAsAdministrator
+# [Administrator] Detach and reattach the test VHDX. This empties the OS cache, so later reads come from the disk.
 param(
     [string]$Path = (Join-Path $PSScriptRoot '..\scratch\test.vhdx'),
     [string]$Letter = (Get-Content (Join-Path $PSScriptRoot '..\scratch\vhdx-letter.txt') -ErrorAction SilentlyContinue)
@@ -12,4 +12,4 @@ $part = Get-Partition -DiskNumber $disk.Number | Where-Object Type -eq 'Basic'
 if ("$($part.DriveLetter)" -ne $Letter) {
     $part | Set-Partition -NewDriveLetter $Letter
 }
-Write-Host "已重新掛載到 ${Letter}:"
+Write-Host "Reattached as ${Letter}:"

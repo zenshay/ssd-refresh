@@ -1,4 +1,5 @@
-//! 簡單的 RFC 4180 CSV 讀寫。每寫一列就 flush，所以中斷後檔案內容就是檢查點。
+//! Minimal RFC 4180 CSV reading and writing. Every row is flushed, so after an
+//! interruption the file itself is the checkpoint.
 
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -10,7 +11,8 @@ pub struct CsvWriter {
 }
 
 impl CsvWriter {
-    /// append = true 時接在既有檔案後面（續跑），並先切掉寫到一半的最後一列。
+    /// With `append`, continue an existing file (resume), first cutting off a last row
+    /// that was only half written.
     pub fn create(path: &Path, header: &[&str], append: bool) -> io::Result<CsvWriter> {
         let exists = path.exists() && std::fs::metadata(path)?.len() > 0;
         if append && exists {
@@ -20,7 +22,7 @@ impl CsvWriter {
         }
         let f = OpenOptions::new().write(true).create_new(true).open(path)?;
         let mut w = CsvWriter { f };
-        w.f.write_all("\u{feff}".as_bytes())?; // BOM，讓 Excel 正確顯示中文路徑
+        w.f.write_all("\u{feff}".as_bytes())?; // BOM, so Excel shows non-ASCII paths correctly
         w.row(header.iter().map(|s| s.to_string()))?;
         Ok(w)
     }
@@ -67,7 +69,7 @@ fn trim_partial_last_line(path: &Path) -> io::Result<()> {
 
 pub type Row = HashMap<String, String>;
 
-/// 讀出所有列（欄名 → 值）。最後一列不完整就略過。
+/// All rows as column name -> value. An incomplete last row is ignored.
 pub fn read_all(path: &Path) -> io::Result<Vec<Row>> {
     let text = std::fs::read_to_string(path)?;
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text);

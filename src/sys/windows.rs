@@ -1,5 +1,5 @@
-//! Windows：NTFS 的重組 API（FSCTL_GET_RETRIEVAL_POINTERS、FSCTL_GET_VOLUME_BITMAP、FSCTL_MOVE_FILE）
-//! 與 overlapped I/O。Win32 宣告直接寫在這裡，不依賴外部 crate。
+//! Windows: the NTFS defragmentation API (FSCTL_GET_RETRIEVAL_POINTERS, FSCTL_GET_VOLUME_BITMAP,
+//! FSCTL_MOVE_FILE) and overlapped I/O. Win32 declarations are written here, with no extra crate.
 
 #![allow(clippy::upper_case_acronyms, non_snake_case)]
 
@@ -42,7 +42,7 @@ struct BY_HANDLE_FILE_INFORMATION {
     index_low: u32,
 }
 
-/// FILETIME（兩個 u32，對齊 4）
+/// FILETIME (two u32, 4-byte aligned)
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
 struct u64x2(u32, u32);
@@ -74,6 +74,9 @@ extern "system" {
     fn GetDiskFreeSpaceW(root: *const u16, spc: *mut u32, bps: *mut u32, free: *mut u32, total: *mut u32) -> i32;
     fn GetDiskFreeSpaceExW(root: *const u16, avail: *mut u64, total: *mut u64, free: *mut u64) -> i32;
     fn GetSystemWindowsDirectoryW(buf: *mut u16, n: u32) -> u32;
+    fn GetStdHandle(n: u32) -> HANDLE;
+    fn GetConsoleScreenBufferInfo(h: HANDLE, info: *mut [i16; 11]) -> i32;
+    fn GetLocalTime(t: *mut [u16; 8]);
     fn GetCurrentThread() -> HANDLE;
     fn GetCurrentProcess() -> HANDLE;
     fn SetThreadPriority(t: HANDLE, p: i32) -> i32;
@@ -128,7 +131,7 @@ fn wide(s: &std::ffi::OsStr) -> Vec<u16> {
     s.encode_wide().chain(Some(0)).collect()
 }
 
-/// 加上 \\?\ 前綴，支援超過 260 字元的路徑
+/// Adds the \\?\ prefix so paths longer than 260 characters work.
 fn long_path(p: &Path) -> Vec<u16> {
     let s = p.as_os_str().to_string_lossy();
     if s.starts_with(r"\\?\") || s.starts_with(r"\\.\") {
@@ -157,12 +160,14 @@ fn raw(f: &File) -> HANDLE {
     f.as_raw_handle() as HANDLE
 }
 
-/// 只讀屬性的同步 handle。不檢查共用模式，別的程式鎖住的檔案也打得開。
+/// Synchronous handle for attributes only. Sharing modes are not checked, so files locked by
+/// other programs open too.
 pub fn open_meta(p: &Path) -> io::Result<File> {
     open_raw(&long_path(p), FILE_READ_ATTRIBUTES | SYNCHRONIZE, SHARE_READ | SHARE_WRITE | SHARE_DELETE, FLAG_OPEN_REPARSE_POINT)
 }
 
-/// 不經系統快取、可同時排多個 I/O 的讀取 handle；允許別人同時讀寫刪除。
+/// Read handle that bypasses the OS cache and allows overlapped I/O. Others may keep reading,
+/// writing and deleting.
 pub fn open_direct(p: &Path) -> io::Result<File> {
     open_raw(
         &long_path(p),
@@ -172,8 +177,10 @@ pub fn open_direct(p: &Path) -> io::Result<File> {
     )
 }
 
-/// 有沒有別的程式開著這個檔案的寫入權限：用「不允許別人寫」的共用模式開一下立刻關掉。
-/// 這一瞬間如果剛好有程式要開檔寫入，對方會收到共用衝突；README 有說明。
+/// Whether another program has the file open for writing: open it for an instant with a sharing
+/// mode that denies writers, then close it.
+/// A program that tries to open the file for writing in that instant gets a sharing violation
+/// (see the README).
 pub fn has_other_writers(p: &Path) -> Option<bool> {
     match open_raw(&long_path(p), FILE_READ_DATA, SHARE_READ | SHARE_DELETE, 0) {
         Ok(_) => Some(false),
@@ -200,7 +207,7 @@ pub fn meta(f: &File) -> io::Result<Meta> {
         sparse: bi.attributes & ATTR_SPARSE != 0,
         ..Default::default()
     };
-    // FILE_BASIC_INFO：CreationTime, LastAccessTime, LastWriteTime, ChangeTime, FileAttributes
+    // FILE_BASIC_INFO: CreationTime, LastAccessTime, LastWriteTime, ChangeTime, FileAttributes
     let mut basic = [0i64; 5];
     if unsafe { GetFileInformationByHandleEx(h, 0, basic.as_mut_ptr().cast(), 40) } != 0 {
         m.mtime = basic[2] as i128;
@@ -211,7 +218,7 @@ pub fn meta(f: &File) -> io::Result<Meta> {
     if m.reparse && unsafe { GetFileInformationByHandleEx(h, 9, tag.as_mut_ptr().cast(), 8) } != 0 {
         m.wof = tag[1] == IO_REPARSE_TAG_WOF;
     }
-    // USN（USN 日誌沒啟用時會失敗，維持 0）
+    // USN (fails when the USN journal is off; stays 0)
     let mut usn = [0u8; 1024];
     let mut ret = 0u32;
     if unsafe { DeviceIoControl(h, FSCTL_READ_FILE_USN_DATA, std::ptr::null(), 0, usn.as_mut_ptr().cast(), 1024, &mut ret, std::ptr::null_mut()) } != 0 {
@@ -222,7 +229,7 @@ pub fn meta(f: &File) -> io::Result<Meta> {
     Ok(m)
 }
 
-/// 檔案的叢集配置（VCN → LCN），換算成位元組
+/// The file's cluster map (VCN -> LCN), converted to bytes.
 pub fn layout(f: &File, m: &Meta, block: u64) -> io::Result<Layout> {
     let mut l = Layout { known: true, ..Default::default() };
     if m.reparse {
@@ -238,7 +245,7 @@ pub fn layout(f: &File, m: &Meta, block: u64) -> io::Result<Layout> {
         } != 0;
         let err = if ok { 0 } else { last_err().raw_os_error().unwrap_or(0) };
         if !ok && err == ERROR_HANDLE_EOF {
-            l.inline = m.size > 0; // 小檔的資料放在 MFT 記錄裡
+            l.inline = m.size > 0; // small files keep their data inside the MFT record
             return Ok(l);
         }
         if !ok && err != ERROR_MORE_DATA {
@@ -270,11 +277,12 @@ pub fn set_file_priority(f: &File, p: Priority) {
         Priority::Low => 1,
         Priority::Normal => 2,
     };
-    // FileIoPriorityHintInfo = 12；失敗不影響正確性
+    // FileIoPriorityHintInfo = 12; failure does not affect correctness
     unsafe { SetFileInformationByHandle(raw(f), 12, (&hint as *const i32).cast(), 4) };
 }
 
-/// 這個執行緒發出的 I/O（包含檔案系統代為執行的搬移）的優先權。VeryLow 用背景模式，其他恢復一般。
+/// I/O priority of this thread, including moves the file system performs for it. VeryLow uses
+/// background mode; anything else leaves it.
 pub fn set_thread_io_priority(p: Priority) {
     let on = p == Priority::VeryLow;
     unsafe { SetThreadPriority(GetCurrentThread(), if on { 0x0001_0000 } else { 0x0002_0000 }) };
@@ -323,7 +331,7 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
     })
 }
 
-/// 磁碟代號，例如 "C:"；掛在資料夾的磁碟區回傳根目錄路徑
+/// Drive letter such as "C:"; for a volume mounted in a folder, its root path.
 pub fn volume_label(v: &VolumeInfo) -> String {
     let r = v.root.to_string_lossy();
     if r.len() >= 2 && r.as_bytes()[1] == b':' {
@@ -333,12 +341,33 @@ pub fn volume_label(v: &VolumeInfo) -> String {
     }
 }
 
-/// 掃描時用來判斷是否跨到別的磁碟區；Windows 不需要（junction 與掛載點都是重新剖析點，會被略過）
+/// Width of the console window in columns, if stdout is a console.
+pub fn terminal_width() -> Option<usize> {
+    // CONSOLE_SCREEN_BUFFER_INFO: dwSize, dwCursorPosition, wAttributes, srWindow (Left, Top, Right, Bottom), dwMaximumWindowSize
+    let mut info = [0i16; 11];
+    let h = unsafe { GetStdHandle((-11i32) as u32) }; // STD_OUTPUT_HANDLE
+    if unsafe { GetConsoleScreenBufferInfo(h, &mut info) } == 0 {
+        return None;
+    }
+    let w = info[7] as i32 - info[5] as i32 + 1;
+    (w > 0).then_some(w as usize)
+}
+
+/// Local wall-clock time `secs` from now, as "HH:MM".
+pub fn local_clock_after(secs: u64) -> Option<String> {
+    let mut t = [0u16; 8]; // SYSTEMTIME: year, month, day of week, day, hour, minute, second, ms
+    unsafe { GetLocalTime(&mut t) };
+    let total = (t[4] as u64 * 3600 + t[5] as u64 * 60 + t[6] as u64 + secs) % 86400;
+    Some(format!("{:02}:{:02}", total / 3600, total / 60 % 60))
+}
+
+/// Used by scan to stay on one volume. Not needed on Windows: junctions and mount points are
+/// reparse points and are skipped anyway.
 pub fn dev_of(_m: &std::fs::Metadata) -> Option<u64> {
     None
 }
 
-/// 資料夾是否為重新剖析點（junction、符號連結、掛載點），掃描時不進入
+/// Whether a folder is a reparse point (junction, symbolic link, mount point); scan does not enter it.
 pub fn is_reparse_dir(m: &std::fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;
     m.file_attributes() & ATTR_REPARSE != 0
@@ -356,7 +385,8 @@ pub fn is_elevated() -> bool {
     ok && elevated != 0
 }
 
-/// 啟用 SeBackupPrivilege（讀取 ACL 限制的檔案）與 SeManageVolumePrivilege（搬移叢集）。非管理員時沒有效果。
+/// Enables SeBackupPrivilege (read files regardless of ACLs) and SeManageVolumePrivilege (move
+/// clusters). Has no effect without administrator rights.
 pub fn enable_privileges() {
     let mut tok: HANDLE = 0;
     if unsafe { OpenProcessToken(GetCurrentProcess(), 0x20 | 0x8, &mut tok) } == 0 {
@@ -377,20 +407,20 @@ pub fn enable_privileges() {
     unsafe { CloseHandle(tok) };
 }
 
-pub const ELEVATION_HINT: &str = "請用「以系統管理員身分執行」開 PowerShell 再執行。";
+pub const ELEVATION_HINT: &str = "Open PowerShell with \"Run as administrator\" and run it again.";
 
-/// 刷新前的檢查：檔案系統與權限
+/// Checks before refresh: file system and rights.
 pub fn refresh_check(v: &VolumeInfo) -> Result<(), String> {
     if !v.fs.eq_ignore_ascii_case("NTFS") {
-        return Err(format!("Windows 上只支援 NTFS，這個磁碟區是 {}。", v.fs));
+        return Err(format!("On Windows only NTFS is supported; this volume is {}.", v.fs));
     }
     if !is_elevated() {
-        return Err(format!("【需要系統管理員權限】刷新要搬移叢集。{ELEVATION_HINT}"));
+        return Err(format!("Administrator rights are needed to move clusters. {ELEVATION_HINT}"));
     }
     Ok(())
 }
 
-/// 刷新前要讓使用者知道的事
+/// Things the user should know before a refresh.
 pub fn refresh_warnings(v: &VolumeInfo) -> Vec<String> {
     let out = std::process::Command::new("vssadmin").args(["list", "shadows", &format!("/for={}\\", volume_label(v))]).output();
     match out {
@@ -398,20 +428,20 @@ pub fn refresh_warnings(v: &VolumeInfo) -> Vec<String> {
             let s = String::from_utf8_lossy(&o.stdout);
             let n = s.matches("HarddiskVolumeShadowCopy").count();
             if n > 0 {
-                vec![format!("注意：{} 有 {n} 份陰影複製（還原點）。搬移叢集會讓陰影複製的差異區變大，舊的還原點可能被自動刪除。", volume_label(v))]
+                vec![format!("{} has {n} shadow copies (restore points). Moving clusters grows their difference area, and Windows may delete old restore points to make room.", volume_label(v))]
             } else {
                 vec![]
             }
         }
-        Err(_) => vec!["注意：無法查詢陰影複製（vssadmin 失敗）。".into()],
+        Err(_) => vec!["could not list shadow copies (vssadmin failed).".into()],
     }
 }
 
 pub fn retrim_hint(v: &VolumeInfo) -> String {
-    format!("建議做完後在系統管理員 PowerShell 執行 Optimize-Volume -DriveLetter {} -ReTrim，讓 SSD 回收舊位置。", volume_label(v).trim_end_matches(':'))
+    format!("tell the SSD the old places are free: Optimize-Volume -DriveLetter {} -ReTrim (PowerShell as administrator).", volume_label(v).trim_end_matches(':'))
 }
 
-// ---------------- overlapped 讀取佇列 ----------------
+// ---------------- overlapped read queue ----------------
 
 enum SlotState {
     Idle,
@@ -427,7 +457,7 @@ struct Slot {
     state: SlotState,
 }
 
-/// 用 overlapped I/O 同時排多個讀取，單一執行緒等待任一個完成。
+/// Keeps several overlapped reads in flight; one thread waits for whichever finishes first.
 pub struct IoQueue {
     slots: Vec<Slot>,
 }
@@ -454,7 +484,7 @@ impl IoQueue {
         self.slots[slot].buf.as_slice()
     }
 
-    /// Windows 的讀取優先權設定在檔案 handle 上（set_file_priority），這裡不用做事
+    /// On Windows the read priority is set on the file handle (set_file_priority); nothing to do here.
     pub fn set_priority(&mut self, _p: Priority) {}
 
     pub fn submit(&mut self, f: &File, slot: usize, offset: u64, len: usize) -> io::Result<()> {
@@ -464,7 +494,7 @@ impl IoQueue {
         s.handle = raw(f);
         let ok = unsafe { ReadFile(s.handle, s.buf.as_mut_ptr(), len as u32, std::ptr::null_mut(), &mut *s.ov) } != 0;
         if ok {
-            s.state = SlotState::Pending; // 同步完成也會設定事件，交給 wait_any 收
+            s.state = SlotState::Pending; // a synchronous completion also sets the event; wait_any collects it
             return Ok(());
         }
         let e = last_err();
@@ -476,7 +506,7 @@ impl IoQueue {
         Ok(())
     }
 
-    /// 等任一個讀取完成，回傳（slot、讀到的位元組數、完成時間）
+    /// Waits for any read to finish; returns (slot, bytes read, completion time).
     pub fn wait_any(&mut self) -> (usize, io::Result<usize>, Instant) {
         for (i, s) in self.slots.iter_mut().enumerate() {
             if matches!(s.state, SlotState::Done(..)) {
@@ -485,7 +515,7 @@ impl IoQueue {
             }
         }
         let pending: Vec<usize> = (0..self.slots.len()).filter(|&i| matches!(self.slots[i].state, SlotState::Pending)).collect();
-        assert!(!pending.is_empty(), "沒有進行中的 I/O");
+        assert!(!pending.is_empty(), "no I/O in flight");
         let events: Vec<HANDLE> = pending.iter().map(|&i| self.slots[i].event).collect();
         let r = unsafe { WaitForMultipleObjects(events.len() as u32, events.as_ptr(), 0, u32::MAX) };
         let t = Instant::now();
@@ -524,9 +554,9 @@ impl Drop for IoQueue {
     }
 }
 
-// ---------------- NTFS 搬移 ----------------
+// ---------------- NTFS moves ----------------
 
-/// 磁碟區叢集點陣圖的本機副本，用來找空的叢集。1 = 使用中。
+/// Local copy of the volume's cluster bitmap, used to find free clusters. 1 = in use.
 struct ClusterMap {
     b: Vec<u8>,
     n: u64,
@@ -544,7 +574,8 @@ impl ClusterMap {
         }
     }
 
-    /// 從游標往後找（到底再從頭）第一段至少 need 個空叢集；找不到就回傳最大的一段（至少 min_accept）
+    /// From the cursor onwards (wrapping once), the first run of at least `need` free clusters;
+    /// otherwise the longest run found, if it has at least `min_accept`.
     fn find(&mut self, need: u64, min_accept: u64) -> Option<(u64, u64)> {
         let (mut best, mut best_len) = (0u64, 0u64);
         for (from, to) in [(self.cursor, self.n), (0, self.cursor.min(self.n))] {
@@ -601,8 +632,9 @@ impl ClusterMap {
     }
 }
 
-/// 用 FSCTL_MOVE_FILE 把檔案搬到新的叢集。每次搬移由 NTFS 保證不可分割：要嘛整段搬好，要嘛完全沒動，
-/// 而且 NTFS 會和其他程式對這個檔案的讀寫同步，所以使用中的檔案也安全。
+/// Moves a file to new clusters with FSCTL_MOVE_FILE. NTFS makes every move atomic: the piece is
+/// either fully moved or not moved at all,
+/// and NTFS synchronises it with other programs' reads and writes, so files in use are safe.
 pub struct Relocator {
     vol: VolumeInfo,
     handle: File,
@@ -642,15 +674,16 @@ impl Relocator {
         self.map = ClusterMap { b: volume_bitmap(&self.handle, total)?, n: total, cursor };
         self.map.n = self.map.n.min(self.map.b.len() as u64 * 8);
         let (zs, ze) = self.mft_zone;
-        self.map.mark(zs, ze.saturating_sub(zs)); // 不搬進 MFT 保留區
+        self.map.mark(zs, ze.saturating_sub(zs)); // never move into the MFT zone
         Ok(())
     }
 
-    /// 依邏輯位置順序搬移每個有實體位置的 extent。回傳 false 表示被停止、只搬了一部分（檔案內容仍完整）。
+    /// Moves every extent that has a place on disk, in file order. Returns false when stopped part
+    /// way (the file is still intact).
     pub fn relocate(&mut self, _path: &Path, file: &File, layout: &Layout, ctl: &Control, st: &mut MoveStats, log: &dyn Fn(&str)) -> io::Result<bool> {
         let cs = self.vol.block;
         let max_chunk = (self.opt.max_chunk / cs).max(1);
-        let min_run = (1024 * 1024 / cs).clamp(1, max_chunk); // 優先找至少 1 MB 的空位
+        let min_run = (1024 * 1024 / cs).clamp(1, max_chunk); // prefer free runs of at least 1 MB
         let to_c = |l: &Layout| -> Vec<(u64, u64, bool)> { l.extents.iter().map(|e| (e.logical / cs, e.len / cs, e.physical.is_some())).collect() };
         let mut cur = to_c(layout);
         let end = cur.iter().filter(|e| e.2).map(|e| e.0 + e.1).max().unwrap_or(0);
@@ -670,7 +703,7 @@ impl Relocator {
                         v = n;
                         continue;
                     }
-                    None => break, // 檔案在搬移途中變小了
+                    None => break, // the file shrank during the move
                 }
             };
             if !on_disk {
@@ -682,7 +715,7 @@ impl Relocator {
                 .map
                 .find(want, want.min(min_run))
                 .or_else(|| self.map.find(want, 1))
-                .ok_or_else(|| io::Error::new(io::ErrorKind::StorageFull, "磁碟區沒有足夠的空叢集"))?;
+                .ok_or_else(|| io::Error::new(io::ErrorKind::StorageFull, "not enough free clusters on the volume"))?;
             let cnt = len.min(want) as u32;
             let d = MOVE_FILE_DATA { file: raw(file), starting_vcn: v as i64, starting_lcn: lcn as i64, cluster_count: cnt };
             let mut ret = 0u32;
@@ -697,19 +730,20 @@ impl Relocator {
                 self.total_moves += 1;
                 continue;
             }
-            // 失敗：目標位置可能剛被別人用掉，或檔案在途中被改。重新讀點陣圖與配置後再試。
+            // Failed: the target may have just been taken, or the file changed. Reload the bitmap and the
+            // file's layout, then try again.
             let err = last_err();
             failures += 1;
             st.failures += 1;
             self.map.mark(lcn, cnt as u64);
             if err.raw_os_error() == Some(ERROR_ACCESS_DENIED) && self.total_moves == 0 && !self.writable {
-                log("唯讀的磁碟區 handle 搬移被拒，改用讀寫 handle 重開（程式不會直接寫入磁區）。");
+                log("The volume handle opened for reading was refused; reopening it for read/write (this tool still never writes sectors itself).");
                 self.writable = true;
                 self.handle = open_volume(&self.vol, true)?;
                 self.reload()?;
             }
             if failures > 10 {
-                return Err(io::Error::new(err.kind(), format!("搬移失敗太多次（VCN {v}）：{err}")));
+                return Err(io::Error::new(err.kind(), format!("too many failed moves (VCN {v}): {err}")));
             }
             if failures % 3 == 0 {
                 self.reload()?;
@@ -747,9 +781,12 @@ fn volume_bitmap(vol: &File, total: u64) -> io::Result<Vec<u8>> {
             return Err(io::Error::from_raw_os_error(err));
         }
         if start_lcn != 0 {
-            return Err(io::Error::other("點陣圖起點不是 LCN 0"));
+            return Err(io::Error::other("volume bitmap does not start at LCN 0"));
         }
         let n = size.div_ceil(8) as usize;
         return Ok(out[16..16 + n].to_vec());
     }
 }
+
+/// How refresh moves data on this platform (shown before a refresh starts).
+pub const MOVE_METHOD: &str = "FSCTL_MOVE_FILE, the NTFS defragmentation API";

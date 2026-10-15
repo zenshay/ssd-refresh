@@ -1,4 +1,5 @@
-//! macOS：只支援掃描。F_NOCACHE 讀取；APFS 沒有能安全搬移使用中檔案的 API，所以不支援刷新。
+//! macOS: scan only. Reads use F_NOCACHE. APFS has no API that safely moves the data of
+//! a file in use, so refresh is not supported.
 
 use super::{MoveStats, RelocOptions};
 use crate::common::{Layout, Meta, Priority, VolumeInfo};
@@ -25,13 +26,13 @@ pub fn has_other_writers(_p: &Path) -> Option<bool> {
     None
 }
 
-/// macOS 查不到可靠的實體配置，整個檔案當成一段測速
+/// macOS has no reliable way to get the physical layout; the whole file is timed as one piece.
 pub fn layout(_f: &File, _m: &Meta, _block: u64) -> io::Result<Layout> {
     Ok(Layout { known: false, ..Default::default() })
 }
 
 pub fn set_thread_io_priority(p: Priority) {
-    // IOPOL_TYPE_DISK = 0、IOPOL_SCOPE_THREAD = 1；THROTTLE = 3、UTILITY = 4、DEFAULT = 0
+    // IOPOL_TYPE_DISK = 0, IOPOL_SCOPE_THREAD = 1; THROTTLE = 3, UTILITY = 4, DEFAULT = 0
     let policy = match p {
         Priority::VeryLow => 3,
         Priority::Low => 4,
@@ -62,7 +63,7 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
 }
 
 pub fn refresh_check(_v: &VolumeInfo) -> Result<(), String> {
-    Err("macOS 不支援刷新：APFS 沒有能安全搬移使用中檔案的 API。掃描功能可以正常使用。".into())
+    Err("Refresh is not supported on macOS: APFS has no API that safely moves the data of a file in use. Scan works normally.".into())
 }
 
 pub fn refresh_warnings(_v: &VolumeInfo) -> Vec<String> {
@@ -77,10 +78,13 @@ pub struct Relocator;
 
 impl Relocator {
     pub fn new(_vol: &VolumeInfo, _opt: &RelocOptions) -> io::Result<Relocator> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 不支援刷新"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "refresh is not supported on macOS"))
     }
 
     pub fn relocate(&mut self, _path: &Path, _file: &File, _layout: &Layout, _ctl: &Control, _st: &mut MoveStats, _log: &dyn Fn(&str)) -> io::Result<bool> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "macOS 不支援刷新"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "refresh is not supported on macOS"))
     }
 }
+
+/// How refresh moves data on this platform (shown before a refresh starts).
+pub const MOVE_METHOD: &str = "nothing (refresh is not supported on macOS)";

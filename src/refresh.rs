@@ -1,13 +1,18 @@
-//! 刷新：把掃描報告裡慢的檔案交給檔案系統搬到新位置，搬移前後比對 SHA256 並重新測速。
+//! `refresh`: hands the slow files from a scan report to the file system, which moves
+//! their data to free clusters. Every file is hashed and timed before and after.
+//!
+//! The tool never writes file data itself. The file system copies the clusters and
+//! updates the file's map in one step, synchronised with any other program that is
+//! reading or writing the same file.
 
-use crate::common::{fmt_bytes, hex, Kind, Priority};
+use crate::common::{fmt_bytes, fmt_count, hex, Kind, Priority};
 use crate::control::Control;
 use crate::csv::{self, CsvWriter};
-use crate::progress::Progress;
+use crate::progress::{para, Phase, Progress};
 use crate::reader::{read_file, ReadOptions};
 use crate::sys::{self, MoveStats, RelocOptions, Relocator};
 use std::collections::{BTreeMap, HashSet};
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -20,7 +25,7 @@ pub struct RefreshOptions {
     pub allow_system_volume: bool,
     pub resume: bool,
     pub dry_run: bool,
-    /// 測試用：處理 N 個檔案後停止，模擬中斷
+    /// For tests: stop after N files, as if interrupted.
     pub stop_after: usize,
     pub max_chunk_mb: u64,
     pub read: ReadOptions,
@@ -31,11 +36,19 @@ pub const HEADER: [&str; 17] = [
     "move_failures", "extents_before", "extents_after", "writers", "meta_changed", "sha_before", "sha_after", "detail",
 ];
 
-/// 這些狀態代表檔案已處理完，續跑時跳過
+/// Statuses that mean "done"; --resume skips these files.
 const FINAL: [&str; 8] = ["OK", "CHANGED", "SKIP_FAST", "SKIP_KIND", "SKIP_MISSING", "ERROR", "MOVE_FAILED", "DRYRUN"];
 
 pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
-    // ---------- 讀掃描報告、選檔 ----------
+    let title = if o.dry_run { "dry run: re-measures only, moves nothing" } else { "MOVES FILE DATA" };
+    println!("ssd-refresh refresh ({title})");
+    println!("  Report:  {}", o.from.display());
+    println!("  Log:     {}", o.out.display());
+    println!("           One row per file, saved as it goes, so an interrupted run can resume.");
+
+    // ---------- Step 1: choose files ----------
+    println!();
+    println!("Step 1/3  Choose files and check the volume");
     let picked: Vec<(String, u64)> = csv::read_all(&o.from)?
         .into_iter()
         .filter(|r| r.get("status").map(String::as_str) == Some("OK"))
@@ -43,22 +56,34 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
         .filter(|r| r.get("kind").and_then(|k| Kind::parse(k)).is_some_and(Kind::movable))
         .map(|r| (r["path"].clone(), r["size"].parse().unwrap_or(0)))
         .collect();
+    println!(
+        "  Taken from the report: {} files ({}).",
+        fmt_count(picked.len() as u64),
+        if o.select_all { "all measured files, --select all" } else { "files confirmed slow" }
+    );
     if picked.is_empty() {
-        println!("報告裡沒有要刷新的檔案。");
+        println!("  Nothing to do.");
         return Ok(0);
     }
     let vol = sys::volume(Path::new(&picked[0].0))?;
     for (p, _) in &picked {
-        if sys::volume(Path::new(p)).map(|v| v.id) .ok() != Some(vol.id) && Path::new(p).exists() {
-            eprintln!("報告裡有不在 {} 的檔案（{p}），一次只能刷新一個磁碟區。", vol.root.display());
+        if Path::new(p).exists() && sys::volume(Path::new(p)).map(|v| v.id).ok() != Some(vol.id) {
+            eprintln!("  The report has files on more than one volume ({p} is not on {}).", vol.root.display());
+            eprintln!("  Refresh one volume at a time: scan each volume into its own report.");
             return Ok(1);
         }
     }
-
-    // ---------- 權限與安全檢查 ----------
+    println!(
+        "  Volume: {}  {}, {}-byte clusters, {} free{}",
+        vol.root.display(),
+        vol.fs,
+        vol.block,
+        fmt_bytes(vol.free_bytes),
+        if vol.is_system { ", system volume" } else { "" }
+    );
     if !o.dry_run {
         if let Err(msg) = sys::refresh_check(&vol) {
-            eprintln!("{msg}");
+            eprintln!("  {msg}");
             return Ok(2);
         }
     }
@@ -67,7 +92,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
     }
     let label = sys::volume_label(&vol);
     if vol.is_system && !o.dry_run && !o.allow_system_volume {
-        eprintln!("{label} 是系統磁碟。要刷新系統磁碟必須另外加 --allow-system-volume。");
+        eprintln!("  {label} is the system volume. Add --allow-system-volume to refresh it.");
         return Ok(1);
     }
 
@@ -78,28 +103,60 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
                 done.insert(r["path"].clone());
             }
         }
+        println!("  Resume: {} files are already finished in the log and will be skipped.", fmt_count(done.len() as u64));
     } else if o.out.exists() {
-        eprintln!("記錄檔已存在：{}（要續跑請加 --resume）", o.out.display());
+        eprintln!("  The log already exists: {}", o.out.display());
+        eprintln!("  Add --resume to continue it, or choose another file with --out.");
         return Ok(1);
     }
     let todo: Vec<_> = picked.into_iter().filter(|(p, _)| !done.contains(p)).collect();
     let todo_bytes: u64 = todo.iter().map(|t| t.1).sum();
+    println!("  To process: {} files, {}.", fmt_count(todo.len() as u64), fmt_bytes(todo_bytes));
 
-    println!("磁碟區：{}（{}，區塊 {} 位元組{}）", vol.root.display(), vol.fs, vol.block, if vol.is_system { "，系統磁碟" } else { "" });
-    println!("要處理：{} 個檔案，{}（已完成 {} 個）", todo.len(), fmt_bytes(todo_bytes), done.len());
-    println!("空間：剩 {}", fmt_bytes(vol.free_bytes));
-    if !o.dry_run {
+    // ---------- Step 2: explain and confirm ----------
+    println!();
+    println!("Step 2/3  What will happen");
+    println!("  For each file, one at a time:");
+    para(
+        4,
+        &format!(
+            "1. Read it from the disk (no OS cache) at {} I/O priority; record its SHA-256 and speed.",
+            priority_words(o.read.measure_priority)
+        ),
+    );
+    if o.force {
+        para(4, "2. (--force) Continue even if the file is no longer slow.");
+    } else {
+        para(4, "2. If it is no longer slow, skip it (status SKIP_FAST).");
+    }
+    if o.dry_run {
+        para(4, "3. Dry run: stop here. Nothing is moved (status DRYRUN).");
+    } else {
+        para(
+            4,
+            &format!(
+                "3. Ask the file system to move its data to free clusters, in pieces of up to {} MiB, using {}. Each move is atomic: the piece is either fully moved or not moved at all, and the file system keeps other programs' reads and writes consistent.",
+                o.max_chunk_mb.max(1),
+                sys::MOVE_METHOD
+            ),
+        );
+        para(4, "4. Read it again; compare SHA-256 and record the new speed. Same hash: OK. Different hash while another program was writing the file: CHANGED (expected). Different hash with no sign of another writer: MISMATCH, and the run stops at once.");
+        para(2, &format!("Moves run at {} I/O priority, so other programs get the disk first.", priority_words(o.read.io_priority)));
+        para(2, &format!("Data written: about {} (each file is written once, at its new place).", fmt_bytes(todo_bytes)));
         for w in sys::refresh_warnings(&vol) {
-            println!("{w}");
+            para(2, &format!("Warning: {w}"));
         }
-        // ---------- 二次確認 ----------
+    }
+    para(2, "Keys: p + Enter = pause/resume, q + Enter = stop after the current file (continue later with --resume). Stopping at any time leaves every file intact.");
+
+    if !o.dry_run {
         let want = label.trim_end_matches(':').to_uppercase();
         let norm = |s: &str| s.trim().trim_end_matches(['\\', '/']).trim_end_matches(':').to_uppercase();
         let got = match &o.confirm {
             Some(c) => norm(c),
             None => {
-                print!("刷新會把上面的檔案搬到新的位置。請輸入「{want}」確認，其他輸入取消：");
-                use std::io::Write;
+                println!();
+                print!("Type {want} and press Enter to start; anything else cancels: ");
                 io::stdout().flush()?;
                 let mut line = String::new();
                 io::stdin().lock().read_line(&mut line)?;
@@ -107,18 +164,22 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
             }
         };
         if got != want {
-            println!("已取消，沒有做任何變更。");
+            println!("Cancelled. Nothing was changed.");
             return Ok(1);
         }
     }
 
-    // 搬移在這個執行緒進行；背景優先權只影響這個執行緒
+    // ---------- Step 3: process ----------
+    println!();
+    println!("Step 3/3  {}", if o.dry_run { "Re-measure" } else { "Refresh" });
+    // Moves are issued from this thread, so its background I/O priority applies to them.
     let reloc = if o.dry_run { None } else { Some(Relocator::new(&vol, &RelocOptions { max_chunk: o.max_chunk_mb.max(1) << 20 })?) };
     sys::set_thread_io_priority(o.read.io_priority);
     let mut r = Run { o, vol_block: vol.block, ctl: ctl.clone(), reloc, q: sys::IoQueue::new(o.read.qd, o.read.chunk) };
     let mut w = CsvWriter::create(&o.out, &HEADER, o.resume)?;
-    let prog = Progress::new(if o.dry_run { "試跑" } else { "刷新" }, todo.len() as u64, todo_bytes, ctl.clone());
+    let prog = Progress::new(Phase::Refresh { dry_run: o.dry_run }, todo.len() as u64, todo_bytes, ctl.clone());
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    let mut moved_bytes = 0u64;
     let mut code = 0;
     for (i, (path, size)) in todo.iter().enumerate() {
         if ctl.stopped() {
@@ -133,31 +194,57 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
         let row = r.process(Path::new(path), &|m: &str| prog.log(m));
         w.row(row.values())?;
         *counts.entry(row.status.clone()).or_default() += 1;
-        prog.add_file(*size, matches!(row.status.as_str(), "OK" | "CHANGED") && row.after_slow, matches!(row.status.as_str(), "ERROR" | "MOVE_FAILED"));
+        moved_bytes += row.st.moved_bytes;
+        prog.add_file(*size);
+        match row.status.as_str() {
+            "OK" => prog.add_moved(),
+            "CHANGED" => {
+                prog.add_moved();
+                prog.add_changed();
+            }
+            "SKIP_FAST" | "SKIP_KIND" | "SKIP_MISSING" | "DRYRUN" => prog.add_skipped(),
+            _ => prog.add_failed(),
+        }
         if row.status == "MISMATCH" {
-            prog.log(&format!("【停止】雜湊不一致，而且沒有偵測到其他程式寫入：{path}"));
+            prog.log(&format!("STOPPED: the hash changed and no other program was writing the file: {path}"));
+            prog.log("Keep the log and report this. The file system move is atomic, so this should never happen.");
             code = 3;
             break;
         }
         if o.stop_after > 0 && i + 1 >= o.stop_after {
-            prog.log(&format!("已處理 {} 個檔案（--stop-after），停止。", i + 1));
+            prog.log(&format!("Processed {} files (--stop-after); stopping.", i + 1));
             code = 4;
             break;
         }
     }
     prog.finish();
     sys::set_thread_io_priority(Priority::Normal);
-    println!("結果：{}", counts.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join("、"));
-    if code == 4 {
-        println!("已中斷。用同樣的指令加 --resume 可以續跑。");
-    }
+
+    println!();
+    println!("Summary");
+    println!("  Status counts: {}", counts.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "));
     if !o.dry_run {
+        println!("  Data moved: {}", fmt_bytes(moved_bytes));
+    }
+    println!("  Status meanings: see the README or `ssd-refresh help refresh`.");
+    if code == 4 {
+        println!("  Stopped early. Run the same command with --resume to continue.");
+    }
+    if !o.dry_run && moved_bytes > 0 {
         let hint = sys::retrim_hint(&vol);
         if !hint.is_empty() {
-            println!("{hint}");
+            println!("  Next: {hint}");
         }
     }
     Ok(code)
+}
+
+fn priority_words(p: Priority) -> &'static str {
+    match p {
+        Priority::VeryLow => "very low",
+        Priority::Low => "low",
+        Priority::Normal => "normal",
+    }
 }
 
 struct Run<'a> {
@@ -254,7 +341,8 @@ impl Run<'_> {
             return Ok(());
         };
 
-        // 搬移。每一次搬移都是檔案系統的原子操作，失敗或中斷時檔案內容仍然完整，所以下面一律重讀驗證。
+        // Move. Each move is atomic in the file system, so the file is intact even if
+        // a move fails or the run is stopped half way; it is therefore always re-read.
         let mut complete = true;
         match reloc.relocate(path, &mf, &l1, &self.ctl, &mut row.st, log) {
             Ok(c) => complete = c,
@@ -282,7 +370,7 @@ impl Run<'_> {
 
         if row.sha_before != row.sha_after && !explained {
             row.status = "MISMATCH".into();
-            row.detail = "搬移前後雜湊不同，沒有偵測到其他程式寫入".into();
+            row.detail = "hash differs before/after the move and no other writer was detected".into();
             return Ok(());
         }
         if row.status == "MOVE_FAILED" {
@@ -290,13 +378,14 @@ impl Run<'_> {
         }
         if !complete {
             row.status = "PARTIAL".into();
+            row.detail = "stopped part way; --resume moves it again".into();
             return Ok(());
         }
         if row.sha_before == row.sha_after {
             row.status = "OK".into();
         } else {
             row.status = "CHANGED".into();
-            row.detail = "搬移期間檔案被其他程式修改（屬正常）".into();
+            row.detail = "another program modified the file during the move (expected)".into();
         }
         Ok(())
     }

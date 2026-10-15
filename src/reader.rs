@@ -1,4 +1,5 @@
-//! 不經系統快取讀完整個檔案：同時排多個 I/O，依序計算 SHA256，並算出每個 extent 的讀取時間。
+//! Reads a whole file without the OS cache: several requests in flight, SHA-256 computed in order,
+//! and the read time of every extent.
 
 use crate::common::{Layout, Priority};
 use crate::control::Control;
@@ -10,17 +11,18 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
 pub struct ReadOptions {
-    /// 每個 I/O 的大小（位元組，4096 的倍數）
+    /// Size of each read request in bytes (a multiple of 4096)
     pub chunk: usize,
-    /// 同時排隊的 I/O 數
+    /// Read requests in flight per file
     pub qd: usize,
-    /// 低於這個速度算慢（MB = 10^6 位元組）
+    /// An extent slower than this is slow (MB = 10^6 bytes)
     pub threshold_mbps: f64,
-    /// 每個 extent 容許的額外延遲，避免小檔因為固定延遲被誤判
+    /// Extra time allowed per extent, so the fixed latency of small reads does not count as slowness
     pub allowance_ms: f64,
-    /// 大量讀取與搬移用的優先權
+    /// Priority of bulk reads (scan step 2) and of moves
     pub io_priority: Priority,
-    /// 確認重讀、刷新前後測速用的優先權。VeryLow 會被系統壓速，測出來不準。
+    /// Priority of re-checks and of the before/after reads of refresh. VeryLow is throttled by the
+    /// system and gives misleading timings.
     pub measure_priority: Priority,
 }
 
@@ -83,7 +85,7 @@ impl ReadResult {
         self.extents.iter().map(|e| e.mbps()).reduce(f64::min)
     }
 
-    /// 同一個檔案讀兩次：每個 extent 取比較快的那次，重新判定快慢
+    /// The same file read twice: keep the faster time of each extent and decide slowness again.
     pub fn keep_faster(&mut self, other: &ReadResult, opt: &ReadOptions) {
         if self.extents.len() != other.extents.len() {
             return;
@@ -111,11 +113,11 @@ fn align_up(v: u64) -> u64 {
 struct Seg {
     offset: u64,
     len: u64,
-    /// 對應 ReadResult.extents 的索引；None 表示不測速（空洞、未寫入）
+    /// Index into ReadResult.extents; None = not timed (hole, unwritten)
     extent: Option<usize>,
 }
 
-/// 讀完整個檔案。layout.known = false 時整個檔案當成一段測速。
+/// Reads the whole file. With layout.known = false the whole file is timed as one piece.
 #[allow(clippy::too_many_arguments)]
 pub fn read_file(
     q: &mut IoQueue,
@@ -148,7 +150,7 @@ pub fn read_file(
     let mut hasher = hash.then(Sha256::new);
 
     let qd = q.slots().min(chunks.len().max(1));
-    // completed[slot] = 讀完但還沒輪到計算雜湊
+    // completed[slot] = finished, but not yet hashed (hashing goes in file order)
     let mut completed: Vec<Option<(usize, Instant)>> = vec![None; qd];
     let mut next = 0usize;
     let mut done = 0usize;
@@ -156,11 +158,11 @@ pub fn read_file(
     let mut err: Option<io::Error> = None;
 
     while done < chunks.len() {
-        // 補滿佇列
+        // keep the queue full
         while err.is_none() && next < chunks.len() && next - done < qd {
             if ctl.is_paused() {
                 if inflight > 0 {
-                    break; // 先把排隊中的收完再暫停
+                    break; // let requests already sent finish before pausing
                 }
                 let waited = ctl.wait_while_paused();
                 if let Some(e) = chunks[next].extent {
@@ -184,21 +186,22 @@ pub fn read_file(
             }
         }
         if inflight == 0 {
-            break; // 出錯而且已經沒有進行中的 I/O
+            break; // failed, and nothing is in flight any more
         }
-        // 等任一個 I/O 完成
+        // wait for any request to finish
         let (slot, r, ts) = q.wait_any();
         inflight -= 1;
         let n = match r {
             Ok(n) => n,
             Err(e) => {
-                // 讀取失敗（例如壞軌）：不再送新的 I/O，但其他進行中的 I/O 還在用緩衝區，要全部收完才能返回
+                // Read failed (for example a bad sector): send nothing more, but the requests in flight still
+                // use their buffers, so collect them all before returning.
                 err.get_or_insert(e);
                 0
             }
         };
         completed[slot] = Some((n, ts));
-        // 依序處理已經完成的 chunk
+        // hash finished chunks in file order
         while done < next {
             let slot = done % qd;
             let Some((n, ts)) = completed[slot].take() else { break };
@@ -226,7 +229,8 @@ pub fn read_file(
         return Err(e);
     }
 
-    // 依序把時間分給每個 extent：從「它的第一個 I/O 送出」或「前一個 extent 讀完」較晚者，到它最後一個 I/O 完成，扣掉暫停
+    // Give each extent its share of the time, in order: from the later of "its first request was
+    // sent" and "the previous extent finished" until its last request finished, minus pauses.
     let mut prev: Option<Instant> = None;
     for (i, e) in res.extents.iter_mut().enumerate() {
         let (Some(fi), Some(ld)) = (first_issue[i], last_done[i]) else { continue };
@@ -260,7 +264,7 @@ fn build_segments(layout: &Layout, end: u64, measure: bool, res: &mut ReadResult
             continue;
         }
         if a > pos {
-            segs.push(Seg { offset: pos, len: a - pos, extent: None }); // 空洞
+            segs.push(Seg { offset: pos, len: a - pos, extent: None }); // hole
         }
         let extent = (x.physical.is_some() && measure).then(|| {
             res.extents.push(ExtentTiming { offset: a, bytes: b - a, physical: x.physical, ..Default::default() });

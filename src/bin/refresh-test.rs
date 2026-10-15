@@ -1,10 +1,11 @@
-//! 安全驗證用的輔助程式。只在測試磁碟區（例如 VHDX、loop 映像）上使用。
+//! Helper for the safety test. Use it only on a throw-away test volume (a VHDX, a loop image).
 //!
-//!   gen     <根目錄> <manifest.csv>                          產生測試檔並記錄 SHA256
-//!   mutate  <根目錄> <manifest.csv> <停止檔> <expected.csv>   持續修改一部分檔案，直到停止檔出現
-//!   verify  <根目錄> <manifest.csv> <expected.csv>            比對最終內容
-//!   lcnmap  <根目錄> <輸出.csv>                               記錄每個檔案的實體位置
-//!   lcndiff <之前.csv> <之後.csv>                             統計實體位置改變的檔案數
+//!   gen     <root> <manifest.csv>                        create test files and record their SHA-256
+//!   mutate  <root> <manifest.csv> <stop file> <expected.csv>
+//!                                                        keep modifying some files until the stop file appears
+//!   verify  <root> <manifest.csv> <expected.csv>         check the final contents
+//!   lcnmap  <root> <out.csv>                             record where every file is on disk
+//!   lcndiff <before.csv> <after.csv>                     count files whose location changed
 
 use sha2::{Digest, Sha256};
 use ssd_refresh::common::hex;
@@ -22,7 +23,7 @@ static SHARING_RETRIES: AtomicU64 = AtomicU64::new(0);
 
 fn main() -> ExitCode {
     let a: Vec<String> = std::env::args().skip(1).collect();
-    let p = |i: usize| PathBuf::from(a.get(i).expect("參數不足"));
+    let p = |i: usize| PathBuf::from(a.get(i).expect("missing argument; see the comment at the top of refresh-test.rs"));
     let r = match a.first().map(String::as_str) {
         Some("gen") => gen(&p(1), &p(2)),
         Some("mutate") => mutate(&p(1), &p(2), &p(3), &p(4)),
@@ -30,20 +31,20 @@ fn main() -> ExitCode {
         Some("lcnmap") => lcnmap(&p(1), &p(2)),
         Some("lcndiff") => lcndiff(&p(1), &p(2)),
         _ => {
-            eprintln!("用法見原始碼開頭的說明");
+            eprintln!("usage: refresh-test gen|mutate|verify|lcnmap|lcndiff ... (see the top of refresh-test.rs)");
             Ok(1)
         }
     };
     match r {
         Ok(c) => ExitCode::from(c),
         Err(e) => {
-            eprintln!("錯誤：{e}");
+            eprintln!("Error: {e}");
             ExitCode::from(1)
         }
     }
 }
 
-/// splitmix64：決定性、不可壓縮的內容
+/// splitmix64: deterministic, incompressible content
 fn fill(s: &mut [u8], seed: u64) {
     let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1);
     let mut chunks = s.chunks_exact_mut(8);
@@ -59,7 +60,7 @@ fn fill(s: &mut [u8], seed: u64) {
     }
 }
 
-/// 簡單的決定性亂數
+/// Small deterministic random numbers
 struct Rng(u64);
 impl Rng {
     fn next(&mut self) -> u64 {
@@ -122,7 +123,7 @@ fn gen(root: &Path, manifest: &Path) -> io::Result<u8> {
     let mut files: Vec<(String, bool)> = Vec::new();
     let mut buf = vec![0u8; 1 << 20];
     let mut seed = 0u64;
-    // （群組、數量、最小、最大、每幾個修改一個）
+    // (group, count, min size, max size, every n-th file is modified)
     let groups: [(&str, u64, u64, u64, u64); 6] = [
         ("tiny", 80, 0, 900, 40),
         ("small", 200, 1 << 10, 64 << 10, 10),
@@ -140,7 +141,8 @@ fn gen(root: &Path, manifest: &Path) -> io::Result<u8> {
             files.push((name, i % every == 0));
         }
     }
-    // 碎片檔：先寫一排 256 KB 的填充檔，刪掉一半留下洞，再用小段追加寫入大檔填洞
+    // Fragmented files: write a row of 256 KB fillers, delete every other one to leave holes,
+    // then grow large files in small appends so they fill the holes.
     std::fs::create_dir_all(root.join("filler"))?;
     for i in 0..400u64 {
         write_file(&root.join(format!("filler/filler-{i:03}.bin")), 256 << 10, 100_000 + i, &mut buf)?;
@@ -174,7 +176,7 @@ fn gen(root: &Path, manifest: &Path) -> io::Result<u8> {
         w.row([name.clone(), size.to_string(), sha_file(&p)?, (*m as u8).to_string()])?;
     }
     println!(
-        "產生 {} 個檔案，共 {:.0} MB，其中 {} 個會在刷新時被修改。耗時 {:.1} 秒。",
+        "Created {} files, {:.0} MB in total; {} of them will be modified during the refresh. Took {:.1} s.",
         files.len(),
         total as f64 / 1e6,
         files.iter().filter(|f| f.1).count(),
@@ -185,8 +187,9 @@ fn gen(root: &Path, manifest: &Path) -> io::Result<u8> {
 
 // ---------------- mutate ----------------
 
-/// ssd-refresh 在 Windows 檢查「有沒有別人在寫」時，會用不允許寫入的共用模式開檔一瞬間；剛好撞上會拿到共用衝突。
-/// 這裡重試並計數，用來量化對其他程式的影響。
+/// On Windows, ssd-refresh checks for other writers by opening the file for an instant with a
+/// sharing mode that denies writers; an open that hits that instant gets a sharing violation.
+/// Retry and count such cases, to measure the effect on other programs.
 fn retry<T>(mut f: impl FnMut() -> io::Result<T>) -> io::Result<T> {
     for i in 0.. {
         match f() {
@@ -230,7 +233,7 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
     let mut ops: HashMap<String, u64> = targets.iter().map(|t| (t.clone(), 0)).collect();
     let mut rng = Rng(4242);
 
-    // 3 個檔案一直開著寫（像資料庫或記錄檔），1 個用記憶體對應寫入
+    // 3 files stay open for writing (like a database or a log); 1 is written through a memory map
     let candidates: Vec<&String> = targets.iter().filter(|t| data[*t].len() >= 256 << 10).collect();
     let mut held: HashMap<String, File> = HashMap::new();
     for t in candidates.iter().enumerate().filter(|(i, _)| i % 5 == 1).map(|(_, t)| *t).take(3) {
@@ -241,7 +244,7 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
         Some(n) => Some(mmap::Map::new(&root.join(n), data[n].len())?),
         None => None,
     };
-    println!("修改程式開始：{} 個檔案，長期開著 {} 個，記憶體對應 {}。", targets.len(), held.len(), mm_name.as_deref().unwrap_or("無"));
+    println!("Mutator started: {} files, {} kept open, memory-mapped: {}.", targets.len(), held.len(), mm_name.as_deref().unwrap_or("none"));
 
     let t0 = Instant::now();
     let mut total = 0u64;
@@ -253,7 +256,7 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
         let seed = total * 31 + 7;
         let p = root.join(&t);
         if Some(&t) == mm_name.as_ref() {
-            // 記憶體對應：只改內容，不改大小
+            // memory map: change content only, never the size
             let off = rng.below(len);
             let n = (len - off).min(rng.range(1, 64 << 10)) as usize;
             fill(&mut chunk[..n], seed);
@@ -285,7 +288,7 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
         *ops.get_mut(&t).unwrap() += 1;
         total += 1;
         if total % 500 == 0 {
-            println!("  已修改 {total} 次（{:.0} 秒）", t0.elapsed().as_secs_f64());
+            println!("  {total} modifications ({:.0} s)", t0.elapsed().as_secs_f64());
         }
         std::thread::sleep(Duration::from_millis(2));
     }
@@ -296,19 +299,19 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
         f.sync_all()?;
     }
 
-    // 立刻自我檢查：磁碟上的內容應該等於記憶體裡記錄的最新版本
+    // Self-check right away: what is on disk must equal the latest version kept in memory.
     let mut bad = 0;
     let mut w = CsvWriter::create(expected_out, &["path", "size", "sha256", "ops"], false)?;
     for t in &targets {
         let want = sha_bytes(&data[t]);
         if sha_file(&root.join(t))? != want {
             bad += 1;
-            println!("  自我檢查不一致：{t}");
+            println!("  self-check mismatch: {t}");
         }
         w.row([t.clone(), data[t].len().to_string(), want, ops[t].to_string()])?;
     }
     println!(
-        "修改程式結束：共 {total} 次修改，{:.0} 秒；開檔遇到共用衝突後重試 {} 次；自我檢查不一致 {bad} 個。",
+        "Mutator finished: {total} modifications in {:.0} s; {} retries after sharing violations; {bad} self-check mismatches.",
         t0.elapsed().as_secs_f64(),
         SHARING_RETRIES.load(Ordering::Relaxed)
     );
@@ -328,7 +331,7 @@ fn verify(root: &Path, manifest: &Path, expected: &Path) -> io::Result<u8> {
         let p = root.join(&r["path"]);
         if !p.exists() {
             missing += 1;
-            println!("缺檔：{}", r["path"]);
+            println!("missing: {}", r["path"]);
             continue;
         }
         let is_mut = r["mutate"] == "1" && exp.contains_key(&r["path"]);
@@ -342,14 +345,14 @@ fn verify(root: &Path, manifest: &Path, expected: &Path) -> io::Result<u8> {
             }
         } else {
             bad += 1;
-            println!("不一致：{}（{}）", r["path"], if is_mut { "被修改的檔案，應為最新版本" } else { "未修改的檔案，應與原始相同" });
+            println!("MISMATCH: {} ({})", r["path"], if is_mut { "modified file; should be its latest version" } else { "untouched file; should equal the original" });
         }
     }
-    println!("驗證：未修改且一致 {same}、被修改且為最新版本 {mutated}、不一致 {bad}、缺檔 {missing}。");
+    println!("Verify: {same} untouched files identical, {mutated} modified files at their latest version, {bad} mismatches, {missing} missing.");
     Ok(if bad == 0 && missing == 0 { 0 } else { 1 })
 }
 
-// ---------------- 實體位置 ----------------
+// ---------------- physical location ----------------
 
 fn lcnmap(root: &Path, out: &Path) -> io::Result<u8> {
     let vol = sys::volume(root)?;
@@ -395,11 +398,11 @@ fn lcndiff(before: &Path, after: &Path) -> io::Result<u8> {
             overlap += 1;
         }
     }
-    println!("實體位置：非常駐檔 {non_resident}、位置改變 {moved}、完全沒動 {same}、新舊位置仍有重疊 {overlap}。");
+    println!("Location: {non_resident} files with data on disk, {moved} moved, {same} unchanged, {overlap} still overlapping their old place.");
     Ok(0)
 }
 
-// ---------------- 記憶體對應 ----------------
+// ---------------- memory map ----------------
 
 #[cfg(windows)]
 mod mmap {

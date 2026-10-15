@@ -1,223 +1,259 @@
 # ssd-refresh
 
-檔案層級的 SSD 刷新工具。它找出「讀起來特別慢的舊資料」，再請檔案系統把這些檔案搬到新的位置。搬移等於重寫一次，讀取速度就會恢復。
+Find the files on an SSD whose old data has become slow to read, and have the file system rewrite them.
 
-- 掃描只讀，不寫入任何東西。
-- 刷新由檔案系統執行搬移。正在使用中的檔案也能安全處理。
-- 程式不直接寫入磁區。
+- `scan` only reads. It changes nothing on the disk.
+- `refresh` asks the file system to move the slow files to new clusters. Files that are open and in use stay safe.
+- The tool never writes to the disk directly and never writes file data itself.
 
-## 為什麼需要它
+[繁體中文說明](README.zh-TW.md)
 
-NAND 快閃記憶體的電荷會隨時間流失。很久以前寫入、之後一直沒有改過的資料，SSD 要反覆重試、加強錯誤校正才讀得出來，速度就掉下來。
+## Why
 
-實例：一顆用了 5.4 年的 Crucial BX500 480 GB，讀多年前寫入的舊資料只有 5–35 MB/s。把同一份資料複製一次，新的複本讀取約 500 MB/s。
+Flash cells slowly lose charge. Data that was written long ago and never changed since can take the drive many retries and heavy error correction to read, so it reads slowly.
 
-DiskFresh 之類的工具用「讀出磁區再寫回」的方式刷新整顆磁碟，有兩個問題：
+Example: on a 5.4-year-old Crucial BX500 480 GB, files written years earlier read at 5–35 MB/s. A fresh copy of the same files read at about 500 MB/s.
 
-1. 系統碟上的檔案隨時在變。工具讀出一個磁區後，程式改了它，工具再寫回舊內容，就把新資料蓋掉了。
-2. 它連空白區域也寫，浪費 SSD 的寫入壽命，之後還要再做一次 TRIM。
+Whole-disk refreshers such as DiskFresh read every sector and write it back. That has two problems:
 
-ssd-refresh 改成檔案層級：只處理讀得慢的檔案，而且用檔案系統的重組 API 搬移。檔案系統會和其他程式的讀寫同步，所以不會發生上面的競態。
+1. On a disk in use, a program can change a sector after the tool has read it and before the tool writes it back. The write-back then restores old content over new data.
+2. Empty space is rewritten too. That costs drive endurance and needs a TRIM afterwards.
 
-## 支援的平台
+ssd-refresh works per file instead. It rewrites only files that are actually slow, and it uses the file system's own defragmentation API to do it. The file system coordinates the move with every other program that uses the file, so the race above cannot happen.
 
-| 平台 | 檔案系統 | 掃描 | 刷新 |
+## Platforms
+
+| Platform | File system | Scan | Refresh |
 |---|---|---|---|
-| Windows 10/11 | NTFS | 支援 | 支援（`FSCTL_MOVE_FILE`），已通過 VHDX 測試 |
-| Linux | ext4 | 支援 | 支援（`EXT4_IOC_MOVE_EXT`），尚未實機驗證 |
-| Linux | btrfs、XFS、其他 | 支援 | 不支援 |
-| macOS | APFS | 支援（不分 extent） | 不支援 |
+| Windows 10/11 | NTFS | yes | yes, `FSCTL_MOVE_FILE`; passed the VHDX test |
+| Linux | ext4 | yes | yes, `EXT4_IOC_MOVE_EXT`; not yet tested on a real system |
+| Linux | btrfs, XFS, others | yes | no |
+| macOS | APFS | yes (whole file timed as one piece) | no: APFS has no API that safely moves a file in use |
 
-macOS 不支援刷新的原因：APFS 沒有能安全搬移使用中檔案的 API。
+## Build
 
-## 建置
-
-需要 Rust 1.83 以上。
+Requires Rust 1.83 or newer.
 
 ```bash
 cargo build --release
 ```
 
-執行檔在 `target/release/ssd-refresh`（Windows 是 `.exe`），約 600 KB，不需要額外的執行階段。`refresh-test` 是測試用的輔助程式。
+The program is `target/release/ssd-refresh` (`ssd-refresh.exe` on Windows), about 600 KB, with no runtime to install. `refresh-test` is a helper for the safety test.
 
-## 用法
+## Quick start (Windows)
 
-### 1. 掃描（只讀，不需要系統管理員）
+Open PowerShell with "Run as administrator", then:
 
-```bash
+```powershell
 ssd-refresh scan C:\ --out C-scan.csv
-```
-
-- 程式會逐檔讀取，不經過系統快取，並記錄每個 extent 的讀取速度。
-- 低於 `--threshold`（預設 100 MB/s）的檔案標成慢。
-- 以系統管理員執行時，可以讀到權限受限的檔案。一般權限讀不到的檔案會記成 `ERROR`。
-- 加 `--hash` 會順便算每個檔案的 SHA256。
-
-### 2. 刷新（需要系統管理員／root）
-
-先用 `--dry-run` 看看哪些檔案會被處理。這一步只重新測速，不搬移：
-
-```bash
 ssd-refresh refresh --from C-scan.csv --dry-run
-```
-
-確定後才正式刷新。程式會列出摘要，要求輸入磁碟代號確認：
-
-```bash
 ssd-refresh refresh --from C-scan.csv --allow-system-volume
+Optimize-Volume -DriveLetter C -ReTrim
 ```
 
-- 刷新系統磁碟必須另外加 `--allow-system-volume`。
-- 預設只處理報告裡標成慢的檔案（`--select slow`）。刷新前程式會再測一次速，已經不慢的檔案會跳過。`--force` 會連快的也搬。
-- 做完後執行 TRIM，讓 SSD 回收舊位置：Windows 用 `Optimize-Volume -DriveLetter C -ReTrim`，Linux 用 `sudo fstrim -v /`。
+1. Scan the drive and write a report.
+2. Preview: re-measure the slow files without moving anything.
+3. Refresh. You type the drive letter to confirm before anything is moved.
+4. Tell the SSD that the old locations are free.
 
-### 暫停、停止與續跑
+On Linux use `sudo`, and `sudo fstrim -v /` in the last step.
 
-- 在終端機輸入 `p` 再按 Enter：暫停或繼續。
-- 輸入 `q` 再按 Enter，或按 Ctrl+C：做完目前的檔案後停止。再按一次 Ctrl+C 會立刻結束。立刻結束也不會損壞檔案，因為每一次搬移都是檔案系統的原子操作。
-- 建立「輸出檔名.pause」檔案也會暫停，刪掉就繼續。這個方式適合腳本控制。
-- 用同樣的指令加 `--resume` 可以從中斷處續跑。輸出的 CSV 每寫一列就存檔，它本身就是檢查點。
+`ssd-refresh help scan` and `ssd-refresh help refresh` explain every option, progress field and status.
 
-### 參數
+## Scan
 
-| 參數 | 預設 | 說明 |
+```
+ssd-refresh scan <folder or file> [--out report.csv] [--resume] [--hash] [--parallel 8]
+```
+
+A scan runs in three steps. Before each step the program prints what it will do.
+
+1. **Find files.** It walks the folder tree. It does not follow symbolic links, junctions or mount points, and it does not cross into other volumes.
+2. **Read every file once.** Each file is read straight from the disk, bypassing the OS cache, and the time for every extent (a contiguous piece of the file on disk) is measured. A file with an extent slower than `--threshold` (100 MB/s) becomes a **suspect**.
+3. **Re-check the suspects.** Each suspect is read again, alone, at normal I/O priority. This happens twice; the second round starts at least 30 s after the first. For each extent the fastest of the three reads counts. A file is **slow** only if it is still slow after that.
+
+### Suspects are not the result
+
+Step 2 is built for speed, and its timings are not reliable on their own:
+
+- **Several files are read at once.** Small files need a single request each, so reading them one by one would leave the drive's command queue nearly empty. Step 2 therefore reads 8 files at a time: files of 4 MiB or more one at a time (4 requests in flight each), smaller files 7 at a time. Reads that share the disk wait for each other. To compensate, every extent in step 2 is allowed 8 × 2 ms of extra latency; step 3 allows the normal 2 ms.
+- **Step 2 runs at very low I/O priority,** so other programs get the disk first. Windows throttles very-low-priority I/O whenever anything else uses the disk, so a healthy file can look slow.
+- **The drive itself can stall.** A DRAM-less SSD can slow every read for 10–20 seconds after it has been idle, while it does housekeeping.
+
+So step 2 only produces suspects. The progress line of step 2 counts suspects, not slow files. The number of slow files is known only after step 3, which repeats the measurement without that competition and at two different times.
+
+### Progress lines
+
+The line is redrawn in place and fits the terminal width. A wide terminal gets labelled fields; a narrow one gets a compact form.
+
+Step 2:
+
+```
+12.3%  35.2G of 290G  245 MB/s  suspects 17  errors 0  ETA 17m20s (done ~11:05)
+12.3% 35.2G/290G 245MB/s sus 17 17m20s
+```
+
+| Field | Meaning |
+|---|---|
+| `12.3%` | Share of the bytes to read that has been read |
+| `35.2G of 290G` | Bytes read / bytes to read (1G = 10^9 bytes) |
+| `245 MB/s` | Average speed since step 2 started |
+| `suspects 17` | Files that read slowly in this pass; not the final result |
+| `errors 0` | Files that could not be opened or read |
+| `ETA` | Time left at the average speed so far, and the clock time |
+
+Folders full of tiny files move the percentage slowly: those files hold few bytes, but each still has to be opened.
+
+Step 3:
+
+```
+Re-check 1/2  120 of 3,020 files  1.2G of 3.4G  still slow 15  ETA 2m10s
+```
+
+`still slow` counts the suspects checked so far in this round that are still slow.
+
+### Report columns
+
+| Column | Meaning |
+|---|---|
+| `path`, `size` | The file |
+| `kind` | `normal`, `sparse`, `encrypted`: measured, can be refreshed. `unknown`: measured, cannot be refreshed (macOS). `resident` (data inside the MFT or inode), `empty`, `compressed`, `wof` (Windows compressed system file), `shared` (reflink), `reparse`: not measured |
+| `extents` | Pieces of the file that have a place on disk |
+| `disk_bytes`, `read_ms`, `mbps` | Bytes read from the disk, time, average speed |
+| `min_extent_mbps` | Speed of the slowest extent |
+| `slow`, `slow_bytes` | 1 = slow after step 3; bytes in slow extents |
+| `confirmed` | 1 = the file was re-checked in step 3 |
+| `sha256` | With `--hash` |
+| `status` | `OK` (measured), `SKIP` (not measured, see `kind`), `DUP_LINK` (hard link to a file already measured), `ERROR` (see `error`) |
+
+## Refresh
+
+```
+ssd-refresh refresh --from report.csv [--dry-run] [--allow-system-volume] [--resume]
+```
+
+Needs administrator rights (Windows) or root (Linux).
+
+1. **Choose files and check the volume.** By default only files confirmed slow are taken (`--select all` takes every measured file). The file system and your rights are checked. The system volume requires `--allow-system-volume`.
+2. **Explain and confirm.** The program lists what will happen, how much data will be written, and any warnings (for example Windows restore points). You type the drive letter to continue; anything else cancels. `--confirm X:` skips the prompt for scripts.
+3. **Refresh**, one file at a time:
+   1. Read the file without the OS cache at normal priority; record SHA-256 and speed.
+   2. Skip it if it is no longer slow (`SKIP_FAST`), unless `--force`.
+   3. Ask the file system to move its data to free clusters, in pieces of up to 16 MiB. Each move is atomic: a piece is either fully moved or not moved at all.
+   4. Read it again; compare SHA-256; record the new speed.
+
+Progress line:
+
+```
+Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  ETA 3m20s
+```
+
+`moved` includes `changed`. `skipped` covers files no longer slow, not movable, gone, or a dry run. `failed` files could not be moved or read, but are intact.
+
+### Log statuses
+
+| Status | Meaning |
+|---|---|
+| `OK` | Moved; the hash is identical before and after |
+| `CHANGED` | Moved; another program wrote the file during the move, so the hash differs. Expected for files in use |
+| `SKIP_FAST` | No longer slow when re-measured; not moved |
+| `SKIP_KIND` | A kind that cannot be moved (see `detail`) |
+| `SKIP_MISSING` | The file no longer exists |
+| `DRYRUN` | `--dry-run`: measured only |
+| `MOVE_FAILED` | The file system refused a move; the file is intact |
+| `PARTIAL` | Stopped part way; `--resume` moves it again |
+| `MISMATCH` | The hash changed and no other writer was detected. The run stops at once. This should never happen; please report it |
+| `ERROR` | The file could not be opened or read (see `detail`) |
+
+### How a hash difference is explained
+
+When the hash differs, the program checks two things:
+
+- whether the file's size, modification time, change time or USN (NTFS) changed;
+- whether another program had it open for writing. On Windows the file is opened for an instant with a sharing mode that denies writers; on Linux a read lease (`F_SETLEASE`) is tried.
+
+If either is true, the status is `CHANGED`. Otherwise it is `MISMATCH`.
+
+## Pause, stop, resume
+
+- `p` + Enter pauses or resumes. Requests already sent finish first.
+- `q` + Enter, or Ctrl+C, stops after the files in progress. A second Ctrl+C quits at once. Quitting at any moment leaves every file intact.
+- Creating the file `<output>.pause` pauses until it is deleted.
+- Run the same command with `--resume` to continue. The report or log is saved row by row and is the checkpoint.
+
+## Options
+
+| Option | Default | Meaning |
 |---|---|---|
-| `--threshold` | 100 | 低於多少 MB/s 算慢（MB = 10^6 位元組） |
-| `--allowance-ms` | 2 | 每個 extent 容許的額外延遲 |
-| `--chunk-kb` | 1024 | 每個 I/O 的大小 |
-| `--qd` | 4 | 同時排隊的 I/O 數 |
-| `--priority` | verylow | 大量讀取與搬移的 I/O 優先權 |
-| `--measure-priority` | normal | 確認重讀與刷新前後測速的優先權 |
-| `--max-chunk-mb` | 16 | 刷新時每次搬移的最大長度 |
+| `--threshold` | 100 | An extent slower than this (MB/s, 10^6 bytes) is slow |
+| `--allowance-ms` | 2 | Extra time allowed per extent, so the fixed latency of tiny reads is not slowness |
+| `--parallel` | 8 | Files read at once in scan step 2 |
+| `--chunk-kb` | 1024 | Size of each read request |
+| `--qd` | 4 | Read requests in flight per file |
+| `--priority` | verylow | I/O priority of scan step 2 and of the moves |
+| `--measure-priority` | normal | I/O priority of scan step 3 and of the before/after reads |
+| `--max-chunk-mb` | 16 | Largest piece moved at once |
 
-`--allowance-ms` 的作用：小檔的讀取時間主要是固定延遲。例如 4 KB 讀 0.1 ms，換算只有 40 MB/s。程式判斷慢的條件是「時間 > 大小 ÷ 門檻 + 容許延遲」，小檔就不會被誤判。
+## How the move works
 
-## 輸出
+**Windows NTFS.** The program reads the volume's cluster bitmap (`FSCTL_GET_VOLUME_BITMAP`), skips the MFT zone, and moves each piece of the file with `FSCTL_MOVE_FILE` to a free run of clusters. If the target was taken in the meantime, it reloads the bitmap and tries elsewhere. This is the API the Windows defragmenter uses.
 
-### 掃描報告的狀態（`status` 欄）
+**Linux ext4.** The program creates an unnamed temporary "donor" file on the same file system (`O_TMPFILE`), preallocates space in it, and swaps the data blocks with `EXT4_IOC_MOVE_EXT`, the API used by `e4defrag`. The kernel locks the file's pages during the swap. Closing the donor frees the old blocks.
 
-| 狀態 | 意思 |
+## Limitations
+
+- Refresh supports Windows NTFS and Linux ext4 only.
+- Not moved: NTFS-compressed files, WOF-compressed system files, files small enough to live inside the MFT, file system metadata, directory indexes and alternate data streams.
+- Files the system holds exclusively (`pagefile.sys`, `hiberfil.sys`) cannot be opened and are recorded as `ERROR`.
+- Speed is a measurement. Other programs' disk activity affects it; step 3 reduces that but cannot remove it entirely.
+
+## Risks
+
+Back up important data first.
+
+- **Restore points.** Moving clusters grows the difference area of Windows shadow copies, and Windows may delete old restore points to make room. Refresh shows how many shadow copies exist before it starts.
+- **Writes.** Refresh writes every slow file once. SSD endurance is finite; do not refresh whole drives often.
+- **Sharing check.** On Windows, the writer check opens the file for an instant with a mode that denies writers. A program that tries to open the file for writing in exactly that instant gets a sharing violation. In the VHDX test, 11,610 writes from another program never hit it.
+- **Background load.** Refresh keeps the disk busy. Moves use very low I/O priority so other programs go first.
+- **Untested platform.** Linux ext4 refresh compiles but has not yet been tested on a real system.
+
+## Safety test (Windows)
+
+The test runs on a 4 GB VHDX, never on a real drive. Steps 2–4 need PowerShell as administrator.
+
+1. Build as a normal user: `cargo build --release`.
+2. Create and mount the VHDX: `test\vhdx-create.ps1`.
+3. Run the test: `test\run-vhdx-test.ps1`.
+4. Detach: `test\vhdx-detach.ps1`.
+
+The test:
+
+1. creates 711 files, about 1.9 GB (0 B to 200 MB, including deliberately fragmented files), and records their SHA-256;
+2. remounts the VHDX to empty the cache, scans it and compares the hashes;
+3. starts a program that keeps modifying about a tenth of the files: open-write-close, writes through handles held open, memory-mapped writes, appends and truncations;
+4. refreshes every file, stops after 150 files, resumes with `--resume`, and pauses for 6 s on the way;
+5. stops the modifying program, remounts, and verifies: untouched files must be identical, modified files must hold their latest version;
+6. checks that every file's data moved, that moving did not change timestamps or USNs, and runs `chkdsk /scan`.
+
+### Result (2026-10-15, Windows 10 22H2, VHDX on an NVMe SSD)
+
+All 15 checks passed.
+
+| Item | Result |
 |---|---|
-| `OK` | 已測速。`slow` = 1 表示慢 |
-| `SKIP` | 不測速的種類，見 `kind` 欄 |
-| `DUP_LINK` | 硬連結，同一個檔案已經掃過 |
-| `ERROR` | 開不了或讀不了，原因在 `error` 欄 |
+| Untouched files | 660, identical to the original after the refresh |
+| Files modified during the refresh | 51, all at their latest version |
+| Modifications during the refresh | 11,610 in 41 s |
+| Files moved | 646, 1,799 MB; every file's data is at a new place |
+| Final statuses | OK 639, CHANGED 7, MISMATCH 0 |
+| Stop, resume, pause | Worked; no file processed twice |
+| `chkdsk /scan` | No problems |
 
-`kind` 欄的值：`normal`、`sparse`（稀疏檔）、`encrypted`（EFS 加密）可以刷新。`resident`（資料放在 MFT 或 inode 裡的小檔）、`compressed`（NTFS 壓縮）、`wof`（Windows 系統壓縮檔）、`shared`（reflink 共用）、`reparse`、`empty` 不刷新。
+- Moving does not change a file's timestamps or USN: no untouched file was reported as changed.
+- The 7 `CHANGED` files were large files (up to 199 MB) written during their move; each was detected through its timestamps or USN.
+- The modifying program never hit a sharing violation.
+- One move target was taken in the meantime; the program reloaded the bitmap and succeeded.
 
-### 刷新記錄的狀態
+## License
 
-| 狀態 | 意思 |
-|---|---|
-| `OK` | 搬移完成，前後雜湊一致 |
-| `CHANGED` | 搬移期間有其他程式修改檔案，雜湊不同屬於正常 |
-| `SKIP_FAST` | 重新測速後已經不慢，沒有搬 |
-| `SKIP_KIND` | 不支援的種類 |
-| `MOVE_FAILED` | 檔案系統拒絕搬移；檔案內容仍完整 |
-| `PARTIAL` | 被停止，只搬了一部分；續跑時會重做 |
-| `MISMATCH` | 雜湊不同，而且沒有偵測到其他程式寫入。程式會立刻停止 |
-| `ERROR` | 其他錯誤 |
-
-`before_mbps`、`after_mbps` 是搬移前後的讀取速度。
-
-## 原理
-
-### 掃描
-
-1. 列出資料夾底下的檔案，不進入符號連結、junction 和掛載點，也不跨到別的磁碟區。
-2. 查出每個檔案的 extent。Windows 用 `FSCTL_GET_RETRIEVAL_POINTERS`，Linux 用 `FIEMAP`。
-3. 不經系統快取讀取。Windows 用 `FILE_FLAG_NO_BUFFERING`，Linux 用 `O_DIRECT`，macOS 用 `F_NOCACHE`。每次同時排 4 個 1 MB 的讀取：Windows 用 overlapped I/O，Unix 用多條執行緒的 `pread`。
-4. 依完成時間算出每個 extent 的讀取時間。
-5. 第一次讀起來慢的檔案先記下來。整輪掃完後用 normal 優先權確認一次，至少 30 秒後再確認一次。三次讀取取最快的結果，仍然慢才算慢。
-
-### 刷新（Windows NTFS）
-
-1. 讀整個磁碟區的叢集點陣圖（`FSCTL_GET_VOLUME_BITMAP`），排除 MFT 保留區。
-2. 不經快取讀一次檔案，記下 SHA256 和速度。
-3. 依邏輯位置順序，每次最多 16 MB，用 `FSCTL_MOVE_FILE` 搬到空的叢集。目標位置被別人搶先用掉時，程式重新讀點陣圖再試。
-4. 再讀一次檔案，比對 SHA256，並記錄新的速度。
-
-`FSCTL_MOVE_FILE` 是 Windows 磁碟重組工具用的 API。NTFS 會鎖住該範圍、複製資料、更新配置，整個過程對其他程式的讀寫是一致的。
-
-### 刷新（Linux ext4）
-
-程式在同一個檔案系統建立一個暫存的「捐贈檔」（`O_TMPFILE`），先預先配置空間，再用 `EXT4_IOC_MOVE_EXT` 交換資料區塊。這和 `e4defrag` 用的是同一個 API，核心會和其他程式的讀寫同步。
-
-### 怎麼判斷雜湊不同是正常的
-
-搬移前後雜湊不同時，程式會檢查兩件事：
-
-- 檔案的大小、修改時間、變更時間、USN（NTFS）有沒有變。
-- 有沒有別的程式開著寫入。Windows 用「不允許別人寫入」的共用模式開檔一瞬間測試。Linux 用讀取租約（`F_SETLEASE`）測試。
-
-有任何一項成立，就記成 `CHANGED`。都不成立就記成 `MISMATCH`，程式立刻停止。
-
-## 限制
-
-- 刷新只支援 Windows NTFS 和 Linux ext4。
-- 不處理 NTFS 壓縮檔、WOF 壓縮的系統檔、MFT 裡的小檔、檔案系統的中繼資料、資料夾索引和替代資料流。
-- `pagefile.sys`、`hiberfil.sys` 這類被系統獨占的檔案打不開，會記成 `ERROR`。
-- 速度判斷是統計結果，會受其他程式的 I/O 影響。詳見下一節。
-
-## 測速的陷阱（實測發現）
-
-1. **VeryLow 優先權會讓測速失真。** 同一批檔案用 normal 優先權讀幾乎都超過 100 MB/s，用 verylow 讀卻有 10–80 MB/s 的假性慢檔。所以程式用 verylow 做第一輪，用 normal 確認。
-2. **VeryLow 的讀取可能被餓死。** 其他程式大量寫入同一顆磁碟時（實例：rustup 解壓上萬個小檔），verylow 讀取可能好幾分鐘都拿不到磁碟，進度看起來像卡住。這是背景優先權的正常行為。需要持續前進時改用 `--priority low`。
-3. **SSD 閒置後的第一輪會變慢。** 沒有 DRAM 的 SSD 閒置一段時間後會做內部整理。這時主機讀取會被拖慢 10–20 秒，期間被讀的檔案全部都慢。立刻重讀也還在這段時間內，所以程式等整輪掃完再確認，第二次確認至少隔 30 秒。
-
-## 風險
-
-使用前請先備份重要資料。
-
-- **陰影複製（還原點）**：搬移叢集會讓 Windows 陰影複製的差異區變大，舊的還原點可能被自動刪除。刷新前程式會顯示目前有幾份陰影複製。
-- **寫入量**：刷新會把慢的檔案完整寫一次。SSD 的寫入壽命有限，不要頻繁地對整顆磁碟執行。
-- **共用衝突**：Windows 上偵測其他寫入者時，程式會用「不允許別人寫入」的模式開檔一瞬間。如果剛好有程式在這一瞬間要開檔寫入，對方會收到共用衝突。VHDX 測試有量這個影響，見測試結果。
-- **背景負載**：刷新期間磁碟會比較忙。預設用最低的 I/O 優先權，讓其他程式優先。
-- **未驗證的平台**：Linux ext4 的刷新還沒在實機上驗證，只通過編譯檢查。
-
-## 測試
-
-### Windows：VHDX 安全驗證
-
-測試在一個 4 GB 的 VHDX 上進行，不碰真正的磁碟。步驟 2–4 需要系統管理員 PowerShell。
-
-1. 用一般權限建置：`cargo build --release`。
-2. 建立並掛載 VHDX：`& test\vhdx-create.ps1`。
-3. 執行完整測試：`& test\run-vhdx-test.ps1`。
-4. 測完卸載：`& test\vhdx-detach.ps1`。
-
-`run-vhdx-test.ps1` 會依序做這些事：
-
-1. 產生 711 個測試檔，共約 1.9 GB（0 B 到 200 MB，含刻意做出的碎片檔），記錄 SHA256。
-2. 重新掛載 VHDX 清掉快取，掃描並比對雜湊。
-3. 啟動修改程式，持續改寫約一成的檔案。修改方式有開關檔寫入、長期開著寫入、記憶體對應寫入、追加、截短。
-4. 刷新全部檔案，在第 150 個檔案時中斷，再用 `--resume` 續跑，途中暫停 6 秒。
-5. 停止修改程式，重新掛載後驗證：沒被修改的檔案雜湊必須完全一致，被修改的檔案必須是最新版本。
-6. 檢查實體位置確實改變、搬移不會改動時間戳記，再執行 `chkdsk /scan`。
-
-結果寫在 `output\vhdx-test-<時間>\summary.md`。
-
-### 測試結果（2026-10-15，Windows 10 22H2，VHDX 放在 NVMe SSD 上）
-
-15 項檢查全部通過。
-
-| 項目 | 結果 |
-|---|---|
-| 未修改的檔案 | 660 個，刷新後雜湊與原始完全一致 |
-| 被持續修改的檔案 | 51 個，內容都是最新版本 |
-| 刷新期間的修改次數 | 11,610 次（41 秒） |
-| 搬移的檔案 | 646 個，共 1,799 MB，實體位置全部改變 |
-| 最終狀態 | OK 639、CHANGED 7、MISMATCH 0 |
-| 中斷、續跑、暫停 | 正常，沒有重複處理 |
-| chkdsk /scan | 沒有發現問題 |
-
-補充說明：
-
-- 搬移本身不會改動檔案的時間戳記或 USN。未修改的檔案沒有一個被誤判成「有變動」。
-- 7 個 `CHANGED` 都是搬移途中被修改的大檔（最大 199 MB），程式都靠時間戳記或 USN 偵測到了變動。
-- 修改程式開檔時遇到共用衝突 0 次。偵測寫入者時的瞬間開檔，在這次測試中沒有影響到其他程式。
-- 搬移時發生 1 次目標位置失敗，程式重新讀點陣圖後成功。
-
-## 授權
-
-尚未選定。開源前請加上 LICENSE 檔案。
+Not chosen yet.

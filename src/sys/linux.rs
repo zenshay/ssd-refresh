@@ -1,4 +1,4 @@
-//! Linux：O_DIRECT 讀取、FIEMAP 查配置、ext4 的 EXT4_IOC_MOVE_EXT 搬移（e4defrag 用的同一個 API）。
+//! Linux: O_DIRECT reads, FIEMAP layouts, and ext4 moves with EXT4_IOC_MOVE_EXT (the API e4defrag uses).
 
 use super::{MoveStats, RelocOptions};
 use crate::common::{Extent, Layout, Meta, Priority, VolumeInfo};
@@ -34,7 +34,8 @@ struct MoveExtent {
     moved_len: u64,
 }
 
-/// 不經頁快取讀取。檔案系統不支援 O_DIRECT（例如 tmpfs）時改用一般讀取，測速會偏快。
+/// Reads that bypass the page cache. Falls back to normal reads where O_DIRECT is not
+/// supported (for example tmpfs); timings are then optimistic.
 pub fn open_direct(p: &Path) -> io::Result<File> {
     match OpenOptions::new().read(true).custom_flags(libc::O_DIRECT | libc::O_NOATIME).open(p) {
         Ok(f) => Ok(f),
@@ -44,7 +45,8 @@ pub fn open_direct(p: &Path) -> io::Result<File> {
     }
 }
 
-/// 用讀取租約判斷有沒有別人開著寫入：有寫入者時 F_SETLEASE(F_RDLCK) 會回 EAGAIN。取得後立刻釋放。
+/// Uses a read lease to detect writers: F_SETLEASE(F_RDLCK) fails with EAGAIN while anyone has the
+/// file open for writing. The lease is released at once.
 pub fn has_other_writers(p: &Path) -> Option<bool> {
     let f = File::open(p).ok()?;
     let r = unsafe { libc::fcntl(f.as_raw_fd(), libc::F_SETLEASE, libc::F_RDLCK) };
@@ -81,7 +83,7 @@ pub fn layout(f: &File, m: &Meta, _block: u64) -> io::Result<Layout> {
         let mapped = unsafe { *(b.add(20) as *const u32) } as usize;
         if mapped == 0 {
             if m.size > 0 && l.extents.is_empty() && start == 0 {
-                // 沒有任何 extent：整個檔案是空洞
+                // no extents at all: the whole file is a hole
             }
             return Ok(l);
         }
@@ -114,19 +116,19 @@ pub fn layout(f: &File, m: &Meta, _block: u64) -> io::Result<Layout> {
     }
 }
 
-/// 這個執行緒的 I/O 優先權（ioprio_set）
+/// I/O priority of this thread (ioprio_set).
 pub fn set_thread_io_priority(p: Priority) {
     let prio = match p {
         Priority::VeryLow => 3 << 13,     // IOPRIO_CLASS_IDLE
-        Priority::Low => (2 << 13) | 7,   // BE，最低等級
-        Priority::Normal => (2 << 13) | 4, // BE，預設等級
+        Priority::Low => (2 << 13) | 7,   // best effort, lowest level
+        Priority::Normal => (2 << 13) | 4, // best effort, default level
     };
     unsafe { libc::syscall(libc::SYS_ioprio_set, 1, 0, prio) };
 }
 
 fn fs_name(t: i64) -> String {
     match t {
-        0xEF53 => "ext4".into(), // ext2/3/4 共用；只有 ext4 支援 MOVE_EXT，執行時會再驗證
+        0xEF53 => "ext4".into(), // shared by ext2/3/4; only ext4 supports MOVE_EXT, which the move itself checks
         0x9123_683E => "btrfs".into(),
         0x5846_5342 => "xfs".into(),
         0x0102_1994 => "tmpfs".into(),
@@ -141,7 +143,7 @@ fn fs_name(t: i64) -> String {
 pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
     let abs = std::fs::canonicalize(p)?;
     let dev = std::fs::metadata(&abs)?.dev();
-    // 往上找，直到上一層是不同的裝置：那就是掛載點
+    // walk up until the parent is on another device: that is the mount point
     let mut root = if abs.is_dir() { abs.clone() } else { abs.parent().unwrap_or(&abs).to_path_buf() };
     while let Some(parent) = root.parent() {
         if std::fs::metadata(parent)?.dev() != dev {
@@ -179,10 +181,10 @@ fn mount_source(root: &Path) -> Option<String> {
 
 pub fn refresh_check(v: &VolumeInfo) -> Result<(), String> {
     if v.fs != "ext4" {
-        return Err(format!("Linux 上目前只支援 ext4，這個磁碟區是 {}。", v.fs));
+        return Err(format!("On Linux only ext4 is supported so far; this volume is {}.", v.fs));
     }
     if !super::is_elevated() {
-        return Err(format!("【需要 root】刷新要搬移資料區塊。{}", super::ELEVATION_HINT));
+        return Err(format!("Root is needed to move data blocks. {}", super::ELEVATION_HINT));
     }
     Ok(())
 }
@@ -192,11 +194,12 @@ pub fn refresh_warnings(_v: &VolumeInfo) -> Vec<String> {
 }
 
 pub fn retrim_hint(v: &VolumeInfo) -> String {
-    format!("建議做完後執行 sudo fstrim -v {}，讓 SSD 回收舊位置。", v.root.display())
+    format!("tell the SSD the old places are free: sudo fstrim -v {}", v.root.display())
 }
 
-/// 用 EXT4_IOC_MOVE_EXT 把檔案資料搬到暫存「捐贈檔」預先配置的新區塊。
-/// 核心會鎖住檔案的頁面與 inode，和其他程式的讀寫同步，所以使用中的檔案也安全（e4defrag 就是這樣做）。
+/// Moves a file's data into new blocks preallocated in a temporary donor file, using EXT4_IOC_MOVE_EXT.
+/// The kernel locks the file's pages and inode, so the move is consistent with other programs'
+/// reads and writes and files in use are safe (this is how e4defrag works).
 pub struct Relocator {
     root: PathBuf,
     block: u64,
@@ -210,7 +213,7 @@ impl Relocator {
 
     pub fn relocate(&mut self, path: &Path, _file: &File, layout: &Layout, ctl: &Control, st: &mut MoveStats, _log: &dyn Fn(&str)) -> io::Result<bool> {
         let bs = self.block;
-        // MOVE_EXT 要求原檔以讀寫模式開啟；這裡不會寫入任何內容
+        // MOVE_EXT requires the original to be open for reading and writing; nothing is written here
         let orig = OpenOptions::new().read(true).write(true).open(path)?;
         let size = orig.metadata()?.len();
         let c = CString::new(self.root.as_os_str().as_bytes()).unwrap();
@@ -249,13 +252,16 @@ impl Relocator {
                     continue;
                 }
                 if me.moved_len == 0 {
-                    break; // 超過檔尾（檔案在途中變小）
+                    break; // past the end (the file shrank meanwhile)
                 }
                 start += me.moved_len;
                 st.moved_bytes += me.moved_len * bs;
                 st.moves += 1;
             }
         }
-        Ok(true) // donor 關閉時，舊的區塊（現在屬於 donor）會被釋放
+        Ok(true) // closing the donor frees the old blocks, which now belong to it
     }
 }
+
+/// How refresh moves data on this platform (shown before a refresh starts).
+pub const MOVE_METHOD: &str = "EXT4_IOC_MOVE_EXT, the ext4 online defragmentation API used by e4defrag";

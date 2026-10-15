@@ -1,4 +1,4 @@
-//! Linux 與 macOS 共用的部分：stat、權限判斷、用執行緒池做的讀取佇列。
+//! Shared by Linux and macOS: stat, privilege check, and a read queue built on threads.
 
 use super::AlignedBuf;
 use crate::common::{Meta, Priority, VolumeInfo};
@@ -28,13 +28,33 @@ pub fn meta(f: &File) -> io::Result<Meta> {
     })
 }
 
+/// Width of the terminal in columns, if stdout is a terminal.
+pub fn terminal_width() -> Option<usize> {
+    let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+    if unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) } != 0 || ws.ws_col == 0 {
+        return None;
+    }
+    Some(ws.ws_col as usize)
+}
+
+/// Local wall-clock time `secs` from now, as "HH:MM".
+pub fn local_clock_after(secs: u64) -> Option<String> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() + secs;
+    let t = now as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
+        return None;
+    }
+    Some(format!("{:02}:{:02}", tm.tm_hour, tm.tm_min))
+}
+
 pub fn is_elevated() -> bool {
     unsafe { libc::geteuid() == 0 }
 }
 
 pub fn enable_privileges() {}
 
-pub const ELEVATION_HINT: &str = "請用 sudo 執行。";
+pub const ELEVATION_HINT: &str = "Run it with sudo.";
 
 pub fn dev_of(m: &std::fs::Metadata) -> Option<u64> {
     Some(m.dev())
@@ -48,7 +68,7 @@ pub fn volume_label(v: &VolumeInfo) -> String {
     v.root.to_string_lossy().into_owned()
 }
 
-/// Unix 的 I/O 優先權是跟著執行緒，不是跟著檔案；這裡什麼都不做，由 IoQueue::set_priority 處理。
+/// On Unix the I/O priority belongs to the thread, not the file; IoQueue::set_priority handles it.
 pub fn set_file_priority(_f: &File, _p: Priority) {}
 
 enum Job {
@@ -56,7 +76,7 @@ enum Job {
     Prio(Priority),
 }
 
-/// 每個 slot 一條工作執行緒，各自用 pread 讀，達到同時排多個 I/O 的效果。
+/// One worker thread per slot, each using pread, so several reads are in flight at once.
 pub struct IoQueue {
     bufs: Vec<AlignedBuf>,
     tx: Vec<Sender<Job>>,
@@ -99,7 +119,7 @@ impl IoQueue {
         self.bufs[slot].as_slice()
     }
 
-    /// 讓所有工作執行緒改用這個 I/O 優先權
+    /// Switch all worker threads to this I/O priority.
     pub fn set_priority(&mut self, p: Priority) {
         for t in &self.tx {
             let _ = t.send(Job::Prio(p));
@@ -111,17 +131,17 @@ impl IoQueue {
         assert!(len <= b.len());
         self.tx[slot]
             .send(Job::Read { slot, fd: f.as_raw_fd(), ptr: b.as_mut_ptr() as usize, len, offset })
-            .map_err(|_| io::Error::other("讀取執行緒已結束"))
+            .map_err(|_| io::Error::other("reader thread has exited"))
     }
 
     pub fn wait_any(&mut self) -> (usize, io::Result<usize>, Instant) {
-        self.rx.recv().expect("讀取執行緒已結束")
+        self.rx.recv().expect("reader thread has exited")
     }
 }
 
 impl Drop for IoQueue {
     fn drop(&mut self) {
-        self.tx.clear(); // 關掉通道，工作執行緒會結束
+        self.tx.clear(); // closing the channels ends the worker threads
         for w in self.workers.drain(..) {
             let _ = w.join();
         }
@@ -144,7 +164,7 @@ fn pread_full(fd: RawFd, ptr: *mut u8, len: usize, offset: u64) -> io::Result<us
         }
         total += n as usize;
         if n as usize % 4096 != 0 {
-            break; // 檔尾
+            break; // end of file
         }
     }
     Ok(total)

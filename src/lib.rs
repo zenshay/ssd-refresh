@@ -1,8 +1,9 @@
-//! ssd-refresh：檔案層級的 SSD 刷新工具。
+//! ssd-refresh: file-level SSD refresh.
 //!
-//! 掃描：逐檔不經系統快取讀取，記錄每個 extent 的速度，找出讀得慢的舊資料。
-//! 刷新：請檔案系統把慢的檔案搬到新的位置（NTFS 用 FSCTL_MOVE_FILE，ext4 用 EXT4_IOC_MOVE_EXT），
-//! 由檔案系統負責和其他程式的讀寫同步，所以使用中的檔案也安全。
+//! `scan` reads every file straight from the disk, times every extent and finds data
+//! that reads slowly. `refresh` asks the file system to move those files to new
+//! clusters (NTFS: FSCTL_MOVE_FILE; ext4: EXT4_IOC_MOVE_EXT). The file system keeps the
+//! move consistent with other programs' reads and writes, so files in use are safe.
 
 pub mod common;
 pub mod control;

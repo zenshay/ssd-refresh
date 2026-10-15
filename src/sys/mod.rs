@@ -1,11 +1,11 @@
-//! 平台相關的部分。每個平台提供同樣的一組函式：
+//! Platform-specific code. Every platform provides the same set of items:
 //!
-//! - `open_meta`：只查屬性的 handle（查配置、搬移用）
-//! - `open_direct`：不經系統快取的讀取 handle
-//! - `meta`、`layout`：檔案資訊與磁碟配置
-//! - `volume`：檔案所在的磁碟區
-//! - `IoQueue`：可以同時排多個讀取的佇列
-//! - `Relocator`：請檔案系統把檔案搬到新位置（只有支援的檔案系統有作用）
+//! - `open_meta`: a handle for attributes only (layout queries, moves)
+//! - `open_direct`: a read handle that bypasses the OS cache
+//! - `meta`, `layout`: file information and on-disk layout
+//! - `volume`: the volume a path is on
+//! - `IoQueue`: keeps several reads in flight at once
+//! - `Relocator`: asks the file system to move a file's data (supported file systems only)
 
 use std::alloc::{alloc_zeroed, dealloc, Layout as AllocLayout};
 
@@ -29,7 +29,7 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use self::macos::*;
 
-/// 設定讀取這個檔案時的 I/O 優先權（Windows 設在 handle 上，Unix 設在讀取執行緒上）
+/// I/O priority for reading this file (set on the handle on Windows, on the reader threads on Unix).
 pub fn set_read_priority(q: &mut IoQueue, f: &std::fs::File, p: crate::common::Priority) {
     set_file_priority(f, p);
     q.set_priority(p);
@@ -44,11 +44,11 @@ pub struct MoveStats {
 
 #[derive(Clone, Debug)]
 pub struct RelocOptions {
-    /// 每次搬移的最大長度（位元組）
+    /// Largest piece moved at once, in bytes
     pub max_chunk: u64,
 }
 
-/// 4096 位元組對齊的緩衝區。不經快取的 I/O 要求緩衝區對齊磁區大小。
+/// A buffer aligned to 4096 bytes. Uncached I/O needs sector-aligned buffers.
 pub struct AlignedBuf {
     ptr: *mut u8,
     len: usize,
@@ -60,7 +60,7 @@ impl AlignedBuf {
     pub fn new(len: usize) -> AlignedBuf {
         let layout = AllocLayout::from_size_align(len.max(4096), 4096).unwrap();
         let ptr = unsafe { alloc_zeroed(layout) };
-        assert!(!ptr.is_null(), "記憶體不足");
+        assert!(!ptr.is_null(), "out of memory");
         AlignedBuf { ptr, len: len.max(4096) }
     }
     pub fn as_slice(&self) -> &[u8] {

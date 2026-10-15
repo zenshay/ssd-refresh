@@ -1,8 +1,9 @@
-//! 暫停與停止。
+//! Pause and stop.
 //!
-//! - 在終端機輸入 p 再按 Enter：暫停／繼續；輸入 q 再按 Enter：做完目前的檔案後停止。
-//! - 在輸出檔旁邊建立「輸出檔名.pause」：暫停；刪掉就繼續（方便腳本控制）。
-//! - Ctrl+C：做完目前的檔案後停止；再按一次立刻結束。
+//! - Type `p` and press Enter: pause / resume.
+//! - Type `q` and press Enter, or press Ctrl+C: stop after the current file.
+//!   Press Ctrl+C again to quit at once (safe: every move is atomic in the file system).
+//! - Create the file `<output>.pause`: pause until it is deleted (handy for scripts).
 
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -35,6 +36,7 @@ impl Control {
         })
     }
 
+    /// Where messages go (the progress display sets this so they appear above its line).
     pub fn set_logger(&self, f: Logger) {
         *self.log.lock().unwrap() = Some(f);
     }
@@ -57,7 +59,7 @@ impl Control {
         self.key_paused.load(Ordering::Relaxed) || self.file_paused.load(Ordering::Relaxed)
     }
 
-    /// 暫停中就等；回傳等了多久（停止時立刻返回）
+    /// Blocks while paused; returns how long it waited (returns at once when stopping).
     pub fn wait_while_paused(&self) -> Duration {
         let t = Instant::now();
         while self.is_paused() && !self.stopped() {
@@ -74,14 +76,14 @@ impl Control {
         self.stop.store(true, Ordering::Relaxed);
     }
 
-    /// 安裝 Ctrl+C 處理與鍵盤指令。stdin 不是終端機時不讀鍵盤。
+    /// Installs the Ctrl+C handler and, when stdin is a terminal, the p/q commands.
     pub fn install(self: &Arc<Self>) {
         let c = self.clone();
         let _ = ctrlc::set_handler(move || {
             if c.stopped() {
-                std::process::exit(130); // 第二次 Ctrl+C：搬移是檔案系統的原子操作，立刻結束也不會損壞檔案
+                std::process::exit(130); // second Ctrl+C: quit now; every move is atomic, so files stay intact
             }
-            c.say("收到 Ctrl+C：做完目前的檔案後停止（再按一次立刻結束）。");
+            c.say("Ctrl+C: stopping after the current file (press again to quit at once).");
             c.request_stop();
         });
         use std::io::IsTerminal;
@@ -96,10 +98,14 @@ impl Control {
                     "p" => {
                         let now = !c.key_paused.load(Ordering::Relaxed);
                         c.key_paused.store(now, Ordering::Relaxed);
-                        c.say(if now { "已暫停，輸入 p 再按 Enter 繼續。" } else { "繼續。" });
+                        c.say(if now {
+                            "Paused. Requests already sent finish first. Type p + Enter to resume."
+                        } else {
+                            "Resumed."
+                        });
                     }
                     "q" => {
-                        c.say("收到 q：做完目前的檔案後停止。");
+                        c.say("Stopping after the current file...");
                         c.request_stop();
                     }
                     _ => {}

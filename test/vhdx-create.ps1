@@ -1,6 +1,6 @@
-﻿#Requires -RunAsAdministrator
-# 【需要系統管理員】建立並掛載測試用 VHDX（動態擴充、NTFS、叢集 4 KB）。
-# 用法：& F:\ai-lab\repos\ssd-refresh\test\vhdx-create.ps1 [-SizeMB 4096] [-Letter T]
+#Requires -RunAsAdministrator
+# [Administrator] Create and attach the test VHDX (dynamically expanding, NTFS, 4 KB clusters).
+# Usage: test\vhdx-create.ps1 [-SizeMB 4096] [-Letter T]
 param(
     [string]$Path = (Join-Path $PSScriptRoot '..\scratch\test.vhdx'),
     [int]$SizeMB = 4096,
@@ -9,22 +9,23 @@ param(
 $ErrorActionPreference = 'Stop'
 $Path = [IO.Path]::GetFullPath($Path)
 if (Test-Path $Path) {
-    throw "已經有 $Path。要重建請先執行 vhdx-detach.ps1，再自己刪掉這個檔案。"
+    throw "$Path already exists. To recreate it, run vhdx-detach.ps1 and delete the file yourself."
 }
 if (-not $Letter) {
     $used = (Get-PSDrive -PSProvider FileSystem).Name
     $Letter = 'TUVWXYZRS'.ToCharArray() | Where-Object { $used -notcontains "$_" } | Select-Object -First 1
 }
-Write-Host "建立 $Path（$SizeMB MB），掛載到 ${Letter}:"
+Write-Host "Creating $Path ($SizeMB MB), drive ${Letter}:"
 $dp = Join-Path $env:TEMP 'ssd-refresh-create-vdisk.txt'
 "create vdisk file=`"$Path`" maximum=$SizeMB type=expandable" | Set-Content $dp -Encoding ascii
 diskpart /s $dp | Out-Host
 Remove-Item $dp
 $disk = Mount-DiskImage -ImagePath $Path -PassThru | Get-Disk
 Initialize-Disk -Number $disk.Number -PartitionStyle GPT
-# 先格式化再指派磁碟代號：未格式化的磁碟區一有代號，檔案總管就會跳出「要格式化嗎」的視窗
+# Format first, then assign the letter: as soon as an unformatted volume gets a letter,
+# Explorer pops up a "format this disk?" dialog.
 $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize
 Format-Volume -Partition $part -FileSystem NTFS -NewFileSystemLabel SSDTEST -AllocationUnitSize 4096 -Confirm:$false | Out-Host
 $part | Set-Partition -NewDriveLetter $Letter
 Set-Content (Join-Path $PSScriptRoot '..\scratch\vhdx-letter.txt') $Letter
-Write-Host "完成：${Letter}:（標籤 SSDTEST）"
+Write-Host "Done: ${Letter}: (label SSDTEST)"
