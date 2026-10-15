@@ -373,11 +373,16 @@ pub fn print_summary(path: &Path, threshold: f64) -> io::Result<()> {
         rows.iter().filter(|r| r["status"] == "SKIP" || r["status"] == "DUP_LINK").count(),
         rows.iter().filter(|r| r["status"] == "ERROR").count()
     );
-    let mut big: Vec<_> = ok.iter().filter(|r| num(r, "disk_bytes") >= 1e6).collect();
-    big.sort_by(|a, b| num(a, "mbps").total_cmp(&num(b, "mbps")));
-    println!("門檻 {threshold} MB/s。最慢的 10 個（大於 1 MB）：");
-    for r in big.iter().take(10) {
-        println!("  {:7.1} MB/s  {:>6}  {}", num(r, "mbps"), fmt_bytes(num(r, "size") as u64), r["path"]);
+    // 只列確認過的慢檔；碎成很多小段的檔案（例如持續追加的記錄檔）平均速度低，但不一定慢
+    let mut list: Vec<_> = slow.clone();
+    list.sort_by(|a, b| num(b, "slow_bytes").total_cmp(&num(a, "slow_bytes")));
+    if list.is_empty() {
+        println!("門檻 {threshold} MB/s。沒有確認為慢的檔案。");
+    } else {
+        println!("門檻 {threshold} MB/s。慢的部分最多的 10 個檔案：");
+        for r in list.iter().take(10) {
+            println!("  {:7.1} MB/s  {:>6}  {}", num(r, "mbps"), fmt_bytes(num(r, "slow_bytes") as u64), r["path"]);
+        }
     }
     Ok(())
 }
