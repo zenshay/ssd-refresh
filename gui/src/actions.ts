@@ -1,31 +1,42 @@
-// What happens when the user does something. Views only call these functions.
+// What happens when the user interacts. Views only call these actions.
 import { api, type ScanOutcome } from "./api";
 import { fmtCount } from "./format";
 import { askConfirm } from "./views/confirm";
-import { refreshableScan, selectedVolume, type Notice, type Store } from "./store";
+import {
+  allSelected,
+  totalSlowAcrossSelected,
+  type Notice,
+  type Store,
+} from "./store";
 
-const errorText = (e: unknown): string => (typeof e === "string" ? e : e instanceof Error ? e.message : String(e));
+const errorText = (e: unknown): string =>
+  typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
 
-function scanNotice(o: ScanOutcome): Notice {
-  const files = fmtCount(o.totalFiles);
-  if (o.stopped) {
+function scanNotice(results: { root: string; outcome: ScanOutcome }[]): Notice {
+  const stopped = results.some((r) => r.outcome.stopped);
+  const totalFiles = results.reduce((acc, r) => acc + r.outcome.totalFiles, 0);
+  const totalSlow = results.reduce((acc, r) => acc + r.outcome.slowTotal, 0);
+
+  if (stopped) {
     return {
       kind: "info",
       title: "Scan stopped",
-      body: "Nothing changed on the drive. Run the scan again to get a result.",
+      body: "Operation was cancelled. Nothing changed on the drive(s).",
     };
   }
-  if (o.slowTotal === 0) {
+
+  if (totalSlow === 0) {
     return {
       kind: "ok",
-      title: "No slow files found",
-      body: `The scan read ${files} files at a normal speed. Nothing changed on the drive.`,
+      title: "No slow files detected",
+      body: `Checked ${fmtCount(totalFiles)} files across ${results.length} drive(s) with normal read speeds.`,
     };
   }
+
   return {
     kind: "warn",
-    title: `${fmtCount(o.slowTotal)} slow files found`,
-    body: `The scan read ${files} files. Step 2 can rewrite only the slow files. Nothing has changed yet.`,
+    title: `${fmtCount(totalSlow)} slow files detected`,
+    body: `Scanned ${fmtCount(totalFiles)} files across ${results.length} drive(s). Step 2 can rewrite only the slow files safely.`,
   };
 }
 
@@ -34,77 +45,202 @@ export function createActions(store: Store) {
     store.set({ volumesLoading: true });
     try {
       const volumes = await api.listVolumes();
-      const keep = volumes.some((v) => v.root === store.get().selectedRoot);
+      const currentSelected = store.get().selectedRoots;
+      // Retain already selected roots if they still exist, otherwise default to all or first
+      const validSelected = currentSelected.filter((r) => volumes.some((v) => v.root === r));
+      const nextSelected =
+        validSelected.length > 0
+          ? validSelected
+          : volumes.length > 0
+          ? [volumes[0].root]
+          : [];
+
       store.set({
         volumes,
         volumesLoading: false,
-        selectedRoot: keep ? store.get().selectedRoot : (volumes[0]?.root ?? null),
+        selectedRoots: nextSelected,
       });
     } catch (e) {
       store.set({
         volumes: [],
         volumesLoading: false,
-        notice: { kind: "error", title: "Cannot read the drive list", body: errorText(e) },
+        notice: { kind: "error", title: "Cannot read drive list", body: errorText(e) },
       });
     }
   }
 
-  function selectDrive(root: string): void {
+  function toggleSelect(root: string): void {
     const s = store.get();
-    if (s.mode !== "idle" || s.selectedRoot === root) return;
-    // A scan result belongs to one drive. It does not apply to another drive.
-    store.set({ selectedRoot: root, notice: null });
+    if (s.mode !== "idle") return;
+
+    const current = s.selectedRoots;
+    let next: string[];
+    if (current.includes(root)) {
+      next = current.filter((r) => r !== root);
+    } else {
+      next = [...current, root];
+    }
+    store.set({ selectedRoots: next, notice: null });
+  }
+
+  function toggleSelectAll(): void {
+    const s = store.get();
+    if (s.mode !== "idle") return;
+
+    if (allSelected(s)) {
+      // If all selected, deselect all (or keep at least 0)
+      store.set({ selectedRoots: [], notice: null });
+    } else {
+      // Select all available volumes
+      store.set({ selectedRoots: s.volumes.map((v) => v.root), notice: null });
+    }
   }
 
   async function runScan(): Promise<void> {
     const s = store.get();
-    const volume = selectedVolume(s);
-    if (s.mode !== "idle" || !volume) return;
-    store.set({ mode: "scanning", paused: false, stopping: false, progress: null, scan: null, notice: null });
-    try {
-      const outcome = await api.startScan(volume.root);
-      store.set({ mode: "idle", progress: null, scan: { root: volume.root, outcome }, notice: scanNotice(outcome) });
-    } catch (e) {
-      store.set({ mode: "idle", progress: null, notice: { kind: "error", title: "The scan failed", body: errorText(e) } });
+    const rootsToScan = [...s.selectedRoots];
+    if (s.mode !== "idle" || rootsToScan.length === 0) return;
+
+    store.set({
+      mode: "scanning",
+      paused: false,
+      stopping: false,
+      progress: null,
+      notice: null,
+    });
+
+    const finishedOutcomes: { root: string; outcome: ScanOutcome }[] = [];
+
+    for (let i = 0; i < rootsToScan.length; i++) {
+      const root = rootsToScan[i];
+      // Check if user stopped during or before this drive
+      if (store.get().stopping) break;
+
+      store.set({ activeRoot: root, progress: null });
+
+      try {
+        const outcome = await api.startScan(root);
+        finishedOutcomes.push({ root, outcome });
+
+        // Update scan results cache
+        const updatedScans = { ...store.get().scans, [root]: outcome };
+        store.set({ scans: updatedScans });
+
+        if (outcome.stopped) {
+          break;
+        }
+      } catch (e) {
+        store.set({
+          mode: "idle",
+          activeRoot: null,
+          progress: null,
+          notice: { kind: "error", title: `Scan failed on ${root.slice(0, 2)}`, body: errorText(e) },
+        });
+        return;
+      }
     }
+
+    store.set({
+      mode: "idle",
+      activeRoot: null,
+      progress: null,
+      stopping: false,
+      notice: scanNotice(finishedOutcomes),
+    });
   }
 
   async function runRefresh(): Promise<void> {
     const s = store.get();
-    const volume = selectedVolume(s);
-    const scan = refreshableScan(s);
-    if (s.mode !== "idle" || !volume || !scan || !s.scan) return;
+    const slowCount = totalSlowAcrossSelected(s);
+    if (s.mode !== "idle" || slowCount === 0) return;
 
-    const count = fmtCount(scan.slowTotal);
+    const drivesWithSlow = s.selectedRoots.filter(
+      (r) => s.scans[r] && !s.scans[r].stopped && s.scans[r].slowTotal > 0
+    );
+
+    const driveNames = drivesWithSlow.map((r) => r.slice(0, 2)).join(", ");
+    const hasSystem = s.volumes.some((v) => drivesWithSlow.includes(v.root) && v.isSystem);
+
     const confirmed = await askConfirm({
-      title: `Rewrite ${count} slow files on ${volume.root.slice(0, 2)}?`,
-      body: "The file system moves each file to new places on the drive. Programs can keep using the files. The tool checks each file after the move.",
-      warning: volume.isSystem ? "This is the Windows drive. Close other programs first." : undefined,
-      okLabel: "Rewrite files",
+      title: `Rewrite ${fmtCount(slowCount)} slow files across ${driveNames}?`,
+      body: "The file system safely moves each slow file to fresh NAND blocks. Unchanged and fast files are not touched. Programs can continue running.",
+      warning: hasSystem ? "Includes your Windows system drive. Close other apps before starting." : undefined,
+      okLabel: "Rewrite slow files",
     });
+
     if (!confirmed) return;
 
-    store.set({ mode: "refreshing", paused: false, stopping: false, progress: null, notice: null });
-    try {
-      const outcome = await api.startRefresh(scan.reportPath, volume.root);
-      store.set({
-        mode: "idle",
-        progress: null,
-        scan: null, // The old list is out of date now.
-        notice: outcome.stopped
-          ? { kind: "info", title: "Refresh stopped", body: `${fmtCount(outcome.movedFiles)} files were rewritten before the stop. Scan again to see the new list.` }
-          : { kind: "ok", title: `${fmtCount(outcome.movedFiles)} files rewritten`, body: "Scan again to check the new read speed." },
-      });
-    } catch (e) {
-      store.set({ mode: "idle", progress: null, notice: { kind: "error", title: "The refresh failed", body: errorText(e) } });
+    store.set({
+      mode: "refreshing",
+      paused: false,
+      stopping: false,
+      progress: null,
+      notice: null,
+    });
+
+    let totalMoved = 0;
+    let wasStopped = false;
+
+    for (const root of drivesWithSlow) {
+      if (store.get().stopping) {
+        wasStopped = true;
+        break;
+      }
+
+      const scanResult = s.scans[root];
+      if (!scanResult) continue;
+
+      store.set({ activeRoot: root, progress: null });
+
+      try {
+        const outcome = await api.startRefresh(scanResult.reportPath, root);
+        totalMoved += outcome.movedFiles;
+        if (outcome.stopped) {
+          wasStopped = true;
+          break;
+        }
+      } catch (e) {
+        store.set({
+          mode: "idle",
+          activeRoot: null,
+          progress: null,
+          notice: { kind: "error", title: `Refresh failed on ${root.slice(0, 2)}`, body: errorText(e) },
+        });
+        return;
+      }
     }
+
+    // Invalidate scans for refreshed drives
+    const nextScans = { ...store.get().scans };
+    for (const root of drivesWithSlow) {
+      delete nextScans[root];
+    }
+
+    store.set({
+      mode: "idle",
+      activeRoot: null,
+      progress: null,
+      stopping: false,
+      scans: nextScans,
+      notice: wasStopped
+        ? {
+            kind: "info",
+            title: "Refresh stopped",
+            body: `${fmtCount(totalMoved)} files were moved before the stop. Scan again to check remaining files.`,
+          }
+        : {
+            kind: "ok",
+            title: `${fmtCount(totalMoved)} files rewritten successfully`,
+            body: "Run Safe Scan to verify new read speeds.",
+          },
+    });
   }
 
   async function togglePause(): Promise<void> {
     const s = store.get();
     if (s.mode === "idle" || s.stopping) return;
     const next = !s.paused;
-    store.set({ paused: next }); // Show it at once. The answer from the core follows.
+    store.set({ paused: next });
     try {
       const confirmed = await api.togglePause();
       if (confirmed !== next) store.set({ paused: confirmed });
@@ -124,7 +260,15 @@ export function createActions(store: Store) {
     }
   }
 
-  return { loadVolumes, selectDrive, runScan, runRefresh, togglePause, stop };
+  return {
+    loadVolumes,
+    toggleSelect,
+    toggleSelectAll,
+    runScan,
+    runRefresh,
+    togglePause,
+    stop,
+  };
 }
 
 export type Actions = ReturnType<typeof createActions>;

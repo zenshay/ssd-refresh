@@ -1,7 +1,13 @@
 import type { Actions } from "../actions";
 import { $ } from "../dom";
 import { setIcon } from "../icons";
-import { refreshAction, scanAction, refreshableScan, type ActionView, type Store } from "../store";
+import {
+  refreshAction,
+  scanAction,
+  totalSlowAcrossSelected,
+  type ActionView,
+  type Store,
+} from "../store";
 
 function paint(button: HTMLElement, view: ActionView): void {
   button.dataset.state = view.state;
@@ -27,12 +33,17 @@ export function mountWorkflow(store: Store, actions: Actions): void {
 
   store.subscribe((s) => {
     app.dataset.mode = s.mode;
-    // Tell the user which step is next. The next step gets the strong colour.
-    app.dataset.next = refreshableScan(s) && s.mode === "idle" ? "refresh" : "scan";
+    // Tell the user which step is next. The next step gets the strong color.
+    const hasSlow = totalSlowAcrossSelected(s) > 0;
+    app.dataset.next = hasSlow && s.mode === "idle" ? "refresh" : "scan";
     paint(scan, scanAction(s));
     paint(refresh, refreshAction(s));
 
-    const chipText = { idle: "Ready", scanning: "Scan is running", refreshing: "Refresh is running" }[s.mode];
+    const chipText = {
+      idle: "Ready",
+      scanning: "Scan is running",
+      refreshing: "Refresh is running",
+    }[s.mode];
     chip.textContent = chipText;
     chip.dataset.tone = s.mode;
 

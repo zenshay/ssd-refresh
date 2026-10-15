@@ -52,6 +52,23 @@ body {
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   padding: 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Elegant Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
 /* App Container */
@@ -61,6 +78,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.app-main {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 /* Typography Utilities */
@@ -184,6 +207,12 @@ body {
   margin-bottom: 16px;
 }
 
+.card-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
 .card-title {
   font-size: 0.85rem;
   font-weight: 700;
@@ -192,11 +221,28 @@ body {
   color: var(--text-muted);
 }
 
-/* Drive Radio Buttons */
+.card-title-hint {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-sep {
+  color: var(--border-medium);
+  font-size: 0.75rem;
+}
+
+/* Drive Multi-Select Cards */
 .drives-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
+  transition: all 0.25s ease;
 }
 
 .drive {
@@ -220,11 +266,72 @@ body {
   transform: translateY(-1px);
 }
 
-.drive[aria-checked="true"] {
+.drive.is-selected {
   background: rgba(99, 102, 241, 0.08);
   border-color: var(--primary);
   box-shadow: 0 0 0 1px var(--primary);
 }
+
+.drive.is-active {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.3);
+}
+
+.drive-checkbox {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid var(--border-medium);
+  background: rgba(255, 255, 255, 0.04);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.drive-checkbox.checked {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: 0 0 6px var(--primary-glow);
+}
+
+.drive-checkbox.checked::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 8px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  margin-bottom: 2px;
+}
+
+/* Running Compact Mode: Prevents vertical scrollbars when progress card expands */
+.app-container[data-mode="scanning"] .drives-grid,
+.app-container[data-mode="refreshing"] .drives-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.app-container[data-mode="scanning"] .drive,
+.app-container[data-mode="refreshing"] .drive {
+  padding: 8px 12px;
+  gap: 2px;
+}
+
+.app-container[data-mode="scanning"] .drive .usage,
+.app-container[data-mode="scanning"] .drive .drive-meta,
+.app-container[data-mode="scanning"] .drive .pill,
+.app-container[data-mode="scanning"] .drive .tag:not(.tag-scanning),
+.app-container[data-mode="refreshing"] .drive .usage,
+.app-container[data-mode="refreshing"] .drive .drive-meta,
+.app-container[data-mode="refreshing"] .drive .pill,
+.app-container[data-mode="refreshing"] .drive .tag:not(.tag-scanning) {
+  display: none;
+}
+
 
 .drive:disabled {
   opacity: 0.5;

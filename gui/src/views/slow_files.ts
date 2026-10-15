@@ -1,3 +1,4 @@
+import type { SlowFile } from "../api";
 import { $, el } from "../dom";
 import { fmtBytes, fmtCount, fmtRate } from "../format";
 import type { Store } from "../store";
@@ -9,21 +10,33 @@ export function mountSlowFiles(store: Store): void {
   const reportPathEl = $("slow-report-path");
 
   store.subscribe((s) => {
-    const outcome = s.scan?.outcome;
-    const hasSlowFiles = Boolean(outcome && outcome.slowTotal > 0 && !outcome.stopped && s.mode === "idle");
+    if (s.mode !== "idle") {
+      card.hidden = true;
+      return;
+    }
 
-    if (!hasSlowFiles || !outcome) {
+    const allSlow: SlowFile[] = [];
+    const reportPaths: string[] = [];
+
+    for (const root of s.selectedRoots) {
+      const outcome = s.scans[root];
+      if (outcome && !outcome.stopped && outcome.slowTotal > 0) {
+        allSlow.push(...outcome.slowFiles);
+        reportPaths.push(outcome.reportPath);
+      }
+    }
+
+    if (allSlow.length === 0) {
       card.hidden = true;
       return;
     }
 
     card.hidden = false;
-    countEl.textContent = `${fmtCount(outcome.slowTotal)} slow files detected`;
-    reportPathEl.textContent = outcome.reportPath;
-    reportPathEl.title = outcome.reportPath;
+    countEl.textContent = `${fmtCount(allSlow.length)} slow files detected`;
+    reportPathEl.textContent = reportPaths.join(" · ");
+    reportPathEl.title = reportPaths.join("\n");
 
-    // Render up to first 20 items in table to keep DOM fast
-    const rows = outcome.slowFiles.slice(0, 50).map((file) => {
+    const rows = allSlow.slice(0, 50).map((file: SlowFile) => {
       return el(
         "tr",
         { class: "slow-row" },

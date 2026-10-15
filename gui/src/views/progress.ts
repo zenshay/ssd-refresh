@@ -99,10 +99,16 @@ export function mountProgress(store: Store, actions: Actions): void {
     stepIcon.hidden = !info.indeterminate;
     titleEl.textContent = info.title;
 
+    const driveIdx = s.activeRoot ? s.selectedRoots.indexOf(s.activeRoot) + 1 : 0;
+    const drivePrefix =
+      s.selectedRoots.length > 1 && s.activeRoot
+        ? `[${driveIdx}/${s.selectedRoots.length}] ${s.activeRoot.slice(0, 2)} · `
+        : "";
+
     if (info.indeterminate) {
       track.classList.add("indeterminate");
       bar.style.width = "0%";
-      subtitleEl.textContent = `${fmtCount(p.filesDone)} files found so far…`;
+      subtitleEl.textContent = `${drivePrefix}${fmtCount(p.filesDone)} files found so far…`;
       statFiles.textContent = `${fmtCount(p.filesDone)} files`;
       statBytes.textContent = fmtBytes(p.bytesDone);
       statSpeed.textContent = fmtRate(p.mbps);
@@ -112,7 +118,7 @@ export function mountProgress(store: Store, actions: Actions): void {
       const pct = p.totalBytes > 0 ? Math.min(100, Math.max(0, (p.bytesDone / p.totalBytes) * 100)) : 0;
       bar.style.width = `${pct.toFixed(1)}%`;
 
-      subtitleEl.textContent = `${fmtBytes(p.bytesDone)} of ${fmtBytes(p.totalBytes)} (${pct.toFixed(1)}%)`;
+      subtitleEl.textContent = `${drivePrefix}${fmtBytes(p.bytesDone)} of ${fmtBytes(p.totalBytes)} (${pct.toFixed(1)}%)`;
       statFiles.textContent = p.totalFiles > 0 ? `${fmtCount(p.filesDone)} / ${fmtCount(p.totalFiles)}` : fmtCount(p.filesDone);
       statBytes.textContent = p.totalBytes > 0 ? `${fmtBytes(p.bytesDone)} / ${fmtBytes(p.totalBytes)}` : fmtBytes(p.bytesDone);
       statSpeed.textContent = fmtRate(p.mbps);

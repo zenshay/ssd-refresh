@@ -30,10 +30,17 @@
       <!-- Storage Drive Selector -->
       <section class="card drives-section">
         <div class="card-header">
-          <h2 class="card-title">Target Storage</h2>
-          <button id="btn-reload" type="button" class="btn-text">Reload Drives</button>
+          <div class="card-title-group">
+            <h2 class="card-title">Target Storage</h2>
+            <span class="card-title-hint">Select one or multiple drives</span>
+          </div>
+          <div class="card-header-actions">
+            <button id="btn-select-all" type="button" class="btn-text">Select All</button>
+            <span class="header-sep">·</span>
+            <button id="btn-reload" type="button" class="btn-text">Reload</button>
+          </div>
         </div>
-        <div id="drives" class="drives-grid" role="radiogroup" aria-label="Storage Drives">
+        <div id="drives" class="drives-grid" role="group" aria-label="Storage Drives">
           <div class="empty">Reading the drive list…</div>
         </div>
       </section>
@@ -112,7 +119,7 @@
             <span id="stat-speed" class="metric-value font-mono">0 MB/s</span>
           </div>
           <div class="metric-tile">
-            <span class="metric-label">ETA</span>
+            <span class="metric-label">Time Left</span>
             <span id="stat-eta" class="metric-value font-mono">--</span>
           </div>
         </div>
