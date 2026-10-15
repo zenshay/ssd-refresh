@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSD Refresh</title>
+  <link rel="stylesheet" href="./src/style.css" />
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-indigo-500 selection:text-white">
+  <div class="max-w-4xl mx-auto p-6 space-y-6">
+    <!-- Header -->
+    <header class="flex items-center justify-between border-b border-slate-800 pb-4">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-400 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
+          SSD
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight">ssd-refresh</h1>
+          <p class="text-xs text-slate-400">File-level SSD speed restorer &bull; DiskFresh alternative</p>
+        </div>
+      </div>
+      <div id="uac-badge" class="px-2.5 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center space-x-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>Administrator</span>
+      </div>
+    </header>
+
+    <!-- Drive Selector Card -->
+    <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Select Target Storage</h2>
+        <button id="btn-refresh-drives" class="text-xs text-indigo-400 hover:text-indigo-300 transition">Refresh List</button>
+      </div>
+
+      <div id="drive-list" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Drive cards rendered by JS -->
+        <div class="p-4 rounded-xl border border-slate-800 bg-slate-800/30 animate-pulse text-xs text-slate-500">
+          Loading system storage drives...
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions & Status Card -->
+    <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold">Diagnostics & Action</h2>
+          <p id="action-hint" class="text-xs text-slate-400">Step 1: Run read-only scan to wake SSD controller.</p>
+        </div>
+        <div class="flex space-x-3">
+          <button id="btn-scan" class="px-5 py-2.5 rounded-xl font-medium text-sm bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition disabled:opacity-50">
+            Start Safe Scan
+          </button>
+          <button id="btn-refresh" disabled class="px-5 py-2.5 rounded-xl font-medium text-sm bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition disabled:opacity-40 disabled:cursor-not-allowed">
+            Selective Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Realtime Progress Meter -->
+      <div id="progress-container" class="space-y-2 hidden">
+        <div class="flex justify-between text-xs text-slate-400">
+          <span id="progress-phase">Reading files directly from disk...</span>
+          <span id="progress-speed" class="font-mono text-cyan-400">0 MB/s</span>
+        </div>
+        <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden p-0.5">
+          <div id="progress-bar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+        <div class="flex justify-between text-xs text-slate-500 font-mono">
+          <span id="progress-count">0 files</span>
+          <span id="progress-eta">ETA: --</span>
+        </div>
+      </div>
+
+      <!-- Result Card -->
+      <div id="result-box" class="hidden p-4 rounded-xl border">
+        <!-- Dynamically injected message -->
+      </div>
+    </div>
+
+    <!-- Slow Files Table Preview -->
+    <div id="slow-files-card" class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur space-y-3 hidden">
+      <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Identified Slow Files (<span id="slow-count">0</span>)</h3>
+      <div class="max-h-56 overflow-y-auto rounded-lg border border-slate-800/60 text-xs">
+        <table class="w-full text-left">
+          <thead class="bg-slate-800/40 text-slate-400 sticky top-0">
+            <tr>
+              <th class="p-2.5">Path</th>
+              <th class="p-2.5 w-24">Size</th>
+              <th class="p-2.5 w-24 text-right">Read Speed</th>
+            </tr>
+          </thead>
+          <tbody id="slow-table-body" class="divide-y divide-slate-800/40 font-mono">
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
