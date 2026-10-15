@@ -13,6 +13,9 @@ pub fn run() {
             commands::start_refresh,
             commands::toggle_pause,
             commands::stop_operation,
+            commands::window_minimize,
+            commands::window_toggle_maximize,
+            commands::window_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

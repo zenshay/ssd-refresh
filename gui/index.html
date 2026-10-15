@@ -8,20 +8,31 @@
 </head>
 <body>
   <div id="app" class="app-container" data-mode="idle" data-next="scan">
-    <!-- Header -->
-    <header class="app-header">
-      <div class="header-brand">
+    <!-- Header & Integrated Custom Title Bar -->
+    <header class="app-header" data-tauri-drag-region>
+      <div class="header-brand" data-tauri-drag-region>
         <div class="brand-logo">SSD</div>
-        <div class="brand-text">
-          <div class="brand-title-row">
+        <div class="brand-text" data-tauri-drag-region>
+          <div class="brand-title-row" data-tauri-drag-region>
             <h1 class="brand-name">ssd-refresh</h1>
             <span id="mode-chip" class="chip" data-tone="idle">Ready</span>
           </div>
           <p class="brand-desc">File-level SSD read speed restorer · Safe unbuffered rewrite</p>
         </div>
       </div>
-      <div class="header-status">
+      <div class="header-right">
         <span id="env-badge" class="badge" data-tone="plain" hidden>Standard user</span>
+        <div class="window-controls">
+          <button id="btn-win-min" type="button" class="win-btn" title="Minimize" aria-label="Minimize">
+            <svg viewBox="0 0 12 12" width="10" height="10"><path fill="currentColor" d="M1 6h10v1H1z"/></svg>
+          </button>
+          <button id="btn-win-max" type="button" class="win-btn" title="Maximize" aria-label="Maximize">
+            <svg viewBox="0 0 12 12" width="10" height="10"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M1.5 1.5h9v9h-9z"/></svg>
+          </button>
+          <button id="btn-win-close" type="button" class="win-btn win-btn-close" title="Close" aria-label="Close">
+            <svg viewBox="0 0 12 12" width="10" height="10"><path fill="none" stroke="currentColor" stroke-width="1.2" d="M2 2l8 8M10 2l-8 8"/></svg>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -37,7 +48,7 @@
           <div class="card-header-actions">
             <button id="btn-select-all" type="button" class="btn-text">Select All</button>
             <span class="header-sep">·</span>
-            <button id="btn-reload" type="button" class="btn-text">Reload</button>
+            <button id="btn-reload" type="button" class="btn-text" title="Scan for newly connected SSDs or drives">Detect Drives</button>
           </div>
         </div>
         <div id="drives" class="drives-grid" role="group" aria-label="Storage Drives">

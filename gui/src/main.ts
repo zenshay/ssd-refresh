@@ -21,6 +21,15 @@ window.addEventListener("DOMContentLoaded", async () => {
   mountNotice(store);
   mountSlowFiles(store);
 
+  // Custom frameless window controls
+  const minBtn = document.getElementById("btn-win-min");
+  const maxBtn = document.getElementById("btn-win-max");
+  const closeBtn = document.getElementById("btn-win-close");
+
+  minBtn?.addEventListener("click", () => void api.windowMinimize());
+  maxBtn?.addEventListener("click", () => void api.windowToggleMaximize());
+  closeBtn?.addEventListener("click", () => void api.windowClose());
+
   // Listen to Tauri progress events
   try {
     await api.onProgress((p) => {

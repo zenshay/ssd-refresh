@@ -57,6 +57,9 @@ export const api = {
   /** Returns the new state: true means paused. */
   togglePause: () => invoke<boolean>("toggle_pause"),
   stop: () => invoke<void>("stop_operation"),
+  windowMinimize: () => invoke<void>("window_minimize"),
+  windowToggleMaximize: () => invoke<void>("window_toggle_maximize"),
+  windowClose: () => invoke<void>("window_close"),
   onProgress: (handler: (p: Progress) => void): Promise<UnlistenFn> =>
     listen<Progress>("progress", (event) => handler(event.payload)),
 };

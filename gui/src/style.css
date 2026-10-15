@@ -103,6 +103,12 @@ body {
   justify-content: space-between;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-subtle);
+  user-select: none;
+}
+
+[data-tauri-drag-region] {
+  app-region: drag;
+  -webkit-app-region: drag;
 }
 
 .header-brand {
@@ -140,6 +146,51 @@ body {
 .brand-desc {
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+/* Custom Frameless Window Controls */
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.win-btn {
+  width: 32px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.win-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  border-color: var(--border-subtle);
+}
+
+.win-btn-close:hover {
+  background: #e11d48 !important;
+  color: #ffffff !important;
+  border-color: transparent !important;
+  box-shadow: 0 0 10px rgba(225, 29, 72, 0.4);
 }
 
 /* Badges & Chips */
