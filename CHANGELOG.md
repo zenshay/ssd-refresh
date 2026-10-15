@@ -9,6 +9,8 @@
 - GUI build: update Vite from 6.4 to 8.3. Vite 8 does not include esbuild, so the build uses the default minifier.
 - CI and release workflows: update `actions/checkout` to v7, `actions/setup-node` to v7, `pnpm/action-setup` to v6, and `softprops/action-gh-release` to v3. These actions use the Node 24 runtime.
 - Dependabot: ignore TypeScript 7. TypeScript 7 removes the JavaScript API that the test loader uses.
+- GUI slow files: cut long paths in the middle to 50 characters. The end keeps the file name. The full path shows on hover.
+- GUI slow files: click the report path, or press Enter, to copy the report paths. The label shows "Copied ✓" for 1.5 s.
 
 ## 1.0.3-rc.3
 

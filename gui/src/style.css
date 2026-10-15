@@ -982,6 +982,15 @@ body {
   color: var(--text-muted);
 }
 
+#slow-report-path {
+  cursor: pointer;
+}
+
+#slow-report-path:hover,
+#slow-report-path:focus-visible {
+  text-decoration: underline;
+}
+
 .slow-cell-path {
   max-width: 400px;
   white-space: nowrap;

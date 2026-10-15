@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createActions } from "../src/actions.ts";
 import { createDiagnostics } from "../src/diagnostics.ts";
+import { truncatePath } from "../src/format.ts";
 import { createStore, initialState, refreshAction } from "../src/store.ts";
 import { mutationStatus } from "./mutation-status.mjs";
 
@@ -158,6 +159,20 @@ test("stop between scan drives is reported as stopped", async () => {
   ).runScan();
   assert.match(store.get().notice.title, /stopped/);
 });
+test("truncatePath keeps short paths and cuts long paths in the middle", () => {
+  assert.equal(truncatePath("C:\\a\\b.txt", 50), "C:\\a\\b.txt");
+  const long = `C:\\${"d".repeat(80)}\\file-name.bin`;
+  const short = truncatePath(long, 50);
+  assert.equal(Array.from(short).length, 50);
+  assert.ok(short.startsWith("C:\\ddd"));
+  assert.ok(short.endsWith("\\file-name.bin"));
+  assert.ok(short.includes("…"));
+  // A cut must not split a character that uses two UTF-16 units.
+  const emoji = truncatePath("😀".repeat(80), 10);
+  assert.equal(emoji, `${"😀".repeat(4)}…${"😀".repeat(5)}`);
+  assert.ok(emoji.isWellFormed());
+});
+
 test("diagnostic models are independent and keep only 500 entries", () => {
   const first = createDiagnostics();
   const second = createDiagnostics();

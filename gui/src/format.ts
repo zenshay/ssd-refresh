@@ -24,3 +24,14 @@ export function fmtDuration(secs: number): string {
 
 export const fmtPercent = (fraction: number): string =>
   `${(fraction * 100).toFixed(1)}%`;
+
+// Shorten a path in the middle. The end keeps more characters because it holds the file name.
+// Count code points, so the cut does not break a character into two halves.
+export function truncatePath(path: string, maxLen = 60): string {
+  const chars = Array.from(path);
+  if (chars.length <= maxLen) return path;
+  const keep = Math.max(maxLen - 1, 2);
+  const head = Math.floor(keep / 2);
+  const tail = keep - head;
+  return `${chars.slice(0, head).join("")}…${chars.slice(-tail).join("")}`;
+}

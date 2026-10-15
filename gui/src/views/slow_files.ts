@@ -1,6 +1,6 @@
 import type { SlowFile } from "../api";
 import { $, el } from "../dom";
-import { fmtBytes, fmtCount, fmtRate } from "../format";
+import { fmtBytes, fmtCount, fmtRate, truncatePath } from "../format";
 import { type Store, stillSlow } from "../store";
 
 export function mountSlowFiles(store: Store): void {
@@ -8,6 +8,35 @@ export function mountSlowFiles(store: Store): void {
   const countEl = $("slow-files-count");
   const tableBody = $("slow-files-body");
   const reportPathEl = $("slow-report-path");
+
+  // The click handler and the store both use these values.
+  let reportText = "";
+  let reportLabel = "";
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const copyReportPaths = async (): Promise<void> => {
+    if (!reportText) return;
+    try {
+      await navigator.clipboard.writeText(reportText);
+      reportPathEl.textContent = "Copied ✓";
+    } catch {
+      reportPathEl.textContent = "Cannot copy the report path";
+    }
+    // Show the paths again after 1.5 s. A second click restarts the timer.
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => {
+      reportPathEl.textContent = reportLabel;
+    }, 1500);
+  };
+
+  reportPathEl.addEventListener("click", () => {
+    void copyReportPaths();
+  });
+  reportPathEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    void copyReportPaths();
+  });
 
   store.subscribe((s) => {
     if (s.mode !== "idle") {
@@ -44,8 +73,11 @@ export function mountSlowFiles(store: Store): void {
       (fastAfterWait > 0
         ? ` · ${fmtCount(fastAfterWait)} fast after the wait`
         : "");
-    reportPathEl.textContent = reportPaths.join(" · ");
-    reportPathEl.title = reportPaths.join("\n");
+    reportText = reportPaths.join("\n");
+    reportLabel = reportPaths.join(" · ");
+    clearTimeout(copiedTimer);
+    reportPathEl.textContent = reportLabel;
+    reportPathEl.title = `${reportText}\nClick to copy the report path.`;
 
     const rows = allSlow.slice(0, 50).map((file: SlowFile) => {
       return el(
@@ -53,7 +85,7 @@ export function mountSlowFiles(store: Store): void {
         { class: "slow-row" },
         el("td", {
           class: "slow-cell-path",
-          text: file.path,
+          text: truncatePath(file.path, 50),
           attrs: { title: file.path },
         }),
         el("td", { class: "slow-cell-size", text: fmtBytes(file.size) }),
