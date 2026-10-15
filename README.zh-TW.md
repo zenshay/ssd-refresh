@@ -1,5 +1,10 @@
 # ssd-refresh（繁體中文說明）
 
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#授權)
+[![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#建置)
+[![Platforms: Windows, Linux, macOS (scan only)](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20(scan)-lightgrey)](#支援的平台)
+[![Safety test: 28 of 28 passed](https://img.shields.io/badge/safety%20test-28%2F28%20passed-brightgreen)](#安全測試windows)
+
 <img src="docs/images/task-manager-stall.png" width="360" alt="Windows 工作管理員的 C 槽磁碟面板，型號 Crucial CT480BX500SSD1：啟用時間 100%、平均回應時間 49.8 毫秒、讀取 1.0 MB/秒、寫入 1.0 MB/秒。">
 
 一顆用了 5 年的 Crucial BX500 在工作管理員裡的樣子：啟用時間 100%、回應時間約 50 毫秒，讀寫卻都只有 1 MB/秒。把舊資料讀過一遍之後，這種卡頓從每天 129 次降到 5 次。
@@ -105,16 +110,20 @@ ssd-refresh scan C:\ --out C-scan.csv
 ssd-refresh refresh --from C-scan.csv --dry-run
 ssd-refresh refresh --from C-scan.csv --allow-system-volume
 Optimize-Volume -DriveLetter C -ReTrim
-ssd-refresh verify --from C-scan-refresh.csv
 ```
 
 1. 掃描磁碟，產生報告。
 2. 試跑：重新測量慢的檔案，不搬移任何東西。
 3. 刷新。開始前要輸入磁碟代號確認。
 4. 告訴 SSD 舊的位置已經空出來。
-5. 選用，隔一天以上：確認檔案仍然夠快（見[驗證](#驗證刷新的效果能不能維持)）。
 
-Linux 用 `sudo` 執行，最後一步改成 `sudo fstrim -v /`。
+Linux 用 `sudo` 執行，第 4 步改成 `sudo fstrim -v /`。
+
+**選用，隔一天以上再做：** 確認資料安全，而且檔案仍然夠快。見[驗證](#驗證刷新的效果能不能維持)。
+
+```powershell
+ssd-refresh verify --from C-scan-refresh.csv
+```
 
 ## 掃描
 

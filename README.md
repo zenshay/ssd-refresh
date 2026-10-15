@@ -1,5 +1,10 @@
 # ssd-refresh
 
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+[![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#build)
+[![Platforms: Windows, Linux, macOS (scan only)](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20(scan)-lightgrey)](#platforms)
+[![Safety test: 28 of 28 passed](https://img.shields.io/badge/safety%20test-28%2F28%20passed-brightgreen)](#safety-test-windows)
+
 <img src="docs/images/task-manager-stall.png" width="360" alt="Windows Task Manager (Traditional Chinese UI), disk panel for drive C:, a Crucial CT480BX500SSD1: active time 100%, average response time 49.8 ms, read speed 1.0 MB/s, write speed 1.0 MB/s.">
 
 Task Manager on a Crucial BX500 that is 5 years old: active time 100%, response time 50 ms, but read and write speed only 1 MB/s. After one read of the old data, these stops went down from 129 to 5 per day.
@@ -103,16 +108,20 @@ ssd-refresh scan C:\ --out C-scan.csv
 ssd-refresh refresh --from C-scan.csv --dry-run
 ssd-refresh refresh --from C-scan.csv --allow-system-volume
 Optimize-Volume -DriveLetter C -ReTrim
-ssd-refresh verify --from C-scan-refresh.csv
 ```
 
 1. Scan the drive. The scan writes a report.
 2. Do a dry run. The tool measures the slow files again. It does not move files.
 3. Refresh. Before the first move, you type the drive letter.
 4. Tell the SSD that the old places are free.
-5. Optional, after 1 day or more: check that the files are still fast (see [Verify](#verify-is-the-refresh-good)).
 
 On Linux, use `sudo`. In step 4, use `sudo fstrim -v /`.
+
+**Optional, 1 day or more later:** check that the data is safe and that the files are still fast. See [Verify](#verify-is-the-refresh-good).
+
+```powershell
+ssd-refresh verify --from C-scan-refresh.csv
+```
 
 `ssd-refresh help scan`, `ssd-refresh help refresh` and `ssd-refresh help verify` show all options, progress fields and statuses.
 
