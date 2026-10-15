@@ -46,9 +46,6 @@ function card(
       el("span", { class: "drive-letter", text: v.root.slice(0, 2) }),
       el("span", { class: "tag", text: v.fs }),
       v.isSystem ? el("span", { class: "tag tag-accent", text: "System" }) : "",
-      active
-        ? el("span", { class: "tag tag-scanning", text: "Scanning…" })
-        : "",
       el("span", {
         class: "pill",
         text: SMART_TEXT[v.smart.level],
@@ -57,10 +54,16 @@ function card(
     ),
     el("div", { class: "drive-model", text: v.model ?? "Local drive" }),
     el("div", { class: "usage" }, bar),
-    el("div", {
-      class: "drive-meta",
-      text: `${fmtBytes(v.freeBytes)} free of ${fmtBytes(v.totalBytes)}`,
-    }),
+    el(
+      "div",
+      { class: "drive-meta" },
+      el("span", {
+        text: `${fmtBytes(v.freeBytes)} free of ${fmtBytes(v.totalBytes)}`,
+      }),
+      active
+        ? el("span", { class: "drive-status-active", text: "Scanning…" })
+        : "",
+    ),
   );
 
   button.disabled = disabled;

@@ -48,16 +48,21 @@
   display: none !important;
 }
 
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   background-color: var(--bg-page);
   color: var(--text-main);
   font-family: var(--font-sans);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  min-height: 100vh;
-  padding: 0 24px 24px 24px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  padding: 0 24px 20px 24px;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Elegant Custom Scrollbar */
@@ -78,28 +83,36 @@ body {
 /* App Container */
 .app-container {
   max-width: 1040px;
+  width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  height: 100%;
+  min-height: 0;
 }
 
 .app-main {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 15px;
 }
 
 .app-two-column {
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
 .layout-sidebar {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
 
 .layout-content {
@@ -107,6 +120,8 @@ body {
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  height: 100%;
+  min-height: 0;
 }
 
 /* Typography Utilities */
@@ -307,15 +322,23 @@ body {
   font-size: 0.75rem;
 }
 
+.drives-section {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 /* Drive Multi-Select Cards: Vertical sidebar list */
 .drives-grid,
 .drives-list {
   display: flex;
   flex-direction: column;
   gap: 9px;
-  max-height: 520px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 4px;
 }
 
 .drive {
@@ -390,7 +413,8 @@ body {
 .drive-top {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .drive-letter {
@@ -398,6 +422,7 @@ body {
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text-main);
+  flex-shrink: 0;
 }
 
 .tag {
@@ -408,6 +433,8 @@ body {
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tag-accent {
@@ -421,6 +448,8 @@ body {
   padding: 1px 6px;
   border-radius: 4px;
   margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .pill[data-level="healthy"] {
@@ -463,6 +492,30 @@ body {
 .drive-meta {
   font-size: 0.72rem;
   color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.drive-status-active {
+  color: var(--accent-cyan);
+  font-weight: 600;
+  font-size: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: 0.02em;
+}
+
+.drive-status-active::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--accent-cyan);
+  box-shadow: 0 0 6px var(--accent-cyan);
+  animation: pulse 1.5s infinite ease-in-out;
 }
 
 /* Workflow Actions Grid */
@@ -569,8 +622,13 @@ body {
   line-height: 1.4;
 }
 
+.workflow-section {
+  flex-shrink: 0;
+}
+
 /* Progress Card & Realtime Metrics: Always visible with idle standby mode */
 .progress-card {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -1027,7 +1085,8 @@ body {
 .console-card {
   padding: 0 !important;
   overflow: hidden;
-  height: 275px;
+  flex: 1;
+  min-height: 160px;
   background: var(--bg-card);
   border: 1px solid rgba(99, 102, 241, 0.25);
   display: flex;
