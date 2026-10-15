@@ -3,7 +3,9 @@
 use crate::common::{fmt_bytes, hex, Kind, VolumeInfo};
 use crate::control::Control;
 use crate::csv::{self, CsvWriter};
-use crate::progress::Progress;
+use crate::progress::{fit, Progress};
+use std::io::{IsTerminal, Write};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use crate::reader::{read_file, ReadOptions, ReadResult};
 use crate::sys;
 use std::collections::HashSet;
@@ -27,6 +29,11 @@ pub const HEADER: [&str; 14] = [
 
 /// 列出底下所有檔案。不進入符號連結、junction、掛載點，也不跨到別的磁碟區。
 pub fn enumerate(root: &Path) -> Vec<(PathBuf, u64)> {
+    enumerate_counted(root, &AtomicU64::new(0), &AtomicU64::new(0))
+}
+
+/// 同 enumerate，並即時更新已找到的檔案數與總大小（給進度顯示用）
+pub fn enumerate_counted(root: &Path, count: &AtomicU64, bytes: &AtomicU64) -> Vec<(PathBuf, u64)> {
     let mut out = Vec::new();
     let Ok(md) = std::fs::symlink_metadata(root) else { return out };
     if md.is_file() {
@@ -46,6 +53,8 @@ pub fn enumerate(root: &Path) -> Vec<(PathBuf, u64)> {
                     subdirs.push(p);
                 }
             } else if m.is_file() {
+                count.fetch_add(1, Ordering::Relaxed);
+                bytes.fetch_add(m.len(), Ordering::Relaxed);
                 out.push((p, m.len()));
             }
         }
@@ -53,6 +62,52 @@ pub fn enumerate(root: &Path) -> Vec<(PathBuf, u64)> {
         stack.extend(subdirs.into_iter().rev());
     }
     out
+}
+
+/// 列出檔案，同時在終端機原地顯示已找到的檔案數、大小與經過時間
+fn enumerate_with_progress(root: &Path) -> Vec<(PathBuf, u64)> {
+    let count = Arc::new(AtomicU64::new(0));
+    let bytes = Arc::new(AtomicU64::new(0));
+    let done = Arc::new(AtomicBool::new(false));
+    let start = Instant::now();
+    let interactive = std::io::stdout().is_terminal();
+    let line = {
+        let (count, bytes) = (count.clone(), bytes.clone());
+        move || {
+            format!(
+                "列出檔案 {} 個 {} {}秒",
+                count.load(Ordering::Relaxed),
+                fmt_bytes(bytes.load(Ordering::Relaxed)),
+                start.elapsed().as_secs()
+            )
+        }
+    };
+    let t = {
+        let (done, line) = (done.clone(), line.clone());
+        std::thread::spawn(move || {
+            let mut last_log = Instant::now();
+            while !done.load(Ordering::Relaxed) {
+                if interactive {
+                    print!("\r{}", fit(&line()));
+                    let _ = std::io::stdout().flush();
+                } else if last_log.elapsed() >= Duration::from_secs(10) {
+                    println!("{}", line());
+                    last_log = Instant::now();
+                }
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        })
+    };
+    if !interactive {
+        println!("列出檔案中…");
+    }
+    let files = enumerate_counted(root, &count, &bytes);
+    done.store(true, Ordering::Relaxed);
+    let _ = t.join();
+    if interactive {
+        println!("\r{}", fit(&line()));
+    }
+    files
 }
 
 pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
@@ -75,10 +130,11 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
         return Ok(1);
     }
 
-    println!("列出檔案中…");
-    let files: Vec<_> = enumerate(&o.root).into_iter().filter(|(p, _)| !done.contains(&p.to_string_lossy().into_owned())).collect();
+    let found = enumerate_with_progress(&o.root);
+    let files: Vec<_> = found.into_iter().filter(|(p, _)| !done.contains(&p.to_string_lossy().into_owned())).collect();
     let total: u64 = files.iter().map(|f| f.1).sum();
-    println!("要掃描 {} 個檔案，共 {}。輸入 p 再按 Enter 暫停，q 停止。", files.len(), fmt_bytes(total));
+    println!("要掃描 {} 個檔案，共 {}。", files.len(), fmt_bytes(total));
+    println!("輸入 p 按 Enter 暫停，q 停止。");
 
     let mut w = CsvWriter::create(&o.out, &HEADER, o.resume)?;
     let prog = Progress::new("掃描", files.len() as u64, total, ctl.clone());
