@@ -6,6 +6,9 @@ param(
     [string]$Letter = (Get-Content (Join-Path $PSScriptRoot '..\scratch\vhdx-letter.txt') -ErrorAction SilentlyContinue)
 )
 $ErrorActionPreference = 'Stop'
+# ssd-refresh 輸出 UTF-8。Windows PowerShell 5.1 預設用系統字碼頁（例如 CP950）解碼管線裡的輸出，中文會變亂碼。
+$oldEncoding = [Console]::OutputEncoding
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $Vhdx = [IO.Path]::GetFullPath($Vhdx)
 $tool = Join-Path $repo 'target\release\ssd-refresh.exe'
@@ -156,3 +159,4 @@ $failed = @($checks | Where-Object 結果 -eq '失敗').Count
 Write-Host ''
 Write-Host "完成：$($checks.Count) 項檢查，失敗 $failed 項。摘要：$(Join-Path $out 'summary.md')"
 Stop-Transcript | Out-Null
+[Console]::OutputEncoding = $oldEncoding
