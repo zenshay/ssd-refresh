@@ -1,11 +1,24 @@
 // Icons. The strings below are fixed constants in this file, so `innerHTML` is safe here.
 
-export type IconName = "pause" | "play" | "stop" | "check" | "warn" | "info" | "error" | "lock" | "scan" | "rewrite" | "spinner";
+export type IconName =
+  | "pause"
+  | "play"
+  | "stop"
+  | "check"
+  | "warn"
+  | "info"
+  | "error"
+  | "lock"
+  | "scan"
+  | "rewrite"
+  | "spinner";
 
-const STROKE = 'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const STROKE =
+  'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 
 const SHAPES: Record<IconName, string> = {
-  pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+  pause:
+    '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
   play: '<path d="M8 5v14l11-7z"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   check: `<path ${STROKE} stroke-width="2.4" d="M5 13l4 4L19 7"/>`,
@@ -21,4 +34,3 @@ const SHAPES: Record<IconName, string> = {
 export function setIcon(host: HTMLElement, name: IconName, size = 16): void {
   host.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="currentColor" aria-hidden="true">${SHAPES[name]}</svg>`;
 }
-

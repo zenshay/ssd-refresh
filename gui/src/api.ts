@@ -14,7 +14,13 @@ export interface Volume {
   smart: { level: SmartLevel; detail: string | null };
 }
 
-export type Stage = "find" | "read" | "settle" | "recheck" | "refresh" | "verify";
+export type Stage =
+  | "find"
+  | "read"
+  | "settle"
+  | "recheck"
+  | "refresh"
+  | "verify";
 
 export interface Progress {
   stage: Stage;
@@ -61,7 +67,8 @@ export const api = {
   windowToggleMaximize: () => invoke<void>("window_toggle_maximize"),
   windowClose: () => invoke<void>("window_close"),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
-  writeAndOpenLog: (content: string) => invoke<void>("write_and_open_log", { content }),
+  writeAndOpenLog: (content: string) =>
+    invoke<void>("write_and_open_log", { content }),
   onProgress: (handler: (p: Progress) => void): Promise<UnlistenFn> =>
     listen<Progress>("progress", (event) => handler(event.payload)),
 };

@@ -2,11 +2,11 @@ import type { Actions } from "../actions";
 import { $ } from "../dom";
 import { setIcon } from "../icons";
 import {
+  type ActionView,
   refreshAction,
+  type Store,
   scanAction,
   totalSlowAcrossSelected,
-  type ActionView,
-  type Store,
 } from "../store";
 
 function paint(button: HTMLElement, view: ActionView): void {

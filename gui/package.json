@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "lint": "biome check src",
+    "lint:fix": "biome check --write src",
+    "format": "biome format --write src",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test:e2e": "node tests/e2e.mjs"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@tauri-apps/cli": "^2.1.0",
     "puppeteer-core": "^25.14.0",
     "typescript": "^5.0.0",

@@ -1,6 +1,6 @@
 import { $ } from "../dom";
-import { setIcon, type IconName } from "../icons";
-import type { Store, NoticeKind } from "../store";
+import { type IconName, setIcon } from "../icons";
+import type { NoticeKind, Store } from "../store";
 
 const TONE_ICON: Record<NoticeKind, IconName> = {
   ok: "check",

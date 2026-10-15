@@ -40,9 +40,13 @@ export function mountSlowFiles(store: Store): void {
       return el(
         "tr",
         { class: "slow-row" },
-        el("td", { class: "slow-cell-path", text: file.path, attrs: { title: file.path } }),
+        el("td", {
+          class: "slow-cell-path",
+          text: file.path,
+          attrs: { title: file.path },
+        }),
         el("td", { class: "slow-cell-size", text: fmtBytes(file.size) }),
-        el("td", { class: "slow-cell-speed", text: fmtRate(file.mbps) })
+        el("td", { class: "slow-cell-speed", text: fmtRate(file.mbps) }),
       );
     });
 

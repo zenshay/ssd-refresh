@@ -21,7 +21,8 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   const node = document.createElement(tag);
   if (options.class) node.className = options.class;
   if (options.text !== undefined) node.textContent = options.text;
-  for (const [name, value] of Object.entries(options.attrs ?? {})) node.setAttribute(name, value);
+  for (const [name, value] of Object.entries(options.attrs ?? {}))
+    node.setAttribute(name, value);
   node.append(...children);
   return node;
 }

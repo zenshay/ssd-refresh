@@ -33,7 +33,11 @@ export function askConfirm(options: ConfirmOptions): Promise<boolean> {
   dialog.returnValue = "cancel";
 
   return new Promise((resolve) => {
-    dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true });
+    dialog.addEventListener(
+      "close",
+      () => resolve(dialog.returnValue === "ok"),
+      { once: true },
+    );
     dialog.showModal();
   });
 }

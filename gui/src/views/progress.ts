@@ -1,8 +1,8 @@
 import type { Actions } from "../actions";
+import type { Stage } from "../api";
 import { $ } from "../dom";
 import { fmtBytes, fmtCount, fmtDuration, fmtRate } from "../format";
 import { setIcon } from "../icons";
-import type { Stage } from "../api";
 import type { Store } from "../store";
 
 interface StageInfo {
@@ -14,19 +14,47 @@ interface StageInfo {
 function inspectStage(stage: Stage): StageInfo {
   switch (stage) {
     case "find":
-      return { step: "Step 1/3", title: "Find files to scan", indeterminate: true };
+      return {
+        step: "Step 1/3",
+        title: "Find files to scan",
+        indeterminate: true,
+      };
     case "read":
-      return { step: "Step 2/3", title: "Read and measure speeds", indeterminate: false };
+      return {
+        step: "Step 2/3",
+        title: "Read and measure speeds",
+        indeterminate: false,
+      };
     case "settle":
-      return { step: "Step 3/3", title: "Drive settle wait", indeterminate: true };
+      return {
+        step: "Step 3/3",
+        title: "Drive settle wait",
+        indeterminate: true,
+      };
     case "refresh":
-      return { step: "Step 2/3", title: "Rewrite slow files", indeterminate: false };
+      return {
+        step: "Step 2/3",
+        title: "Rewrite slow files",
+        indeterminate: false,
+      };
     case "recheck":
-      return { step: "Step 3/3", title: "Recheck read speeds", indeterminate: false };
+      return {
+        step: "Step 3/3",
+        title: "Recheck read speeds",
+        indeterminate: false,
+      };
     case "verify":
-      return { step: "Step 3/3", title: "Verify read speeds", indeterminate: false };
+      return {
+        step: "Step 3/3",
+        title: "Verify read speeds",
+        indeterminate: false,
+      };
     default:
-      return { step: "Working", title: "Processing disk data", indeterminate: false };
+      return {
+        step: "Working",
+        title: "Processing disk data",
+        indeterminate: false,
+      };
   }
 }
 
@@ -103,7 +131,10 @@ export function mountProgress(store: Store, actions: Actions): void {
     if (!p) {
       stepChip.textContent = "Starting…";
       stepIcon.hidden = true;
-      titleEl.textContent = s.mode === "scanning" ? "Starting safe scan…" : "Starting selective refresh…";
+      titleEl.textContent =
+        s.mode === "scanning"
+          ? "Starting safe scan…"
+          : "Starting selective refresh…";
       subtitleEl.textContent = "Checking disk...";
       track.classList.add("indeterminate");
       bar.style.width = "0%";
@@ -120,7 +151,9 @@ export function mountProgress(store: Store, actions: Actions): void {
     stepIcon.hidden = !info.indeterminate;
     titleEl.textContent = info.title;
 
-    const driveIdx = s.activeRoot ? s.selectedRoots.indexOf(s.activeRoot) + 1 : 0;
+    const driveIdx = s.activeRoot
+      ? s.selectedRoots.indexOf(s.activeRoot) + 1
+      : 0;
     const drivePrefix =
       s.selectedRoots.length > 1 && s.activeRoot
         ? `[${driveIdx}/${s.selectedRoots.length}] ${s.activeRoot.slice(0, 2)} · `
@@ -136,14 +169,27 @@ export function mountProgress(store: Store, actions: Actions): void {
       statEta.textContent = "--";
     } else {
       track.classList.remove("indeterminate");
-      const pct = p.totalBytes > 0 ? Math.min(100, Math.max(0, (p.bytesDone / p.totalBytes) * 100)) : 0;
+      const pct =
+        p.totalBytes > 0
+          ? Math.min(100, Math.max(0, (p.bytesDone / p.totalBytes) * 100))
+          : 0;
       bar.style.width = `${pct.toFixed(1)}%`;
 
       subtitleEl.textContent = `${drivePrefix}${fmtBytes(p.bytesDone)} of ${fmtBytes(p.totalBytes)} (${pct.toFixed(1)}%)`;
-      statFiles.textContent = p.totalFiles > 0 ? `${fmtCount(p.filesDone)} / ${fmtCount(p.totalFiles)}` : fmtCount(p.filesDone);
-      statBytes.textContent = p.totalBytes > 0 ? `${fmtBytes(p.bytesDone)} / ${fmtBytes(p.totalBytes)}` : fmtBytes(p.bytesDone);
+      statFiles.textContent =
+        p.totalFiles > 0
+          ? `${fmtCount(p.filesDone)} / ${fmtCount(p.totalFiles)}`
+          : fmtCount(p.filesDone);
+      statBytes.textContent =
+        p.totalBytes > 0
+          ? `${fmtBytes(p.bytesDone)} / ${fmtBytes(p.totalBytes)}`
+          : fmtBytes(p.bytesDone);
       statSpeed.textContent = fmtRate(p.mbps);
-      statEta.textContent = isPaused ? "Paused" : p.etaSecs !== null ? fmtDuration(p.etaSecs) : "--";
+      statEta.textContent = isPaused
+        ? "Paused"
+        : p.etaSecs !== null
+          ? fmtDuration(p.etaSecs)
+          : "--";
     }
   });
 }

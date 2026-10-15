@@ -22,4 +22,5 @@ export function fmtDuration(secs: number): string {
   return `${r}s`;
 }
 
-export const fmtPercent = (fraction: number): string => `${(fraction * 100).toFixed(1)}%`;
+export const fmtPercent = (fraction: number): string =>
+  `${(fraction * 100).toFixed(1)}%`;

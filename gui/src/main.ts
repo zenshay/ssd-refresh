@@ -2,7 +2,12 @@ import { createActions } from "./actions";
 import { api } from "./api";
 import { createStore, initialState } from "./store";
 import { mountConfirm } from "./views/confirm";
-import { mountConsole, logMessage, logProgressStream, resetProgressLogState } from "./views/console";
+import {
+  logMessage,
+  logProgressStream,
+  mountConsole,
+  resetProgressLogState,
+} from "./views/console";
 import { mountDrives } from "./views/drives";
 import { mountNotice } from "./views/notice";
 import { mountProgress } from "./views/progress";
@@ -59,7 +64,10 @@ window.addEventListener("DOMContentLoaded", async () => {
     }
 
     if (s.notice && s.notice !== prev?.notice) {
-      logMessage(s.notice.kind === "ok" ? "info" : s.notice.kind, `${s.notice.title}: ${s.notice.body ?? ""}`);
+      logMessage(
+        s.notice.kind === "ok" ? "info" : s.notice.kind,
+        `${s.notice.title}: ${s.notice.body ?? ""}`,
+      );
     }
   });
 
@@ -67,7 +75,10 @@ window.addEventListener("DOMContentLoaded", async () => {
   try {
     const env = await api.environment();
     store.set({ elevated: env.elevated });
-    logMessage("info", `User privilege detected: ${env.elevated ? "Administrator" : "Standard user"}`);
+    logMessage(
+      "info",
+      `User privilege detected: ${env.elevated ? "Administrator" : "Standard user"}`,
+    );
   } catch (err) {
     console.warn("Could not query user privilege:", err);
   }
@@ -77,6 +88,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   const currentVols = store.get().volumes;
   logMessage(
     "info",
-    `Storage inventory: ${currentVols.length} drives detected (${currentVols.map((v) => v.root.slice(0, 2)).join(", ")})`
+    `Storage inventory: ${currentVols.length} drives detected (${currentVols.map((v) => v.root.slice(0, 2)).join(", ")})`,
   );
 });

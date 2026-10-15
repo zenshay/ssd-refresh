@@ -22,7 +22,10 @@ export function resetProgressLogState(): void {
   lastCatalogedCount = 0;
 }
 
-export function logProgressStream(p: Progress, activeRoot?: string | null): void {
+export function logProgressStream(
+  p: Progress,
+  activeRoot?: string | null,
+): void {
   const currentRoot = activeRoot ?? "Drive";
 
   // Stage transition logging
@@ -32,18 +35,30 @@ export function logProgressStream(p: Progress, activeRoot?: string | null): void
     lastCatalogedCount = 0;
 
     if (p.stage === "find") {
-      logMessage("info", `[Step 1/3] Finding files on ${currentRoot}... Traversing directories.`);
+      logMessage(
+        "info",
+        `[Step 1/3] Finding files on ${currentRoot}... Traversing directories.`,
+      );
     } else if (p.stage === "read") {
       logMessage(
         "info",
-        `[Step 2/3] Measuring read speeds on ${currentRoot}... (${fmtCount(p.totalFiles)} files, ${fmtBytes(p.totalBytes)})`
+        `[Step 2/3] Measuring read speeds on ${currentRoot}... (${fmtCount(p.totalFiles)} files, ${fmtBytes(p.totalBytes)})`,
       );
     } else if (p.stage === "settle") {
-      logMessage("info", `[Step 3/3] Settle wait on ${currentRoot}. Drive cooldown in progress.`);
+      logMessage(
+        "info",
+        `[Step 3/3] Settle wait on ${currentRoot}. Drive cooldown in progress.`,
+      );
     } else if (p.stage === "refresh") {
-      logMessage("info", `[Step 2/3] Rewriting slow files on ${currentRoot} via safe relocation.`);
+      logMessage(
+        "info",
+        `[Step 2/3] Rewriting slow files on ${currentRoot} via safe relocation.`,
+      );
     } else if (p.stage === "recheck" || p.stage === "verify") {
-      logMessage("info", `[Step 3/3] Rechecking read speeds to verify improvements.`);
+      logMessage(
+        "info",
+        `[Step 3/3] Rechecking read speeds to verify improvements.`,
+      );
     }
   }
 
@@ -61,7 +76,7 @@ export function logProgressStream(p: Progress, activeRoot?: string | null): void
       const pctText = ((p.bytesDone / p.totalBytes) * 100).toFixed(0);
       logMessage(
         "cmd",
-        `[Progress ${pctText}%] Read ${fmtBytes(p.bytesDone)}/${fmtBytes(p.totalBytes)} · Speed: ${fmtRate(p.mbps)} · Time Left: ${p.etaSecs !== null ? fmtDuration(p.etaSecs) : "--"}`
+        `[Progress ${pctText}%] Read ${fmtBytes(p.bytesDone)}/${fmtBytes(p.totalBytes)} · Speed: ${fmtRate(p.mbps)} · Time Left: ${p.etaSecs !== null ? fmtDuration(p.etaSecs) : "--"}`,
       );
     }
   }
@@ -69,7 +84,11 @@ export function logProgressStream(p: Progress, activeRoot?: string | null): void
 
 function getTimestamp(): string {
   const d = new Date();
-  return d.toTimeString().split(" ")[0] + "." + String(d.getMilliseconds()).padStart(3, "0");
+  return (
+    d.toTimeString().split(" ")[0] +
+    "." +
+    String(d.getMilliseconds()).padStart(3, "0")
+  );
 }
 
 export function logMessage(level: LogEntry["level"], text: string): void {
@@ -91,8 +110,11 @@ export function logMessage(level: LogEntry["level"], text: string): void {
       "div",
       { class: `log-row log-${level}` },
       el("span", { class: "log-time", text: `[${entry.timestamp}]` }),
-      el("span", { class: `log-tag log-tag-${level}`, text: `[${level.toUpperCase()}]` }),
-      el("span", { class: "log-text", text: entry.text })
+      el("span", {
+        class: `log-tag log-tag-${level}`,
+        text: `[${level.toUpperCase()}]`,
+      }),
+      el("span", { class: "log-text", text: entry.text }),
     );
     view.appendChild(row);
     view.scrollTop = view.scrollHeight;
@@ -110,7 +132,7 @@ export function buildDiagnosticReport(store: Store): string {
     "## Storage Volumes",
     ...state.volumes.map(
       (v) =>
-        `- Drive ${v.root} (${v.fs}): ${(v.totalBytes / 1e9).toFixed(1)} GB total, ${(v.freeBytes / 1e9).toFixed(1)} GB free, SMART: ${v.smart.level} (${v.smart.detail ?? "ok"})`
+        `- Drive ${v.root} (${v.fs}): ${(v.totalBytes / 1e9).toFixed(1)} GB total, ${(v.freeBytes / 1e9).toFixed(1)} GB free, SMART: ${v.smart.level} (${v.smart.detail ?? "ok"})`,
     ),
     "",
     "## Console Event Stream",
@@ -166,7 +188,10 @@ export function mountConsole(store: Store): void {
     const report = buildDiagnosticReport(store);
     try {
       await api.writeAndOpenLog(report);
-      logMessage("info", "Diagnostic report opened in system default text editor.");
+      logMessage(
+        "info",
+        "Diagnostic report opened in system default text editor.",
+      );
     } catch (err) {
       logMessage("error", `Failed to open log file: ${err}`);
     }
@@ -176,7 +201,10 @@ export function mountConsole(store: Store): void {
   reportBtn.addEventListener("click", () => {
     const state = store.get();
     const body = encodeURIComponent(
-      `### Problem Description\n<!-- Describe what went wrong -->\n\n### Environment\n- OS: Windows\n- Elevated: ${state.elevated}\n- Drives: ${state.volumes.map((v) => v.root.slice(0, 2)).join(", ")}\n\n### Log Summary\n\`\`\`\n${logs.slice(-20).map((l) => `[${l.timestamp}] [${l.level}] ${l.text}`).join("\n")}\n\`\`\``
+      `### Problem Description\n<!-- Describe what went wrong -->\n\n### Environment\n- OS: Windows\n- Elevated: ${state.elevated}\n- Drives: ${state.volumes.map((v) => v.root.slice(0, 2)).join(", ")}\n\n### Log Summary\n\`\`\`\n${logs
+        .slice(-20)
+        .map((l) => `[${l.timestamp}] [${l.level}] ${l.text}`)
+        .join("\n")}\n\`\`\``,
     );
     const url = `https://github.com/my-org/ssd-refresh/issues/new?title=[Bug]+Diagnostic+Report&body=${body}`;
     void api.openUrl(url);

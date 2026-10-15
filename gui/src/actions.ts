@@ -1,13 +1,13 @@
 // What happens when the user interacts. Views only call these actions.
 import { api, type ScanOutcome } from "./api";
 import { fmtCount } from "./format";
-import { askConfirm } from "./views/confirm";
 import {
   allSelected,
-  totalSlowAcrossSelected,
   type Notice,
   type Store,
+  totalSlowAcrossSelected,
 } from "./store";
+import { askConfirm } from "./views/confirm";
 
 const errorText = (e: unknown): string =>
   typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
@@ -47,13 +47,15 @@ export function createActions(store: Store) {
       const volumes = await api.listVolumes();
       const currentSelected = store.get().selectedRoots;
       // Retain already selected roots if they still exist, otherwise default to all or first
-      const validSelected = currentSelected.filter((r) => volumes.some((v) => v.root === r));
+      const validSelected = currentSelected.filter((r) =>
+        volumes.some((v) => v.root === r),
+      );
       const nextSelected =
         validSelected.length > 0
           ? validSelected
           : volumes.length > 0
-          ? [volumes[0].root]
-          : [];
+            ? [volumes[0].root]
+            : [];
 
       store.set({
         volumes,
@@ -64,7 +66,11 @@ export function createActions(store: Store) {
       store.set({
         volumes: [],
         volumesLoading: false,
-        notice: { kind: "error", title: "Cannot read drive list", body: errorText(e) },
+        notice: {
+          kind: "error",
+          title: "Cannot read drive list",
+          body: errorText(e),
+        },
       });
     }
   }
@@ -134,7 +140,11 @@ export function createActions(store: Store) {
           mode: "idle",
           activeRoot: null,
           progress: null,
-          notice: { kind: "error", title: `Scan failed on ${root.slice(0, 2)}`, body: errorText(e) },
+          notice: {
+            kind: "error",
+            title: `Scan failed on ${root.slice(0, 2)}`,
+            body: errorText(e),
+          },
         });
         return;
       }
@@ -155,16 +165,20 @@ export function createActions(store: Store) {
     if (s.mode !== "idle" || slowCount === 0) return;
 
     const drivesWithSlow = s.selectedRoots.filter(
-      (r) => s.scans[r] && !s.scans[r].stopped && s.scans[r].slowTotal > 0
+      (r) => s.scans[r] && !s.scans[r].stopped && s.scans[r].slowTotal > 0,
     );
 
     const driveNames = drivesWithSlow.map((r) => r.slice(0, 2)).join(", ");
-    const hasSystem = s.volumes.some((v) => drivesWithSlow.includes(v.root) && v.isSystem);
+    const hasSystem = s.volumes.some(
+      (v) => drivesWithSlow.includes(v.root) && v.isSystem,
+    );
 
     const confirmed = await askConfirm({
       title: `Rewrite ${fmtCount(slowCount)} slow files across ${driveNames}?`,
       body: "The file system safely moves each slow file to fresh NAND blocks. Unchanged and fast files are not touched. Programs can continue running.",
-      warning: hasSystem ? "Includes your Windows system drive. Close other apps before starting." : undefined,
+      warning: hasSystem
+        ? "Includes your Windows system drive. Close other apps before starting."
+        : undefined,
       okLabel: "Rewrite slow files",
     });
 
@@ -204,7 +218,11 @@ export function createActions(store: Store) {
           mode: "idle",
           activeRoot: null,
           progress: null,
-          notice: { kind: "error", title: `Refresh failed on ${root.slice(0, 2)}`, body: errorText(e) },
+          notice: {
+            kind: "error",
+            title: `Refresh failed on ${root.slice(0, 2)}`,
+            body: errorText(e),
+          },
         });
         return;
       }

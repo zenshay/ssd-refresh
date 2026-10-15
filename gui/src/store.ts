@@ -51,7 +51,9 @@ export function createStore(initial: State) {
     set(patch: Partial<State>): void {
       const prev = state;
       state = { ...state, ...patch };
-      listeners.forEach((listener) => listener(state, prev));
+      for (const listener of listeners) {
+        listener(state, prev);
+      }
     },
     subscribe(listener: Listener): void {
       listeners.add(listener);
@@ -71,7 +73,8 @@ export const isSelected = (s: State, root: string): boolean =>
   s.selectedRoots.includes(root);
 
 export const allSelected = (s: State): boolean =>
-  s.volumes.length > 0 && s.volumes.every((v) => s.selectedRoots.includes(v.root));
+  s.volumes.length > 0 &&
+  s.volumes.every((v) => s.selectedRoots.includes(v.root));
 
 /** Slow files count across selected drives that are ready to refresh. */
 export function totalSlowAcrossSelected(s: State): number {
@@ -97,7 +100,8 @@ export interface ActionView {
 
 export function scanAction(s: State): ActionView {
   const count = s.selectedRoots.length;
-  const baseHint = "Read-only unbuffered read. Finds slow files. Changes nothing.";
+  const baseHint =
+    "Read-only unbuffered read. Finds slow files. Changes nothing.";
 
   if (s.mode === "scanning") {
     return {
@@ -109,7 +113,13 @@ export function scanAction(s: State): ActionView {
     };
   }
   if (s.mode === "refreshing") {
-    return { state: "waiting", title: "Safe Scan", hint: baseHint, label: "Waiting", disabled: true };
+    return {
+      state: "waiting",
+      title: "Safe Scan",
+      hint: baseHint,
+      label: "Waiting",
+      disabled: true,
+    };
   }
   if (count === 0) {
     return {
@@ -122,7 +132,9 @@ export function scanAction(s: State): ActionView {
   }
 
   const title = count > 1 ? `Safe Scan (${count} drives)` : "Safe Scan";
-  const allDone = count > 0 && s.selectedRoots.every((root) => s.scans[root] && !s.scans[root].stopped);
+  const allDone =
+    count > 0 &&
+    s.selectedRoots.every((root) => s.scans[root] && !s.scans[root].stopped);
 
   return {
     state: allDone ? "done" : "ready",
@@ -145,11 +157,19 @@ export function refreshAction(s: State): ActionView {
     };
   }
   if (s.mode === "scanning") {
-    return { state: "waiting", title, hint: "Wait for the scan to end.", label: "Waiting", disabled: true };
+    return {
+      state: "waiting",
+      title,
+      hint: "Wait for the scan to end.",
+      label: "Waiting",
+      disabled: true,
+    };
   }
 
   // Check if any selected drive is failing SMART
-  const failingVolume = selectedVolumes(s).find((v) => v.smart.level === "failing");
+  const failingVolume = selectedVolumes(s).find(
+    (v) => v.smart.level === "failing",
+  );
   if (failingVolume) {
     return {
       state: "locked",
@@ -162,11 +182,14 @@ export function refreshAction(s: State): ActionView {
 
   const slowTotal = totalSlowAcrossSelected(s);
   if (slowTotal === 0) {
-    const hasScanned = s.selectedRoots.length > 0 && s.selectedRoots.every((r) => s.scans[r]);
+    const hasScanned =
+      s.selectedRoots.length > 0 && s.selectedRoots.every((r) => s.scans[r]);
     return {
       state: "locked",
       title,
-      hint: hasScanned ? "The scan found no slow files on selected drives." : "Run Safe Scan first.",
+      hint: hasScanned
+        ? "The scan found no slow files on selected drives."
+        : "Run Safe Scan first.",
       label: "Locked",
       disabled: true,
     };
