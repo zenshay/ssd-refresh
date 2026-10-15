@@ -5,13 +5,13 @@ use crate::control::Control;
 use crate::csv::{self, CsvWriter};
 use crate::progress::{fit, Progress};
 use std::io::{IsTerminal, Write};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use crate::reader::{read_file, ReadOptions, ReadResult};
 use crate::sys;
 use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub struct ScanOptions {
@@ -19,6 +19,8 @@ pub struct ScanOptions {
     pub out: PathBuf,
     pub hash: bool,
     pub resume: bool,
+    /// 第一輪同時處理的檔案數
+    pub parallel: usize,
     pub read: ReadOptions,
 }
 
@@ -139,30 +141,66 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
     let mut w = CsvWriter::create(&o.out, &HEADER, o.resume)?;
     let prog = Progress::new("掃描", files.len() as u64, total, ctl.clone());
     let mut q = sys::IoQueue::new(o.read.qd, o.read.chunk);
-    let mut seen = HashSet::new();
-    let mut stopped = false;
-    // 第一次讀起來慢的檔案先放這裡。SSD 閒置後的內部整理、其他程式的大量 I/O，都會讓一段時間內的讀取全部變慢；
-    // 所以等整輪掃完再確認兩次（第二次至少隔 CONFIRM_GAP），三次都慢才算慢。
+    let seen = Mutex::new(HashSet::new());
+    // 第一次讀起來慢的檔案先放這裡。SSD 閒置後的內部整理、其他程式的大量 I/O、以及第一輪同時讀多個檔案，
+    // 都會讓讀取看起來變慢；所以等整輪掃完再一個一個確認兩次（第二次至少隔 CONFIRM_GAP），三次都慢才算慢。
     let mut pending: Vec<(Row, ReadResult)> = Vec::new();
-    for (path, _) in &files {
-        if ctl.stopped() {
-            stopped = true;
-            break;
+    let mut write_err: Option<io::Error> = None;
+
+    // 第一輪：同時處理 o.parallel 個檔案。小檔一次只需要一個 I/O，不平行的話 SSD 的指令佇列大部分是空的。
+    // 大檔另外走一條道：一次一個（檔案內部仍同時排多個 I/O），用滿頻寬，測速也不會被其他大檔分走頻寬而失真。
+    // 小檔受延遲限制、幾乎不吃頻寬，由其餘各道平行處理。大檔道做完大檔後會幫忙做小檔。
+    let (large, small): (Vec<usize>, Vec<usize>) = (0..files.len()).partition(|&i| files[i].1 >= LARGE_FILE);
+    let next_large = AtomicUsize::new(0);
+    let next_small = AtomicUsize::new(0);
+    let (tx, rx) = mpsc::channel::<(Row, Option<ReadResult>)>();
+    std::thread::scope(|s| {
+        for lane in 0..o.parallel.max(1) {
+            let tx = tx.clone();
+            let (files, vol, ctl, seen) = (&files, &vol, &ctl, &seen);
+            let (large, small, next_large, next_small) = (&large, &small, &next_large, &next_small);
+            s.spawn(move || {
+                let mut q = sys::IoQueue::new(o.read.qd, o.read.chunk);
+                loop {
+                    if ctl.stopped() {
+                        break;
+                    }
+                    ctl.wait_while_paused();
+                    let pick = if lane == 0 {
+                        large.get(next_large.fetch_add(1, Ordering::Relaxed)).or_else(|| small.get(next_small.fetch_add(1, Ordering::Relaxed)))
+                    } else {
+                        small.get(next_small.fetch_add(1, Ordering::Relaxed))
+                    };
+                    let Some(&i) = pick else { break };
+                    let (path, _) = &files[i];
+                    let (row, first) = scan_one(path, vol, o, &mut q, seen, ctl);
+                    if ctl.stopped() && row.status == "ERROR" {
+                        break; // 中途停止，這一列不寫，續跑時重掃
+                    }
+                    if tx.send((row, first)).is_err() {
+                        break;
+                    }
+                }
+            });
         }
-        ctl.wait_while_paused();
-        let (row, first) = scan_one(path, &vol, o, &mut q, &mut seen, &ctl);
-        if ctl.stopped() && row.status == "ERROR" {
-            stopped = true;
-            break; // 中途停止，這一列不寫，續跑時重掃
-        }
-        match first {
-            Some(res) => pending.push((row, res)),
-            None => {
-                w.row(row.values())?;
-                prog.add_file(row.size, row.slow, row.status == "ERROR");
+        drop(tx);
+        for (row, first) in rx {
+            match first {
+                Some(res) => pending.push((row, res)),
+                None => {
+                    if let Err(e) = w.row(row.values()) {
+                        write_err.get_or_insert(e);
+                        ctl.request_stop();
+                    }
+                    prog.add_file(row.size, row.slow, row.status == "ERROR");
+                }
             }
         }
+    });
+    if let Some(e) = write_err {
+        return Err(e);
     }
+    let mut stopped = ctl.stopped();
     let mut round_start = Instant::now();
     for round in 1..=2 {
         if stopped || pending.is_empty() {
@@ -245,6 +283,9 @@ impl Row {
 
 const CONFIRM_GAP: Duration = Duration::from_secs(30);
 
+/// 第一輪中，這個大小以上的檔案走大檔道（一次一個）
+const LARGE_FILE: u64 = 4 << 20;
+
 fn fill_result(row: &mut Row, res: &ReadResult) {
     row.disk_bytes = res.disk_bytes;
     row.read_ms = res.disk_secs * 1000.0;
@@ -280,14 +321,14 @@ fn confirm(row: &mut Row, first: &mut ReadResult, vol: &VolumeInfo, o: &ScanOpti
 }
 
 /// 掃一個檔案。第一次讀起來慢時，回傳讀取結果讓呼叫端稍後確認。
-fn scan_one(path: &Path, vol: &VolumeInfo, o: &ScanOptions, q: &mut sys::IoQueue, seen: &mut HashSet<(u64, u64)>, ctl: &Control) -> (Row, Option<ReadResult>) {
+fn scan_one(path: &Path, vol: &VolumeInfo, o: &ScanOptions, q: &mut sys::IoQueue, seen: &Mutex<HashSet<(u64, u64)>>, ctl: &Control) -> (Row, Option<ReadResult>) {
     let mut row = Row { path: path.to_string_lossy().into_owned(), status: "OK".into(), ..Default::default() };
     let mut suspect = None;
     let r = (|| -> io::Result<()> {
         let mf = sys::open_meta(path)?;
         let m = sys::meta(&mf)?;
         row.size = m.size;
-        if m.links > 1 && !seen.insert(m.id) {
+        if m.links > 1 && !seen.lock().unwrap().insert(m.id) {
             row.status = "DUP_LINK".into();
             return Ok(());
         }

@@ -12,7 +12,9 @@ ssd-refresh：檔案層級的 SSD 刷新工具
 
 用法：
   ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--hash] [--resume]
-      只讀。逐檔不經快取讀取，記錄每個 extent 的速度，列出讀得慢的檔案。
+                   [--parallel 8]
+      只讀。不經快取讀取每個檔案，記錄每個 extent 的速度，列出讀得慢的檔案。
+      第一輪同時處理 --parallel 個檔案；可疑的檔案最後再一個一個確認。
 
   ssd-refresh refresh --from 報告.csv [--out 記錄.csv] [--select slow|all]
                       [--force] [--confirm X:] [--allow-system-volume]
@@ -135,7 +137,7 @@ fn run() -> Result<i32, String> {
         "scan" => {
             let root = abs(&a.positional(0).ok_or("缺少要掃描的路徑")?);
             let out = abs(&a.value("--out")?.unwrap_or_else(|| format!("scan-{}.csv", timestamp())));
-            let o = ScanOptions { root, hash: a.flag("--hash"), resume: a.flag("--resume"), read: read_opts(&mut a)?, out: out.clone() };
+            let o = ScanOptions { root, hash: a.flag("--hash"), resume: a.flag("--resume"), parallel: a.num("--parallel", 8)?, read: read_opts(&mut a)?, out: out.clone() };
             a.finish()?;
             println!("報告：{}", out.display());
             let ctl = Control::new(Some(pause_path(&out)));
