@@ -13,17 +13,50 @@ use std::time::{Duration, Instant};
 
 pub type Logger = Arc<dyn Fn(&str) + Send + Sync>;
 
+/// The part of the work that a progress update describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    /// Scan, step 1: find the files. The total is not known yet.
+    Find,
+    /// Scan, step 2: read each file one time.
+    Read,
+    /// Scan, step 3: the scan waits between two rounds of checks.
+    Settle,
+    /// Scan, step 3: the scan checks the files on the check list again.
+    Recheck,
+    /// Refresh: the tool moves the slow files.
+    Refresh,
+    /// Verify: the tool reads the files again and compares the speed.
+    Verify,
+}
+
+impl Stage {
+    /// A fixed name that a user interface can use as a key.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Stage::Find => "find",
+            Stage::Read => "read",
+            Stage::Settle => "settle",
+            Stage::Recheck => "recheck",
+            Stage::Refresh => "refresh",
+            Stage::Verify => "verify",
+        }
+    }
+}
+
+/// Raw numbers for a progress display. The receiver decides how to show them.
 #[derive(Clone, Debug)]
 pub struct ProgressUpdate {
-    pub phase: String,
-    pub percent: f64,
-    pub mbps: f64,
+    pub stage: Stage,
     pub files_done: u64,
+    /// 0 when the total is not known.
     pub total_files: u64,
     pub bytes_done: u64,
+    /// 0 when the total is not known.
     pub total_bytes: u64,
-    pub eta_str: String,
-    pub is_paused: bool,
+    pub mbps: f64,
+    pub eta_secs: Option<u64>,
+    pub paused: bool,
 }
 
 pub type ProgressReporter = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;

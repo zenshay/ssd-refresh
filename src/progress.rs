@@ -7,7 +7,7 @@
 //! or a pipe), the tool writes a new line each 10 seconds.
 
 use crate::common::fmt_bytes;
-use crate::control::Control;
+use crate::control::{Control, ProgressUpdate, Stage};
 use crate::sys;
 use std::io::{IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -184,10 +184,7 @@ impl Inner {
     fn line(&self, verbose: bool) -> String {
         let c = &self.c;
         let ld = |a: &AtomicU64| a.load(Ordering::Relaxed);
-        let sec = self.start.elapsed().as_secs_f64();
-        // Files can grow while they are read, so never show more than the total.
-        let clamp = |v: u64, total: u64| if total > 0 { v.min(total) } else { v };
-        let (b, f) = (clamp(ld(&c.bytes), self.total_bytes), clamp(ld(&c.files), self.total_files));
+        let Snapshot { sec, bytes: b, files: f, mbps: rate } = self.snapshot();
         let pct = if self.total_bytes > 0 {
             100.0 * b as f64 / self.total_bytes as f64
         } else if self.total_files > 0 {
@@ -195,7 +192,6 @@ impl Inner {
         } else {
             100.0
         };
-        let rate = if sec > 0.0 { b as f64 / 1e6 / sec } else { 0.0 };
         let eta = eta(sec, b, self.total_bytes, f, self.total_files, verbose);
         let paused = self.ctl.is_paused();
         match (self.phase, verbose) {
@@ -274,6 +270,8 @@ impl Inner {
     }
 
     fn render(&self, last: bool) {
+        // Report first and outside the terminal lock: a slow receiver must not block the line.
+        self.report();
         let mut g = self.lock.lock().unwrap();
         let mut out = std::io::stdout().lock();
         if self.interactive {
@@ -285,58 +283,63 @@ impl Inner {
             let _ = writeln!(out, "{}", self.line(true));
         }
         let _ = out.flush();
-        self.report_to_control();
     }
 
-    fn report_to_control(&self) {
-        let c = &self.c;
+    /// The counters as they are now. Files can grow while they are read, so the numbers
+    /// never go above the total.
+    fn snapshot(&self) -> Snapshot {
         let ld = |a: &AtomicU64| a.load(Ordering::Relaxed);
-        let sec = self.start.elapsed().as_secs_f64();
         let clamp = |v: u64, total: u64| if total > 0 { v.min(total) } else { v };
-        let (b, f) = (clamp(ld(&c.bytes), self.total_bytes), clamp(ld(&c.files), self.total_files));
-        let pct = if self.total_bytes > 0 {
-            100.0 * b as f64 / self.total_bytes as f64
-        } else if self.total_files > 0 {
-            100.0 * f as f64 / self.total_files as f64
-        } else {
-            0.0
-        };
-        let rate = if sec > 0.0 { b as f64 / 1e6 / sec } else { 0.0 };
-        let eta_str = eta(sec, b, self.total_bytes, f, self.total_files, true);
-        let paused = self.ctl.is_paused();
+        let sec = self.start.elapsed().as_secs_f64();
+        let bytes = clamp(ld(&self.c.bytes), self.total_bytes);
+        let files = clamp(ld(&self.c.files), self.total_files);
+        let mbps = if sec > 0.0 { bytes as f64 / 1e6 / sec } else { 0.0 };
+        Snapshot { sec, bytes, files, mbps }
+    }
 
-        let phase_name = match self.phase {
-            Phase::Scan => "Step 2: Measuring unbuffered read speed...".to_string(),
-            Phase::Recheck(r) => format!("Step 3: Re-checking candidate slow files ({r}/2)..."),
-            Phase::Refresh { dry_run } => if dry_run { "Dry run preview...".to_string() } else { "Step 2: Rewriting slow files via NTFS defrag API...".to_string() },
-            Phase::Verify => "Verifying speeds...".to_string(),
+    fn report(&self) {
+        let s = self.snapshot();
+        let stage = match self.phase {
+            Phase::Scan => Stage::Read,
+            Phase::Recheck(_) => Stage::Recheck,
+            Phase::Refresh { .. } => Stage::Refresh,
+            Phase::Verify => Stage::Verify,
         };
-
-        self.ctl.report_progress(crate::control::ProgressUpdate {
-            phase: phase_name,
-            percent: (pct * 10.0).round() / 10.0,
-            mbps: (rate * 10.0).round() / 10.0,
-            files_done: f,
+        self.ctl.report_progress(ProgressUpdate {
+            stage,
+            files_done: s.files,
             total_files: self.total_files,
-            bytes_done: b,
+            bytes_done: s.bytes,
             total_bytes: self.total_bytes,
-            eta_str,
-            is_paused: paused,
+            mbps: s.mbps,
+            eta_secs: eta_secs(s.sec, s.bytes, self.total_bytes, s.files, self.total_files),
+            paused: self.ctl.is_paused(),
         });
     }
 }
 
-/// "left 1h18m (done ~10:55)" in the wide form, "1h18m" in the short form.
-/// Uses bytes when the total is known, otherwise the file count.
-fn eta(sec: f64, b: u64, total_b: u64, f: u64, total_f: u64, verbose: bool) -> String {
+struct Snapshot {
+    sec: f64,
+    bytes: u64,
+    files: u64,
+    mbps: f64,
+}
+
+/// Seconds left. It uses bytes when the total is known, otherwise the file count.
+pub fn eta_secs(sec: f64, b: u64, total_b: u64, f: u64, total_f: u64) -> Option<u64> {
     let left = if total_b > 0 && b > 0 && total_b > b {
         sec * (total_b - b) as f64 / b as f64
     } else if total_f > 0 && f > 0 && total_f > f && total_b == 0 {
         sec * (total_f - f) as f64 / f as f64
     } else {
-        return String::new();
+        return None;
     };
-    let s = left as u64;
+    Some(left as u64)
+}
+
+/// "left 1h18m (done ~10:55)" in the wide form, "1h18m" in the short form.
+fn eta(sec: f64, b: u64, total_b: u64, f: u64, total_f: u64, verbose: bool) -> String {
+    let Some(s) = eta_secs(sec, b, total_b, f, total_f) else { return String::new() };
     let short = if s >= 3600 { format!("{}h{:02}m", s / 3600, s / 60 % 60) } else { format!("{}m{:02}s", s / 60, s % 60) };
     if !verbose {
         return short;
@@ -344,6 +347,28 @@ fn eta(sec: f64, b: u64, total_b: u64, f: u64, total_f: u64, verbose: bool) -> S
     match sys::local_clock_after(s) {
         Some(at) => format!("left {short} (done ~{at})"),
         None => format!("left {short}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::eta_secs;
+
+    #[test]
+    fn eta_uses_bytes_when_total_is_known() {
+        // 25% of the bytes in 10 s: 30 s are left.
+        assert_eq!(eta_secs(10.0, 25, 100, 1, 4), Some(30));
+    }
+
+    #[test]
+    fn eta_uses_files_when_bytes_total_is_zero() {
+        assert_eq!(eta_secs(10.0, 0, 0, 2, 4), Some(10));
+    }
+
+    #[test]
+    fn eta_is_none_without_progress_or_when_done() {
+        assert_eq!(eta_secs(10.0, 0, 100, 0, 4), None);
+        assert_eq!(eta_secs(10.0, 100, 100, 4, 4), None);
     }
 }
 

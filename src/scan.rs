@@ -9,7 +9,7 @@
 //!    more apart. A file is *slow* only if each read was slow.
 
 use crate::common::{fmt_bytes, fmt_count, hex, Kind, VolumeInfo};
-use crate::control::Control;
+use crate::control::{Control, ProgressUpdate, Stage};
 use crate::csv::{self, CsvWriter};
 use crate::progress::{fit, para, width, Phase, Progress};
 use crate::reader::{read_file, ReadOptions, ReadResult};
@@ -106,8 +106,23 @@ fn enumerate_with_progress(root: &Path, ctl: &Arc<Control>) -> Vec<(PathBuf, u64
             )
         }
     };
+    let report = {
+        let (count, bytes, ctl) = (count.clone(), bytes.clone(), ctl.clone());
+        move || {
+            ctl.report_progress(ProgressUpdate {
+                stage: Stage::Find,
+                files_done: count.load(Ordering::Relaxed),
+                total_files: 0,
+                bytes_done: bytes.load(Ordering::Relaxed),
+                total_bytes: 0,
+                mbps: 0.0,
+                eta_secs: None,
+                paused: ctl.is_paused(),
+            })
+        }
+    };
     let t = {
-        let (done, line, count, bytes, ctl) = (done.clone(), line.clone(), count.clone(), bytes.clone(), ctl.clone());
+        let (done, line, report) = (done.clone(), line.clone(), report.clone());
         std::thread::spawn(move || {
             let mut last_log = Instant::now();
             while !done.load(Ordering::Relaxed) {
@@ -118,17 +133,7 @@ fn enumerate_with_progress(root: &Path, ctl: &Arc<Control>) -> Vec<(PathBuf, u64
                     println!("{}", line());
                     last_log = Instant::now();
                 }
-                ctl.report_progress(crate::control::ProgressUpdate {
-                    phase: "Step 1: Finding and cataloging files...".to_string(),
-                    percent: 0.0,
-                    mbps: 0.0,
-                    files_done: count.load(Ordering::Relaxed),
-                    total_files: 0,
-                    bytes_done: bytes.load(Ordering::Relaxed),
-                    total_bytes: 0,
-                    eta_str: "Cataloging...".to_string(),
-                    is_paused: ctl.is_paused(),
-                });
+                report();
                 std::thread::sleep(Duration::from_millis(250));
             }
         })
@@ -136,6 +141,7 @@ fn enumerate_with_progress(root: &Path, ctl: &Arc<Control>) -> Vec<(PathBuf, u64
     let files = enumerate_counted(root, &count, &bytes, ctl);
     done.store(true, Ordering::Relaxed);
     let _ = t.join();
+    report();
     if interactive {
         print!("\r{}\r", " ".repeat(width() - 1));
     }
@@ -202,8 +208,8 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
     para(2, "The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.");
     let found = enumerate_with_progress(&o.root, &ctl);
     if ctl.stopped() {
-        println!("Scan stopped by user.");
-        return Ok(130);
+        println!("The scan stopped. No file was read. To start again, run the same command.");
+        return Ok(4);
     }
     let files: Vec<_> = found.into_iter().filter(|(p, _)| !done.contains(&p.to_string_lossy().into_owned())).collect();
     let total: u64 = files.iter().map(|f| f.1).sum();
@@ -350,6 +356,16 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
                     println!("  The scan waits {} s before round 2...", wait.as_secs());
                     let until = Instant::now() + wait;
                     while Instant::now() < until && !ctl.stopped() {
+                        ctl.report_progress(ProgressUpdate {
+                            stage: Stage::Settle,
+                            files_done: 0,
+                            total_files: 0,
+                            bytes_done: 0,
+                            total_bytes: 0,
+                            mbps: 0.0,
+                            eta_secs: Some(until.saturating_duration_since(Instant::now()).as_secs()),
+                            paused: ctl.is_paused(),
+                        });
                         std::thread::sleep(Duration::from_millis(200));
                     }
                 }
