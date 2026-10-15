@@ -1,3 +1,5 @@
 scratch/
+input/
+output/
 *.vhdx
 target/

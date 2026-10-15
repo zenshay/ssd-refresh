@@ -22,7 +22,9 @@ diskpart /s $dp | Out-Host
 Remove-Item $dp
 $disk = Mount-DiskImage -ImagePath $Path -PassThru | Get-Disk
 Initialize-Disk -Number $disk.Number -PartitionStyle GPT
-$part = New-Partition -DiskNumber $disk.Number -UseMaximumSize -DriveLetter $Letter
+# 先格式化再指派磁碟代號：未格式化的磁碟區一有代號，檔案總管就會跳出「要格式化嗎」的視窗
+$part = New-Partition -DiskNumber $disk.Number -UseMaximumSize
 Format-Volume -Partition $part -FileSystem NTFS -NewFileSystemLabel SSDTEST -AllocationUnitSize 4096 -Confirm:$false | Out-Host
+$part | Set-Partition -NewDriveLetter $Letter
 Set-Content (Join-Path $PSScriptRoot '..\scratch\vhdx-letter.txt') $Letter
 Write-Host "完成：${Letter}:（標籤 SSDTEST）"
