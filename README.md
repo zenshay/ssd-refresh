@@ -179,7 +179,7 @@ If either is true, the status is `CHANGED`. Otherwise it is `MISMATCH`.
 - `p` + Enter pauses or resumes. Requests already sent finish first.
 - `q` + Enter, or Ctrl+C, stops after the files in progress. A second Ctrl+C quits at once. Quitting at any moment leaves every file intact.
 - Creating the file `<output>.pause` pauses until it is deleted.
-- Run the same command with `--resume` to continue. The report or log is saved row by row and is the checkpoint.
+- Run the same command with `--resume` to continue. The report or log is saved row by row and is the checkpoint. A resumed scan also retries files that ended in `ERROR` (for example after you run it as administrator); the newer row wins.
 
 ## Options
 

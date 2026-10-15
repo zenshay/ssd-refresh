@@ -81,7 +81,8 @@ Progress line in step 3
 Options
   --out FILE           report file (default: scan-<number>.csv in this folder)
   --resume             continue an interrupted scan; files already in the
-                       report are skipped
+                       report are skipped, files that ended in ERROR are
+                       tried again
   --hash               also record each file's SHA-256 (uses more CPU)
   --parallel 8         files read at the same time in step 2; 1 = one by one
   --threshold 100      an extent slower than this (MB/s) is slow

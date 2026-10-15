@@ -49,7 +49,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
     // ---------- Step 1: choose files ----------
     println!();
     println!("Step 1/3  Choose files and check the volume");
-    let picked: Vec<(String, u64)> = csv::read_all(&o.from)?
+    let picked: Vec<(String, u64)> = csv::latest_by(csv::read_all(&o.from)?, "path")
         .into_iter()
         .filter(|r| r.get("status").map(String::as_str) == Some("OK"))
         .filter(|r| o.select_all || r.get("slow").map(String::as_str) == Some("1"))

@@ -69,6 +69,24 @@ fn trim_partial_last_line(path: &Path) -> io::Result<()> {
 
 pub type Row = HashMap<String, String>;
 
+/// Keeps only the last row for each value of `key` (a resumed run may write a newer row
+/// for a file, for example after retrying an error). Order of first appearance is kept.
+pub fn latest_by(rows: Vec<Row>, key: &str) -> Vec<Row> {
+    let mut index: HashMap<String, usize> = HashMap::new();
+    let mut out: Vec<Row> = Vec::new();
+    for r in rows {
+        let k = r.get(key).cloned().unwrap_or_default();
+        match index.get(&k) {
+            Some(&i) => out[i] = r,
+            None => {
+                index.insert(k, out.len());
+                out.push(r);
+            }
+        }
+    }
+    out
+}
+
 /// All rows as column name -> value. An incomplete last row is ignored.
 pub fn read_all(path: &Path) -> io::Result<Vec<Row>> {
     let text = std::fs::read_to_string(path)?;

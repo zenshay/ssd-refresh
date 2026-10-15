@@ -158,8 +158,18 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
 
     let mut done = HashSet::new();
     if o.resume && o.out.exists() {
-        for r in csv::read_all(&o.out)? {
-            done.insert(r["path"].clone());
+        // Files that ended in ERROR are tried again (for example after running as
+        // administrator); their new row supersedes the old one.
+        let mut retry = 0u64;
+        for r in csv::latest_by(csv::read_all(&o.out)?, "path") {
+            if r["status"] == "ERROR" {
+                retry += 1;
+            } else {
+                done.insert(r["path"].clone());
+            }
+        }
+        if retry > 0 {
+            println!("  Retry:   {} files that ended in ERROR will be tried again.", fmt_count(retry));
         }
         println!("  Resume:  {} files are already in the report and will be skipped.", fmt_count(done.len() as u64));
     }
@@ -488,7 +498,7 @@ fn scan_one(path: &Path, vol: &VolumeInfo, o: &ScanOptions, opts: &ReadOptions, 
 
 /// Summary of a whole report (also covers rows written by earlier, resumed runs).
 pub fn print_summary(path: &Path, threshold: f64) -> io::Result<()> {
-    let rows = csv::read_all(path)?;
+    let rows = csv::latest_by(csv::read_all(path)?, "path");
     let num = |r: &csv::Row, k: &str| r[k].parse::<f64>().unwrap_or(0.0);
     let ok: Vec<_> = rows.iter().filter(|r| r["status"] == "OK").collect();
     let slow: Vec<_> = ok.iter().filter(|r| r["slow"] == "1").collect();
