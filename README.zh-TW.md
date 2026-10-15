@@ -15,7 +15,7 @@
 
 1. 用 `scan` 掃描整顆磁碟。這會把每個檔案讀一遍，第一種 SSD 可能就此恢復。
 2. 隔一天再 `scan` 一次（或對第一份報告執行 `verify --from`）。如果慢檔已經變快，代表讀一遍就夠，不需要 `refresh`。
-3. 如果還是慢，再用 `refresh` 刷新，並保留對照組（`--control-fraction 0.5`），隔一天以上執行 `verify`。見[驗證](#驗證刷新的效果能不能維持)。
+3. 如果還是慢，再用 `refresh` 刷新，隔一天以上執行 `verify`。見[驗證](#驗證刷新的效果能不能維持)。
 
 [English](README.md)
 
@@ -112,7 +112,7 @@ ssd-refresh verify --from C-scan-refresh.csv
 2. 試跑：重新測量慢的檔案，不搬移任何東西。
 3. 刷新。開始前要輸入磁碟代號確認。
 4. 告訴 SSD 舊的位置已經空出來。
-5. 隔一天以上，確認檔案仍然夠快（見[驗證](#驗證刷新的效果能不能維持)）。
+5. 選用，隔一天以上：確認檔案仍然夠快（見[驗證](#驗證刷新的效果能不能維持)）。
 
 Linux 用 `sudo` 執行，最後一步改成 `sudo fstrim -v /`。
 
@@ -233,27 +233,27 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 ## 驗證：刷新的效果能不能維持
 
-刷新記錄的 `after_mbps` 是搬移後立刻量的，不能當證據：剛寫入的資料一定快，可能還在 SSD 的 SLC 快取裡。另外有兩個現象也會混淆結果：
+`verify` 是給刷新過的人用的。刷新後隔一段時間（至少隔天，之後可以每月一次），它會重讀刷新記錄裡的檔案，回答三個問題：刷新有沒有效、效果維持多久、什麼時候該再掃描。
 
-- 只讀一遍也可能讓速度恢復。SSD 讀取時如果需要大量錯誤校正，可能會自己把資料重寫一次（常稱為 read reclaim）。曾觀察到 Crucial BX500 只做一次唯讀掃描（例如 DiskFresh 唯讀模式），舊檔就恢復到 250–470 MB/s。
-- 單次讀得慢可能只是停頓（沒有 DRAM 的 SSD 閒置後 10–20 秒會變慢），不代表檔案慢。
+一定要隔一段時間。刷新記錄的 `after_mbps` 是搬移後立刻量的，不準：剛寫入的資料一定快，可能還在 SSD 的 SLC 快取裡。`verify` 的價值就在「隔一段時間再量」。
 
-所以真正的證據是「隔一段時間再讀」，並且和「讀過但沒有重寫」的檔案比較。
-
-1. 刷新時保留對照組。一半的慢檔只讀不搬（狀態 `CONTROL`）。哪些檔案進對照組由路徑決定，`--resume` 時不會變。
-
-   ```powershell
-   ssd-refresh refresh --from C-scan.csv --allow-system-volume --control-fraction 0.5
-   ```
-
-2. 等一天以上。距離刷新不到 12 小時，`verify` 會警告。
-3. 重讀兩組並比較：
+1. 刷新後等一天以上。距離刷新不到 12 小時，`verify` 會警告。
+2. 重讀檔案：
 
    ```powershell
    ssd-refresh verify --from C-scan-refresh.csv
    ```
 
-`verify` 一次只讀一個檔案，用一般優先權，不經作業系統快取；讀得慢的檔案會再讀一次，每個 extent 取較快的時間。它會分別列出 `rewritten` 組（`OK`、`CHANGED`）和 `read_only` 組（`CONTROL`、`DRYRUN`），格式如下（數字只是示意）：
+3. 之後再定期執行同一個指令，例如每月一次。刷新過的檔案又變慢時，就該重新掃描了。
+
+另外有兩個現象會混淆結果：
+
+- 只讀一遍也可能讓速度恢復。SSD 讀取時如果需要大量錯誤校正，可能會自己把資料重寫一次（常稱為 read reclaim）。曾觀察到 Crucial BX500 只做一次唯讀掃描（例如 DiskFresh 唯讀模式），舊檔就恢復到 250–470 MB/s。
+- 單次讀得慢可能只是停頓（沒有 DRAM 的 SSD 閒置後 10–20 秒會變慢），不代表檔案慢。
+
+想知道你的 SSD 屬於哪一種，見[幫忙測試你的 SSD](#幫忙測試你的-ssd)。
+
+`verify` 一次只讀一個檔案，用一般優先權，不經作業系統快取；讀得慢的檔案會再讀一次，每個 extent 取較快的時間。它會分別列出 `rewritten` 組（`OK`、`CHANGED`）和 `read_only` 組（`CONTROL`、`DRYRUN`，有的話），格式如下（數字只是示意）：
 
 ```
                          Rewritten  Read only
@@ -295,6 +295,22 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 
 - 不要加 `-c`（會建立或覆寫目標檔案）。對要保留的檔案不要用大於 0 的 `-w`：寫入測試會直接破壞資料，不會警告。
 - 結果是所有輪次的平均。慢檔的第一輪最慢，所以 `-d` 短一點差異最明顯。
+
+## 幫忙測試你的 SSD
+
+這一節是選用的，一般使用不需要。它要回答某一款 SSD 的一個問題：**舊資料只讀一遍就夠，還是要重寫？** 不同的 SSD 答案不同，這也決定了那一款值不值得跑 `refresh`。
+
+做法是保留對照組：一部分慢檔刷新，其餘只讀不搬。
+
+1. 掃描磁碟（見[快速開始](#快速開始windows)），確認有找到慢檔。
+2. 刷新時保留對照組。一半的慢檔只讀不搬（狀態 `CONTROL`）。哪些檔案進對照組由路徑決定，`--resume` 時不會變。
+
+   ```powershell
+   ssd-refresh refresh --from C-scan.csv --allow-system-volume --control-fraction 0.5
+   ```
+
+3. 隔一天以上，執行 `verify --from C-scan-refresh.csv`。摘要會比較重寫組和只讀組，並給一行結論。
+4. 用 [drive report](../../issues/new?template=drive-report.yml) 範本回報：型號與韌體、使用年數、`scan` 摘要和 `verify` 摘要。結果會加進[實測過的磁碟](#實測過的磁碟)表。
 
 ## 暫停、停止與續跑
 
@@ -344,12 +360,30 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 
 ## 安全測試（Windows）
 
-測試在 4 GB 的 VHDX 上進行，不碰真正的磁碟。第 2–4 步需要系統管理員 PowerShell。
+一般使用者不需要跑這個測試。它是給開發者，以及想自己確認安全性的人用的。
 
-1. 用一般權限建置：`cargo build --release`。
-2. 建立並掛載 VHDX：`test\vhdx-create.ps1`。
-3. 執行測試：`test\run-vhdx-test.ps1`。
-4. 卸載：`test\vhdx-detach.ps1`。
+為什麼要建 VHDX：`refresh` 會搬動真實檔案的資料。要證明它安全，就要在最壞的情況下逐一比對每個檔案，例如搬移時有程式同時寫入、跑到一半停止再續跑。這種測試不能拿真正的磁碟來做。VHDX 是放在一個檔案裡的虛擬磁碟，Windows 把它當成一顆真的 NTFS 磁碟，所以能用完全相同的 API 測試，而且完全不會碰到你的真實資料。測完就刪掉 VHDX，只留下報告。
+
+為什麼需要系統管理員：掛載虛擬磁碟、`FSCTL_MOVE_FILE` 和 `chkdsk` 都需要系統管理員權限。從一般視窗啟動測試時會跳出 UAC 視窗，請按「是」。測試視窗跑完會稍等一下再自動關閉，完整輸出保留在報告資料夾：
+
+```powershell
+Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-refresh\test\vhdx-test.ps1 -PauseSeconds 10'
+```
+
+測試在 4 GB 的 VHDX 上進行，不碰真正的磁碟。**放 VHDX 的磁碟至少需要 4 GB 可用空間**。腳本會先檢查，不夠就停下來。
+
+1. 在專案資料夾用一般權限建置：`cargo build --release`。
+2. 用系統管理員身分開 PowerShell，執行一個指令（路徑換成你的專案位置）：
+
+   ```powershell
+   & C:\path\to\ssd-refresh\test\vhdx-test.ps1
+   ```
+
+腳本會在 `scratch\` 建立 VHDX，掛到一個空資料夾而不是磁碟代號，所以檔案總管和自動播放不會跳出視窗。接著執行測試，最後卸載並刪除 VHDX；測試失敗時也一樣。只有報告會留在 `output\vhdx-test-<時間>\`，`summary.md` 列出每一項檢查。
+
+- `-KeepVhdx`：保留 VHDX（已卸載）方便除錯。
+- `-Dir D:\某資料夾`：把 VHDX 放到其他磁碟。
+- 各步驟也能單獨執行：`vhdx-create.ps1`、`run-vhdx-test.ps1`、`vhdx-remount.ps1`、`vhdx-detach.ps1`。
 
 測試會依序：
 
@@ -359,7 +393,13 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 4. 刷新全部檔案並保留 30% 對照組（`--control-fraction 0.3`），在第 150 個檔案時停止，再用 `--resume` 續跑，途中暫停 6 秒。
 5. 停止修改程式，重新掛載後驗證：沒被修改的檔案必須完全一致，被修改的檔案必須是最新版本。
 6. 對刷新記錄執行 `verify`：分組要和記錄一致，每個沒被修改的檔案都要量到，對照組的檔案不能被搬移。
-7. 確認資料確實搬移、搬移沒有改動時間戳記或 USN，最後執行 `chkdsk /scan`。
+7. 確認資料確實搬移、搬移沒有改動時間戳記或 USN，最後執行 `chkdsk /scan` 與 `Repair-Volume -Scan`。
+
+因為磁碟區掛在資料夾上，測試也會確認 ssd-refresh 把資料夾掛載點當成獨立的 NTFS 磁碟區。
+
+### 掛在資料夾的測試結果（2026-10-15 15:04）
+
+用一鍵腳本執行，23 項檢查全部通過。VHDX 掛在資料夾上，沒有磁碟代號，也沒有跳出檔案總管視窗。ssd-refresh 把掛載點認成獨立的 NTFS 磁碟區。`chkdsk /scan`（傳入磁碟區名稱 `\\?\Volume{...}`）和 `Repair-Volume -Scan` 都沒有發現問題。測完後 VHDX 已刪除。最終狀態：OK 467、CHANGED 5、CONTROL 174、MISMATCH 0；另一個程式在 38 秒內修改 10,659 次。
 
 ### 加入 verify 與對照組後的測試結果（2026-10-15 14:36）
 

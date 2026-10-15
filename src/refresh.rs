@@ -177,20 +177,18 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
     para(2, "Keys: p + Enter = pause/resume, q + Enter = stop after the current file (continue later with --resume). Stopping at any time leaves every file intact.");
 
     if !o.dry_run {
-        let want = label.trim_end_matches(':').to_uppercase();
-        let norm = |s: &str| s.trim().trim_end_matches(['\\', '/']).trim_end_matches(':').to_uppercase();
-        let got = match &o.confirm {
-            Some(c) => norm(c),
+        let typed = match &o.confirm {
+            Some(c) => c.clone(),
             None => {
                 println!();
-                print!("Type {want} and press Enter to start; anything else cancels: ");
+                print!("Type {} and press Enter to start; anything else cancels: ", label.trim_end_matches(':'));
                 io::stdout().flush()?;
                 let mut line = String::new();
                 io::stdin().lock().read_line(&mut line)?;
-                norm(&line)
+                line
             }
         };
-        if got != want {
+        if !confirm_matches(&label, &typed) {
             println!("Cancelled. Nothing was changed.");
             return Ok(1);
         }
@@ -272,6 +270,19 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
         println!("  ssd-refresh verify --from \"{}\"", o.out.display());
     }
     Ok(code)
+}
+
+/// Whether what the user typed (or passed with --confirm) names the volume `label`.
+/// "C:" matches "c", "C:" and "C:\"; a folder mount point "D:\mnt\vol\" matches with or without
+/// the trailing backslash, in any case, with or without quotes.
+pub fn confirm_matches(label: &str, typed: &str) -> bool {
+    let norm = |s: &str| s.trim().trim_matches('"').trim_end_matches(['\\', '/']).trim_end_matches(':').to_uppercase();
+    let want = norm(label);
+    if want.is_empty() {
+        // The Unix root "/" normalises to nothing; it must be typed as "/".
+        return label.trim() == "/" && typed.trim() == "/";
+    }
+    norm(typed) == want
 }
 
 fn priority_words(p: Priority) -> &'static str {
@@ -432,5 +443,40 @@ impl Run<'_> {
             row.detail = "another program modified the file during the move (expected)".into();
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::confirm_matches;
+
+    #[test]
+    fn drive_letter() {
+        for typed in ["C", "c", "C:", "c:\\", " C: \r\n"] {
+            assert!(confirm_matches("C:", typed), "{typed:?}");
+        }
+        for typed in ["", "D", "CC", "C:\\x"] {
+            assert!(!confirm_matches("C:", typed), "{typed:?}");
+        }
+    }
+
+    #[test]
+    fn folder_mount_point() {
+        let label = r"F:\ai-lab\scratch\vhdx-mnt-1\";
+        for typed in [label, r"F:\ai-lab\scratch\vhdx-mnt-1", r"f:\AI-LAB\scratch\vhdx-mnt-1\", "\"F:\\ai-lab\\scratch\\vhdx-mnt-1\\\"\n"] {
+            assert!(confirm_matches(label, typed), "{typed:?}");
+        }
+        // The drive that holds the mount folder is a different volume.
+        for typed in ["F", "F:", r"F:\", r"F:\ai-lab\scratch"] {
+            assert!(!confirm_matches(label, typed), "{typed:?}");
+        }
+    }
+
+    #[test]
+    fn unix_paths() {
+        assert!(confirm_matches("/", "/"));
+        assert!(!confirm_matches("/", ""));
+        assert!(confirm_matches("/mnt/data", "/mnt/data/"));
+        assert!(!confirm_matches("/mnt/data", "/mnt"));
     }
 }

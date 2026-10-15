@@ -15,7 +15,7 @@ Find the files on an SSD whose old data has become slow to read, and have the fi
 
 1. `scan` the drive. This reads every file once, which may already fix a drive of the first kind.
 2. `scan` again a day later (or `verify --from` the first report). If the slow files are fast now, reading was enough and you do not need `refresh`.
-3. If files are still slow, `refresh` them, keeping a control group (`--control-fraction 0.5`), and `verify` a day or more later. See [Verify](#verify-does-the-refresh-last).
+3. If files are still slow, `refresh` them, and `verify` a day or more later. See [Verify](#verify-does-the-refresh-last).
 
 [繁體中文說明](README.zh-TW.md)
 
@@ -110,7 +110,7 @@ ssd-refresh verify --from C-scan-refresh.csv
 2. Preview: re-measure the slow files without moving anything.
 3. Refresh. You type the drive letter to confirm before anything is moved.
 4. Tell the SSD that the old locations are free.
-5. A day or more later, check that the files are still fast (see [Verify](#verify-does-the-refresh-last)).
+5. Optional, a day or more later: check that the files are still fast (see [Verify](#verify-does-the-refresh-last)).
 
 On Linux use `sudo`, and `sudo fstrim -v /` in the last step.
 
@@ -233,27 +233,27 @@ If either is true, the status is `CHANGED`. Otherwise it is `MISMATCH`.
 
 ## Verify: does the refresh last?
 
-The `after_mbps` column of the refresh log is measured right after the move. It proves little: newly written data is always fast at first, and may still sit in the SSD's fast SLC cache. Two other effects can also hide what the refresh did:
+`verify` is for anyone who has run a refresh. Some time later (at least the next day, then for example once a month) it reads the files in the refresh log again and answers three questions: did the refresh work, how long does the effect last, and when is it time to scan again.
 
-- Reading alone can restore speed. When an SSD needs heavy error correction to read data, it may rewrite that data by itself (often called read reclaim). A full read-only pass (for example DiskFresh in read-only mode) has been seen to bring old files on a Crucial BX500 back to 250–470 MB/s without any rewrite.
-- A single slow read can be a stall (a DRAM-less SSD can slow down for 10–20 s after being idle), not a slow file.
+Waiting matters. The `after_mbps` column of the refresh log is measured right after the move, and it proves little: newly written data is always fast at first, and may still sit in the SSD's fast SLC cache. The value of `verify` is that it measures again after time has passed.
 
-So the evidence is a later re-read, compared with files that were read but not rewritten.
-
-1. Refresh with a control group. Half of the slow files are only read, never moved (status `CONTROL`). The choice is fixed per path, so `--resume` keeps it.
-
-   ```powershell
-   ssd-refresh refresh --from C-scan.csv --allow-system-volume --control-fraction 0.5
-   ```
-
-2. Wait a day or more. `verify` warns when less than 12 hours have passed.
-3. Re-read both groups and compare:
+1. Wait a day or more after the refresh. `verify` warns when less than 12 hours have passed.
+2. Read the files again:
 
    ```powershell
    ssd-refresh verify --from C-scan-refresh.csv
    ```
 
-`verify` reads each file once, alone, at normal priority and without the OS cache; a file that reads slowly is read a second time and the faster time of each extent counts. It prints, for the `rewritten` group (`OK`, `CHANGED`) and the `read_only` group (`CONTROL`, `DRYRUN`) a table like this one (illustrative numbers):
+3. Run the same command again later, for example monthly. When the files that were refreshed become slow again, it is time for a new scan.
+
+Two other effects can blur the picture:
+
+- Reading alone can restore speed. When an SSD needs heavy error correction to read data, it may rewrite that data by itself (often called read reclaim). A full read-only pass (for example DiskFresh in read-only mode) has been seen to bring old files on a Crucial BX500 back to 250–470 MB/s without any rewrite.
+- A single slow read can be a stall (a DRAM-less SSD can slow down for 10–20 s after being idle), not a slow file.
+
+To find out which of these applies to your drive, see [Help test your drive](#help-test-your-drive).
+
+`verify` reads each file once, alone, at normal priority and without the OS cache; a file that reads slowly is read a second time and the faster time of each extent counts. It prints, for the `rewritten` group (`OK`, `CHANGED`) and, if there is one, the `read_only` group (`CONTROL`, `DRYRUN`) a table like this one (illustrative numbers):
 
 ```
                          Rewritten  Read only
@@ -295,6 +295,22 @@ Read the `MiB/s` of the "Read IO" table. Run it once before the refresh and agai
 
 - Never add `-c` (creates or overwrites the target), and never use `-w` with a value above 0 on a file you want to keep: write tests destroy data without warning.
 - The result is the average over all passes. For a slow file the first pass is the slowest, so a short `-d` shows the difference best.
+
+## Help test your drive
+
+This section is optional; normal use does not need it. It answers one question for a particular SSD model: **is reading old data once enough, or does it have to be rewritten?** The answer differs between drives, and it decides whether `refresh` is worth running on that model.
+
+The method is a control group: part of the slow files is refreshed, the rest is only read.
+
+1. Scan the drive (see [Quick start](#quick-start-windows)) and make sure it found slow files.
+2. Refresh with a control group. Half of the slow files are only read, never moved (status `CONTROL`). The choice is fixed per path, so `--resume` keeps it.
+
+   ```powershell
+   ssd-refresh refresh --from C-scan.csv --allow-system-volume --control-fraction 0.5
+   ```
+
+3. A day or more later, run `verify --from C-scan-refresh.csv`. Its summary compares the rewritten group with the read-only group and prints a one-line result.
+4. Report the drive with the [drive report](../../issues/new?template=drive-report.yml) issue template: model and firmware, age, the `scan` summary and the `verify` summary. Results are added to [Tested drives](#tested-drives).
 
 ## Pause, stop, resume
 
@@ -344,12 +360,30 @@ Back up important data first.
 
 ## Safety test (Windows)
 
-The test runs on a 4 GB VHDX, never on a real drive. Steps 2–4 need PowerShell as administrator.
+Normal users do not need to run this test. It is for developers, and for anyone who wants to check the safety claims themselves.
 
-1. Build as a normal user: `cargo build --release`.
-2. Create and mount the VHDX: `test\vhdx-create.ps1`.
-3. Run the test: `test\run-vhdx-test.ps1`.
-4. Detach: `test\vhdx-detach.ps1`.
+Why a VHDX: `refresh` moves the data of real files. To show that this is safe, every file has to be compared one by one after the worst cases: other programs writing the files during the move, and a run stopped half way and resumed. That cannot be tested on a real drive. A VHDX is a virtual disk stored in a single file; Windows treats it as a real NTFS disk, so the test uses exactly the same APIs without ever touching your real data. The VHDX is deleted when the test ends, and nothing is left behind except the reports.
+
+Why administrator: attaching a virtual disk, `FSCTL_MOVE_FILE` and `chkdsk` all need administrator rights. When the test is started from a normal window, Windows shows a UAC prompt; answer "Yes". The window closes by itself after a short pause, and the full output is kept in the report folder:
+
+```powershell
+Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-refresh\test\vhdx-test.ps1 -PauseSeconds 10'
+```
+
+The test runs on a 4 GB VHDX, never on a real drive. **It needs at least 4 GB of free space** on the drive that holds the VHDX; the script checks this first and stops if there is less.
+
+1. Build as a normal user, in the repository folder: `cargo build --release`.
+2. In PowerShell as administrator, run one command (with the full path to your copy of the repository):
+
+   ```powershell
+   & C:\path\to\ssd-refresh\test\vhdx-test.ps1
+   ```
+
+The script creates the VHDX in `scratch\`, mounts it in an empty folder instead of a drive letter (so Explorer and AutoPlay open no window), runs the test, then detaches and deletes the VHDX, also when the test fails. Only the reports stay, in `output\vhdx-test-<time>\` (`summary.md` lists every check).
+
+- `-KeepVhdx` keeps the VHDX (detached) for debugging.
+- `-Dir D:\somewhere` puts the VHDX on another drive.
+- The parts can also be run alone: `vhdx-create.ps1`, `run-vhdx-test.ps1`, `vhdx-remount.ps1`, `vhdx-detach.ps1`.
 
 The test:
 
@@ -359,7 +393,13 @@ The test:
 4. refreshes every file with a 30% control group (`--control-fraction 0.3`), stops after 150 files, resumes with `--resume`, and pauses for 6 s on the way;
 5. stops the modifying program, remounts, and verifies: untouched files must be identical, modified files must hold their latest version;
 6. runs `verify` on the refresh log: the groups must match the log, every untouched file must be measured, and control-group files must not have moved;
-7. checks that data moved, that moving did not change timestamps or USNs, and runs `chkdsk /scan`.
+7. checks that data moved, that moving did not change timestamps or USNs, and runs `chkdsk /scan` and `Repair-Volume -Scan`.
+
+Because the volume is mounted in a folder, the test also checks that ssd-refresh treats the folder mount point as its own NTFS volume.
+
+### Result with a folder mount point (2026-10-15 15:04)
+
+All 23 checks passed with the one-command script: the VHDX was mounted in a folder (no drive letter, no Explorer window), ssd-refresh recognised the mount point as its own NTFS volume, `chkdsk /scan` (given the volume name `\\?\Volume{...}`) and `Repair-Volume -Scan` found no problems, and the VHDX was deleted afterwards. Final statuses: OK 467, CHANGED 5, CONTROL 174, MISMATCH 0; 10,659 modifications by the other program in 38 s.
 
 ### Result with verify and a control group (2026-10-15 14:36)
 

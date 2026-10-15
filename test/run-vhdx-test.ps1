@@ -1,10 +1,12 @@
 #Requires -RunAsAdministrator
 # [Administrator] Full safety test on the test VHDX:
 # create files -> scan -> refresh (while another program keeps modifying files; stop, resume, pause) -> verify.
-# First run `cargo build --release` as a normal user and create the VHDX with vhdx-create.ps1.
+# Normally started by vhdx-test.ps1, which creates the VHDX, runs this and deletes it again.
+# The volume is mounted in a folder (-Mount), not at a drive letter. Exit code: number of failed checks.
 param(
-    [string]$Vhdx = (Join-Path $PSScriptRoot '..\scratch\test.vhdx'),
-    [string]$Letter = (Get-Content (Join-Path $PSScriptRoot '..\scratch\vhdx-letter.txt') -ErrorAction SilentlyContinue)
+    [Parameter(Mandatory)][string]$Vhdx,
+    [Parameter(Mandatory)][string]$Mount,
+    [string]$Out = ''
 )
 $ErrorActionPreference = 'Stop'
 # The tools print UTF-8. PowerShell (5.1 and 7) decodes the output of native programs in a pipeline with
@@ -13,11 +15,13 @@ $oldEncoding = [Console]::OutputEncoding
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $Vhdx = [IO.Path]::GetFullPath($Vhdx)
+$Mount = [IO.Path]::GetFullPath($Mount).TrimEnd('\')
 $tool = Join-Path $repo 'target\release\ssd-refresh.exe'
 $kit = Join-Path $repo 'target\release\refresh-test.exe'
-$out = Join-Path $repo ("output\vhdx-test-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+$out = if ($Out) { $Out } else { Join-Path $repo ("output\vhdx-test-" + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
 New-Item -ItemType Directory -Force $out | Out-Null
 Start-Transcript (Join-Path $out 'transcript.txt') | Out-Null
+try {
 $checks = [System.Collections.Generic.List[object]]::new()
 function Check([string]$name, [bool]$ok, [string]$detail) {
     $checks.Add([pscustomobject]@{ Check = $name; Result = $(if ($ok) { 'PASS' } else { 'FAIL' }); Detail = $detail })
@@ -32,17 +36,20 @@ function Run([string]$exe, [string[]]$argv, [string]$log) {
 # ---------- Safety: run only on the test VHDX ----------
 Step 'Check the environment'
 foreach ($f in $tool, $kit) { if (-not (Test-Path $f)) { throw "$f not found. Run cargo build --release as a normal user first." } }
-if (-not $Letter) { throw 'Drive letter of the VHDX unknown. Run vhdx-create.ps1 first.' }
 $img = Get-DiskImage -ImagePath $Vhdx
 if (-not $img.Attached) { throw "$Vhdx is not attached." }
 $part = $img | Get-Disk | Get-Partition | Where-Object Type -eq 'Basic'
-if ("$($part.DriveLetter)" -ne $Letter) { throw "${Letter}: is not the volume of $Vhdx. Stopping." }
-if ((Get-Volume -DriveLetter $Letter).FileSystemLabel -ne 'SSDTEST') { throw "${Letter}: is not labelled SSDTEST. Stopping." }
-$T = "${Letter}:\"
+if (@($part.AccessPaths) -notcontains "$Mount\") { throw "$Mount is not a mount point of $Vhdx. Stopping." }
+if (($part | Get-Volume).FileSystemLabel -ne 'SSDTEST') { throw "The volume at $Mount is not labelled SSDTEST. Stopping." }
+$T = "$Mount\"
 $data = Join-Path $T 'data'
-if (Test-Path $data) { throw "$data already exists. Recreate the VHDX first (vhdx-detach.ps1, delete test.vhdx, vhdx-create.ps1)." }
+if (Test-Path $data) { throw "$data already exists. Use a new VHDX (vhdx-test.ps1 creates one)." }
 $version = (& $tool --version)
 Write-Host "Test volume $T, results in $out, $version"
+# ssd-refresh must see the folder mount point as its own volume, not as part of the volume holding the folder.
+$vol = (& $tool volume $T) -join "`n"
+$vol | Out-Host
+Check 'ssd-refresh recognises the folder mount point as an NTFS volume' ($vol -match [regex]::Escape("Root:          $T") -and $vol -match 'File system:   NTFS' -and $vol -match 'System volume: no' -and $vol -match 'Device:        \\\\\?\\Volume\{') ''
 
 # ---------- 1. Create test files ----------
 Step '1. Create test files'
@@ -56,7 +63,7 @@ function Rel([string]$p) { $p.Substring($data.Length + 1).Replace('\', '/') }
 
 # ---------- 2. Empty the cache, record locations, scan ----------
 Step '2. Remount, record locations, scan (with hashes)'
-& (Join-Path $PSScriptRoot 'vhdx-remount.ps1') -Path $Vhdx -Letter $Letter
+& (Join-Path $PSScriptRoot 'vhdx-remount.ps1') -Path $Vhdx -Mount $Mount
 Run $kit @('lcnmap', $data, (Join-Path $out 'lcn-before.csv')) 'lcn-before.log' | Out-Null
 $scan = Join-Path $out 'scan.csv'
 $code = Run $tool @('scan', $data, '--hash', '--out', $scan) 'scan.log'
@@ -78,7 +85,7 @@ Start-Sleep -Seconds 3
 Step '3a. Refresh, stopping after 150 files (--stop-after)'
 $log = Join-Path $out 'refresh.csv'
 # 30% of the files form the control group: read, never moved (status CONTROL); verify compares them later.
-$common = @('refresh', '--from', $scan, '--out', $log, '--select', 'all', '--force', '--confirm', "${Letter}:", '--control-fraction', '0.3')
+$common = @('refresh', '--from', $scan, '--out', $log, '--select', 'all', '--force', '--confirm', $T, '--control-fraction', '0.3')
 $code = Run $tool ($common + @('--stop-after', '150')) 'refresh-1.log'
 $rows1 = @(Import-Csv $log).Count
 Check 'Exit code 4 when stopped early' ($code -eq 4) "exit code $code, $rows1 rows logged"
@@ -111,7 +118,7 @@ Check 'Modifying program self-check' ($mut.ExitCode -eq 0) "exit code $($mut.Exi
 
 # ---------- 4. Empty the cache and verify ----------
 Step '4. Remount and verify contents'
-& (Join-Path $PSScriptRoot 'vhdx-remount.ps1') -Path $Vhdx -Letter $Letter
+& (Join-Path $PSScriptRoot 'vhdx-remount.ps1') -Path $Vhdx -Mount $Mount
 $code = Run $kit @('verify', $data, $manifest, $expected) 'verify.log'
 Check 'Untouched files identical, modified files at their latest version' ($code -eq 0) ((Get-Content (Join-Path $out 'verify.log') | Select-Object -Last 1))
 Run $kit @('lcnmap', $data, (Join-Path $out 'lcn-after.csv')) 'lcn-after.log' | Out-Null
@@ -157,19 +164,34 @@ $statusLine = ($last.Values | Group-Object status | Sort-Object Name | ForEach-O
 Write-Host "Final statuses: $statusLine"
 
 # ---------- 6. File system check ----------
-Step '6. chkdsk /scan (online scan, no repair)'
-chkdsk "${Letter}:" /scan 2>&1 | Tee-Object -FilePath (Join-Path $out 'chkdsk.log') | Out-Host
-Check 'chkdsk found no problems' ($LASTEXITCODE -eq 0) "exit code $LASTEXITCODE"
+Step '6. chkdsk /scan and Repair-Volume -Scan (online scans, no repair)'
+# chkdsk rejects a folder mount point path ("The drive, the path, or the file name is not valid"), so it
+# gets the volume name (\\?\Volume{GUID}) instead. Some versions want it without the trailing backslash.
+$guid = @((Get-DiskImage -ImagePath $Vhdx | Get-Disk | Get-Partition | Where-Object Type -eq 'Basic').AccessPaths) -match '^\\\\\?\\Volume\{' | Select-Object -First 1
+$ck = 3
+foreach ($name in $guid.TrimEnd('\'), $guid) {
+    chkdsk $name /scan 2>&1 | Tee-Object -FilePath (Join-Path $out 'chkdsk.log') | Out-Host
+    $ck = $LASTEXITCODE
+    if ($ck -ne 3) { break } # 3 = the volume name was not accepted; try the other form
+}
+Check 'chkdsk found no problems' ($ck -eq 0) "exit code $ck ($name)"
+$rv = Get-Volume -FilePath "$Mount\" | Repair-Volume -Scan
+Check 'Repair-Volume -Scan found no problems' ("$rv" -eq 'NoErrorsFound') "$rv"
+} catch {
+    # A step threw: record it as a failed check, so the summary and the exit code show it.
+    Check 'Test ran to the end' $false "stopped with an error: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"
+    if ($mut -and -not $mut.HasExited) { Set-Content $stop ''; $mut.WaitForExit(10000) | Out-Null }
+}
 
 # ---------- 7. Summary ----------
 $md = @()
 $md += "# VHDX safety test ($(Get-Date -Format 'yyyy-MM-dd HH:mm'))"
 $md += ''
 $md += "- Tool: $version"
-$md += "- Test volume: ${Letter}: ($Vhdx)"
+$md += "- Test volume: $T ($Vhdx)"
 $md += "- Test files: $($man.Count), of which $(@($man | Where-Object mutate -eq '1').Count) were modified during the refresh"
-$md += "- Modifying program: $((Get-Content (Join-Path $out 'mutate.log') | Select-Object -Last 1))"
-$md += "- $((Get-Content (Join-Path $out 'lcndiff.log') | Select-Object -Last 1))"
+$md += "- Modifying program: $((Get-Content (Join-Path $out 'mutate.log') -ErrorAction SilentlyContinue | Select-Object -Last 1))"
+$md += "- $((Get-Content (Join-Path $out 'lcndiff.log') -ErrorAction SilentlyContinue | Select-Object -Last 1))"
 $md += "- Final refresh statuses: $statusLine"
 $md += ''
 $md += '| Check | Result | Detail |'
@@ -181,3 +203,4 @@ Write-Host ''
 Write-Host "Done: $($checks.Count) checks, $failed failed. Summary: $(Join-Path $out 'summary.md')"
 Stop-Transcript | Out-Null
 [Console]::OutputEncoding = $oldEncoding
+exit $failed

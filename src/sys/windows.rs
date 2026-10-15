@@ -320,7 +320,9 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
     unsafe { GetSystemWindowsDirectoryW(win.as_mut_ptr(), 260) };
     let windir = from_wide(&win);
     Ok(VolumeInfo {
-        is_system: windir.len() >= 2 && root.len() >= 2 && windir[..2].eq_ignore_ascii_case(&root[..2]),
+        // Only a drive root ("C:\") can be the system volume; a volume mounted in a folder on C:
+        // is a different volume.
+        is_system: windir.len() >= 2 && root.len() == 3 && windir[..2].eq_ignore_ascii_case(&root[..2]),
         root: PathBuf::from(root),
         device,
         fs: from_wide(&fs),
@@ -334,7 +336,9 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
 /// Drive letter such as "C:"; for a volume mounted in a folder, its root path.
 pub fn volume_label(v: &VolumeInfo) -> String {
     let r = v.root.to_string_lossy();
-    if r.len() >= 2 && r.as_bytes()[1] == b':' {
+    // Only "C:\" (or "C:") is a drive letter. "F:\mnt\vol\" is a folder on F: where another
+    // volume is mounted; its label is the whole path.
+    if (r.len() == 2 || (r.len() == 3 && r.ends_with('\\'))) && r.as_bytes()[1] == b':' {
         r[..2].to_ascii_uppercase()
     } else {
         r.to_string()
@@ -429,7 +433,8 @@ pub fn refresh_check(v: &VolumeInfo) -> Result<(), String> {
 
 /// Things the user should know before a refresh.
 pub fn refresh_warnings(v: &VolumeInfo) -> Vec<String> {
-    let out = std::process::Command::new("vssadmin").args(["list", "shadows", &format!("/for={}\\", volume_label(v))]).output();
+    // The root path ends with a backslash, for drive letters ("C:\") and folder mount points alike.
+    let out = std::process::Command::new("vssadmin").args(["list", "shadows", &format!("/for={}", v.root.display())]).output();
     match out {
         Ok(o) => {
             let s = String::from_utf8_lossy(&o.stdout);
@@ -445,7 +450,13 @@ pub fn refresh_warnings(v: &VolumeInfo) -> Vec<String> {
 }
 
 pub fn retrim_hint(v: &VolumeInfo) -> String {
-    format!("tell the SSD the old places are free: Optimize-Volume -DriveLetter {} -ReTrim (PowerShell as administrator).", volume_label(v).trim_end_matches(':'))
+    let label = volume_label(v);
+    let cmd = if label.len() == 2 {
+        format!("Optimize-Volume -DriveLetter {} -ReTrim", label.trim_end_matches(':'))
+    } else {
+        format!("Get-Volume -FilePath \"{}\" | Optimize-Volume -ReTrim", v.root.display())
+    };
+    format!("tell the SSD the old places are free: {cmd} (PowerShell as administrator).")
 }
 
 // ---------------- overlapped read queue ----------------
@@ -797,3 +808,30 @@ fn volume_bitmap(vol: &File, total: u64) -> io::Result<Vec<u8>> {
 
 /// How refresh moves data on this platform (shown before a refresh starts).
 pub const MOVE_METHOD: &str = "FSCTL_MOVE_FILE, the NTFS defragmentation API";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn vol(root: &str) -> VolumeInfo {
+        VolumeInfo { root: PathBuf::from(root), ..Default::default() }
+    }
+
+    #[test]
+    fn label_of_drive_root_is_the_letter() {
+        assert_eq!(volume_label(&vol(r"c:\")), "C:");
+    }
+
+    #[test]
+    fn label_of_folder_mount_point_is_the_path() {
+        let root = r"F:\ai-lab\scratch\vhdx-mnt-1\";
+        assert_eq!(volume_label(&vol(root)), root);
+        assert!(!retrim_hint(&vol(root)).contains("-DriveLetter"));
+    }
+
+    #[test]
+    fn label_of_volume_guid_path_is_the_path() {
+        let root = r"\\?\Volume{288d4169-b1f9-4d47-a4b2-03015a54a2c0}\";
+        assert_eq!(volume_label(&vol(root)), root);
+    }
+}
