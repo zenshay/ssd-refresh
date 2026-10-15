@@ -244,7 +244,7 @@ user can read.
 Why you must wait
   Right after the refresh, moved files are always fast. New data can be in the
   fast SLC cache of the SSD. Only a read after some days shows the real result.
-  If less than 12 hours have gone by, verify shows a warning.
+  If less than 12 hours have gone by, the speed result is NOT DECIDED.
 
 Groups
   rewritten   Files that the refresh moved (OK, CHANGED).
@@ -283,8 +283,12 @@ Result (at the end)
                 by all read time, before and now. verify shows the result as
                 'N.N times faster' or 'N.N times slower'. With a control group,
                 there is one line for each group and a conclusion.
+                NOT DECIDED: verify shows the numbers, but no YES or NO. This
+                occurs if a group has fewer than 10 slow files, or if less
+                than 12 hours have gone by. The conclusion is then also NOT
+                DECIDED. The exit code stays 0.
   Time since refresh
-                The time since the refresh. Below 12 hours, a warning.
+                The time since the refresh.
 
 Log
   Each run adds the summary, with the time and the source, to the end of one

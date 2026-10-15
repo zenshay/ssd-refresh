@@ -43,7 +43,11 @@ pub const HEADER: [&str; 12] = [
 ];
 
 /// Before this time after the refresh, new data can still read fast for other reasons.
+/// Before this time, the Faster lines and the Conclusion show NOT DECIDED.
 const MIN_AGE_HOURS: u64 = 12;
+
+/// With fewer slow files in a group, the Faster line of the group shows NOT DECIDED.
+const MIN_SLOW_FILES: usize = 10;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Group {
@@ -425,14 +429,13 @@ struct Summary {
     data_not_safe: bool,
 }
 
-/// "  Label:            YES  text": a label, a result (YES, NO, n/a, UNKNOWN) or nothing, and
-/// the text. Long text continues on the next lines, below the text.
+/// "  Label:            YES  text": a label, a result (YES, NO, n/a, UNKNOWN, NOT DECIDED) or
+/// nothing, and the text. Long text continues on the next lines, below the text.
 fn result_line(label: &str, verdict: &str, text: &str) -> String {
     const COL: usize = 22;
-    let v = if verdict.is_empty() { String::new() } else { format!("{verdict:<4} ") };
-    let cont = if verdict.is_empty() { COL } else { COL + 5 };
+    let v = if verdict.is_empty() { String::new() } else { format!("{verdict:<3}  ") };
     let first = COL + v.len();
-    let body = para_string(first, cont, text);
+    let body = para_string(first, first, text);
     format!("  {:<w$}{v}{}", label, &body[first..], w = COL - 2)
 }
 
@@ -580,42 +583,65 @@ fn build_summary(s: &SummaryInput) -> Summary {
         sp
     };
     let speeds: Vec<(Group, Speed)> = groups.iter().map(|&g| (g, speed(g))).collect();
+    // Too short a time or too few slow files: show the numbers, but no YES or NO.
+    let too_soon = s.age < MIN_AGE_HOURS * 3600;
+    let soon_reason = format!(
+        "Only {} since {}. New data is always fast at first. Run verify again after 1 day or more.",
+        fmt_time(s.age),
+        if is_log { "refresh" } else { "scan" }
+    );
+    let few_reason = |n: usize| format!("Only {n} slow files. Need {MIN_SLOW_FILES} or more.");
     for (g, sp) in &speeds {
         let name = if groups.len() == 1 { "Faster:".to_string() } else { format!("Faster ({}):", label(*g).to_lowercase()) };
         if sp.n == 0 {
             t += &result_line(&name, "n/a", "No measured file was slow before.");
+            continue;
+        }
+        let numbers = format!(
+            "{} files were slow before. {} files are slow now. Read speed: {:.0} MB/s before, {:.0} MB/s now ({}).",
+            fmt_count(sp.n as u64),
+            fmt_count(sp.still as u64),
+            sp.then_bps / 1e6,
+            sp.now_bps / 1e6,
+            times(sp.factor())
+        );
+        let mut reasons = Vec::new();
+        if sp.n < MIN_SLOW_FILES {
+            reasons.push(few_reason(sp.n));
+        }
+        if too_soon {
+            reasons.push(soon_reason.clone());
+        }
+        if reasons.is_empty() {
+            t += &result_line(&name, if sp.recovered() { "YES" } else { "NO" }, &numbers);
         } else {
-            let text = format!(
-                "{} files were slow before. {} files are slow now. Read speed: {:.0} MB/s before, {:.0} MB/s now ({}).",
-                fmt_count(sp.n as u64),
-                fmt_count(sp.still as u64),
-                sp.then_bps / 1e6,
-                sp.now_bps / 1e6,
-                times(sp.factor())
-            );
-            t += &result_line(&name, if sp.recovered() { "YES" } else { "NO" }, &text);
+            t += &result_line(&name, "NOT DECIDED", &format!("{} {numbers}", reasons.join(" ")));
         }
     }
     if let [(_, rw), (_, ro)] = speeds.as_slice() {
-        if rw.n > 0 && ro.n > 0 {
+        let mut reasons = Vec::new();
+        for (sp, name) in [(rw, "rewritten"), (ro, label(Group::ReadOnly))] {
+            if sp.n < MIN_SLOW_FILES {
+                reasons.push(format!("Only {} slow files in the {} group. Need {MIN_SLOW_FILES} or more.", sp.n, name.to_lowercase()));
+            }
+        }
+        if too_soon {
+            reasons.push(soon_reason.clone());
+        }
+        if reasons.is_empty() {
             let text = match (rw.recovered(), ro.recovered()) {
                 (true, false) => format!("Rewriting made the files {} than reading only.", times(rw.now_bps / ro.now_bps)),
                 (true, true) => "Reading only was enough on this drive.".to_string(),
                 (false, _) => "Rewriting did not keep the files fast on this drive. Run verify again later.".to_string(),
             };
             t += &result_line("Conclusion:", "", &text);
+        } else {
+            t += &result_line("Conclusion:", "NOT DECIDED", &reasons.join(" "));
         }
     }
 
     // Time
     t += &result_line(if is_log { "Time since refresh:" } else { "Time since scan:" }, "", &format!("{}.", fmt_time(s.age)));
-    if s.age < MIN_AGE_HOURS * 3600 {
-        t += &result_line(
-            "Warning:",
-            "",
-            &format!("Less than {MIN_AGE_HOURS} hours have gone by. New data is always fast at first (it can be in the SSD's SLC cache). Run verify again after 1 day or more."),
-        );
-    }
     Summary { text: t, data_not_safe: !bad.is_empty() && is_log }
 }
 
@@ -668,15 +694,45 @@ mod tests {
         assert!(s.text.contains("Data safe:          NO   1 files have a different SHA-256"), "{}", s.text);
     }
 
+    /// `n` slow files in each group. The rewritten files are fast now, the read-only files are not.
+    fn two_groups(n: usize) -> (Vec<Item>, Vec<(usize, Outcome)>) {
+        let mut items: Vec<Item> = (0..n).map(|i| item(&format!("r{i}"), Group::Rewritten, 10.0, true)).collect();
+        items.extend((0..n).map(|i| item(&format!("c{i}"), Group::ReadOnly, 10.0, true)));
+        let results = (0..2 * n).map(|i| (i, if i < n { measured(false, 400.0) } else { measured(true, 20.0) })).collect();
+        (items, results)
+    }
+
     #[test]
     fn control_group_conclusion() {
-        let mut items: Vec<Item> = (0..5).map(|i| item(&format!("r{i}"), Group::Rewritten, 10.0, true)).collect();
-        items.extend((0..5).map(|i| item(&format!("c{i}"), Group::ReadOnly, 10.0, true)));
-        let results: Vec<(usize, Outcome)> = (0..10).map(|i| (i, if i < 5 { measured(false, 400.0) } else { measured(true, 20.0) })).collect();
+        // Enough slow files and enough time: YES, NO and a conclusion.
+        let (items, results) = two_groups(MIN_SLOW_FILES);
         let s = summary(&items, &results);
-        assert!(s.text.contains("Faster (rewritten):"), "{}", s.text);
-        assert!(s.text.contains("Faster (read only):"), "{}", s.text);
+        assert!(s.text.contains("Faster (rewritten): YES"), "{}", s.text);
+        assert!(s.text.contains("Faster (read only): NO"), "{}", s.text);
         assert!(s.text.contains("Rewriting made the files 20.0 times faster than reading only."), "{}", s.text);
+        assert!(!s.text.contains("NOT DECIDED"), "{}", s.text);
+    }
+
+    #[test]
+    fn few_slow_files_is_not_decided() {
+        let (items, results) = two_groups(2);
+        let s = summary(&items, &results);
+        assert!(s.text.contains("Faster (read only): NOT DECIDED  Only 2 slow files. Need 10 or more. 2 files were slow before."), "{}", s.text);
+        assert!(s.text.contains("Conclusion:         NOT DECIDED  Only 2 slow files in the rewritten group."), "{}", s.text);
+        assert!(!s.text.contains("Rewriting made"), "{}", s.text);
+        assert!(!s.data_not_safe);
+    }
+
+    #[test]
+    fn short_time_is_not_decided() {
+        let (items, results) = two_groups(MIN_SLOW_FILES);
+        let s = build_summary(&SummaryInput { items: &items, results: &results, is_log: true, has_meta: true, age: 0 });
+        assert!(s.text.contains("Faster (rewritten): NOT DECIDED  Only 0 minutes since refresh."), "{}", s.text);
+        assert!(s.text.contains("Conclusion:         NOT DECIDED  Only 0 minutes since refresh."), "{}", s.text);
+        // The numbers stay. Data safe does not change.
+        assert!(s.text.contains("10 files were slow before."), "{}", s.text);
+        assert!(s.text.contains("Data safe:          YES"), "{}", s.text);
+        assert!(!s.text.contains(" YES  10 files were slow"), "{}", s.text);
     }
 
     #[test]

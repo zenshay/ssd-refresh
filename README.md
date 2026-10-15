@@ -242,7 +242,7 @@ Use `verify` after a refresh. Run it 1 day or more after the refresh, and then f
 
 You must wait. The refresh log also has the speed right after the move (`after_mbps`). This speed does not show much: new data is always fast at first. New data can be in the fast SLC cache of the SSD. Thus `verify` measures again after some time.
 
-1. Wait 1 day or more after the refresh. If less than 12 hours have gone by, `verify` shows a warning.
+1. Wait 1 day or more after the refresh. If less than 12 hours have gone by, the speed result is `NOT DECIDED`.
 2. Read the files again:
 
    ```powershell
@@ -284,16 +284,27 @@ Result
   Data safe:          YES  597 of 597 files that no program changed have the same SHA-256 as at
                            refresh. 3 files were changed by other programs after the refresh.
                            This is normal.
-  Faster:             YES  340 files were slow before. 3 files are slow now. Read speed: 25 MB/s
-                           before, 480 MB/s now (19.2 times faster).
+  Faster (rewritten): YES  340 files were slow before. 3 files are slow now. Read speed: 25 MB/s
+                           before, 414 MB/s now (16.5 times faster).
+  Faster (read only): NOT DECIDED  Only 4 slow files. Need 10 or more. 4 files were slow before.
+                                   3 files are slow now. Read speed: 30 MB/s before, 45 MB/s now
+                                   (1.5 times faster).
+  Conclusion:         NOT DECIDED  Only 4 slow files in the read only group. Need 10 or more.
   Time since refresh: 21 days.
 ```
 
 | Line | YES or NO |
 |---|---|
 | Data safe | `YES`: the files that no program changed have the same SHA-256 as at the refresh. `NO`: some files have a different SHA-256, but their size, times and USN did not change. Thus no program changed them. `verify` shows these files. The exit code is 3 |
-| Faster | Only for the files that were slow before the refresh. `YES`: 80% or more of these files are not slow now |
-| Time since refresh | The time since the refresh. Below 12 hours, a warning |
+| Faster | Only for the files that were slow before the refresh. `YES`: 80% or more of these files are not slow now. See [NOT DECIDED](#not-decided) |
+| Time since refresh | The time since the refresh |
+
+<a id="not-decided"></a>`NOT DECIDED`: `verify` shows the numbers, but no `YES` or `NO`. This occurs in two conditions:
+
+1. A group has fewer than 10 files that were slow before the refresh. With few files, the result can be wrong.
+2. Less than 12 hours have gone by since the refresh. New data is always fast at first.
+
+If a Faster line is `NOT DECIDED`, the conclusion is also `NOT DECIDED`. `NOT DECIDED` is not an error: the exit code is 0. Data safe does not change: `verify` always checks it.
 
 - How `verify` knows that no program changed a file: before the read of the SHA-256, the refresh log writes the size, the times and the USN of each file (column `meta_key`). If the SHA-256 is different now, but these values are the same, no program wrote the file. `verify` does not use this test for files that another program had open for writing during the refresh, or for files with status `CHANGED`. For these files, a different SHA-256 is a normal change.
 - Logs from older versions have no `meta_key`. If some files are different, Data safe is `UNKNOWN`.

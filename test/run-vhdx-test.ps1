@@ -137,7 +137,10 @@ Check 'verify shows the Result part' ($vtext -match '(?m)^Result\s*$' -and $vtex
 Check 'verify shows Data safe: YES' ($vtext -match 'Data safe:\s+YES') (($vtext -split "`n" | Where-Object { $_ -match 'Data safe:' }) -join ' ').Trim()
 $blocksAfter = Blocks
 Check 'verify added one summary to the .verify.log file' ($blocksAfter -eq $blocksBefore + 1 -and (Get-Content $vlog -Raw) -match 'Data safe:') "$vlog : $blocksBefore summaries before, $blocksAfter after"
-Check 'verify shows a warning: less than 12 hours since the refresh' ($vtext -match 'Less than 12 hours') ''
+# verify runs a few minutes after the refresh: less than 12 hours. Thus no YES or NO for the speed.
+$fasterYesNo = @($vtext -split "`n" | Where-Object { $_ -match '^\s*Faster.*:\s+(YES|NO)\s' }).Count
+$conclusion = (($vtext -split "`n" | Where-Object { $_ -match 'Conclusion:' }) -join ' ').Trim()
+Check 'Less than 12 hours since the refresh: Conclusion and Faster are NOT DECIDED' ($conclusion -match 'Conclusion:\s+NOT DECIDED' -and $fasterYesNo -eq 0) "$conclusion ($fasterYesNo Faster lines with YES or NO)"
 Check 'verify shows both groups' ($vtext -match 'Rewritten' -and $vtext -match 'Read only' -and $vtext -match 'Slow before->now') ''
 $vr = Import-Csv $vcsv
 $lastLog = @{}; foreach ($r in (Import-Csv $log)) { $lastLog[$r.path] = $r }
