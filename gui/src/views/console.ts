@@ -1,5 +1,6 @@
-import { api } from "../api";
+import { api, type Progress } from "../api";
 import { $, el } from "../dom";
+import { fmtBytes, fmtCount, fmtDuration, fmtRate } from "../format";
 import type { Store } from "../store";
 
 export interface LogEntry {
@@ -10,6 +11,61 @@ export interface LogEntry {
 
 const MAX_LOGS = 500;
 const logs: LogEntry[] = [];
+
+let lastStage = "";
+let lastLoggedPct = -1;
+let lastCatalogedCount = 0;
+
+export function resetProgressLogState(): void {
+  lastStage = "";
+  lastLoggedPct = -1;
+  lastCatalogedCount = 0;
+}
+
+export function logProgressStream(p: Progress, activeRoot?: string | null): void {
+  const currentRoot = activeRoot ?? "Drive";
+
+  // Stage transition logging
+  if (p.stage !== lastStage) {
+    lastStage = p.stage;
+    lastLoggedPct = -1;
+    lastCatalogedCount = 0;
+
+    if (p.stage === "find") {
+      logMessage("info", `[Step 1/3] Finding files on ${currentRoot}... Traversing directories.`);
+    } else if (p.stage === "read") {
+      logMessage(
+        "info",
+        `[Step 2/3] Measuring read speeds on ${currentRoot}... (${fmtCount(p.totalFiles)} files, ${fmtBytes(p.totalBytes)})`
+      );
+    } else if (p.stage === "settle") {
+      logMessage("info", `[Step 3/3] Settle wait on ${currentRoot}. Drive cooldown in progress.`);
+    } else if (p.stage === "refresh") {
+      logMessage("info", `[Step 2/3] Rewriting slow files on ${currentRoot} via safe relocation.`);
+    } else if (p.stage === "recheck" || p.stage === "verify") {
+      logMessage("info", `[Step 3/3] Rechecking read speeds to verify improvements.`);
+    }
+  }
+
+  // Live stream logs during find (every 25,000 files)
+  if (p.stage === "find" && p.filesDone >= lastCatalogedCount + 25000) {
+    lastCatalogedCount = Math.floor(p.filesDone / 25000) * 25000;
+    logMessage("cmd", `Cataloged ${fmtCount(p.filesDone)} files so far...`);
+  }
+
+  // Live stream logs during read (every 10%)
+  if (p.stage === "read" && p.totalBytes > 0) {
+    const pct = Math.floor((p.bytesDone / p.totalBytes) * 10);
+    if (pct > lastLoggedPct) {
+      lastLoggedPct = pct;
+      const pctText = ((p.bytesDone / p.totalBytes) * 100).toFixed(0);
+      logMessage(
+        "cmd",
+        `[Progress ${pctText}%] Read ${fmtBytes(p.bytesDone)}/${fmtBytes(p.totalBytes)} · Speed: ${fmtRate(p.mbps)} · Time Left: ${p.etaSecs !== null ? fmtDuration(p.etaSecs) : "--"}`
+      );
+    }
+  }
+}
 
 function getTimestamp(): string {
   const d = new Date();
@@ -143,7 +199,8 @@ export function mountConsole(store: Store): void {
     logs.length = 0;
     logView.replaceChildren();
     countEl.textContent = "0 entries";
-    logMessage("info", "Console logs cleared.");
+    resetProgressLogState();
+    logMessage("info", "Console output cleared. System ready.");
   });
 
   // Initial welcome message

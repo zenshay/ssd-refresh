@@ -97,15 +97,15 @@
         </div>
       </section>
 
-      <!-- Realtime Operation Progress Card -->
-      <section id="progress-card" class="card progress-card" hidden>
+      <!-- Realtime Operation Progress Card: Always visible with idle standby state -->
+      <section id="progress-card" class="card progress-card is-idle" data-state="idle">
         <div class="progress-header">
           <div class="progress-header-left">
             <span id="progress-step-icon" class="progress-spinner-wrap" hidden></span>
-            <span id="progress-step-chip" class="chip">Step 1/3</span>
+            <span id="progress-step-chip" class="chip">Standby</span>
             <div class="progress-title-wrap">
-              <h3 id="progress-title" class="progress-title">Finding files to scan</h3>
-              <span id="progress-subtitle" class="progress-subtitle">0 files cataloged…</span>
+              <h3 id="progress-title" class="progress-title">Operation Progress</h3>
+              <span id="progress-subtitle" class="progress-subtitle">Standby · Select drives and click Safe Scan</span>
             </div>
           </div>
           <div class="progress-header-right">
@@ -122,15 +122,15 @@
         <div class="metrics-grid">
           <div class="metric-tile">
             <span class="metric-label">Files</span>
-            <span id="stat-files" class="metric-value font-mono">0</span>
+            <span id="stat-files" class="metric-value font-mono">--</span>
           </div>
           <div class="metric-tile">
             <span class="metric-label">Processed</span>
-            <span id="stat-bytes" class="metric-value font-mono">0 MB</span>
+            <span id="stat-bytes" class="metric-value font-mono">--</span>
           </div>
           <div class="metric-tile">
             <span class="metric-label">Speed</span>
-            <span id="stat-speed" class="metric-value font-mono">0 MB/s</span>
+            <span id="stat-speed" class="metric-value font-mono">--</span>
           </div>
           <div class="metric-tile">
             <span class="metric-label">Time Left</span>
@@ -140,11 +140,11 @@
 
         <!-- Action Controls -->
         <div class="progress-controls">
-          <button id="btn-pause" type="button" class="btn btn-secondary">
+          <button id="btn-pause" type="button" class="btn btn-secondary" disabled>
             <span id="btn-pause-icon"></span>
             <span id="btn-pause-label">Pause</span>
           </button>
-          <button id="btn-stop" type="button" class="btn btn-danger">
+          <button id="btn-stop" type="button" class="btn btn-danger" disabled>
             <span id="btn-stop-icon"></span>
             <span>Stop</span>
           </button>

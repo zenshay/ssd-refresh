@@ -77,13 +77,13 @@ body {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .app-main {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 15px;
 }
 
 /* Typography Utilities */
@@ -355,31 +355,7 @@ body {
   margin-bottom: 2px;
 }
 
-/* Running Compact Mode: Prevents vertical scrollbars when progress card expands */
-.app-container[data-mode="scanning"] .drives-grid,
-.app-container[data-mode="refreshing"] .drives-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
-}
-
-.app-container[data-mode="scanning"] .drive,
-.app-container[data-mode="refreshing"] .drive {
-  padding: 8px 12px;
-  gap: 2px;
-}
-
-.app-container[data-mode="scanning"] .drive .usage,
-.app-container[data-mode="scanning"] .drive .drive-meta,
-.app-container[data-mode="scanning"] .drive .pill,
-.app-container[data-mode="scanning"] .drive .tag:not(.tag-scanning),
-.app-container[data-mode="refreshing"] .drive .usage,
-.app-container[data-mode="refreshing"] .drive .drive-meta,
-.app-container[data-mode="refreshing"] .drive .pill,
-.app-container[data-mode="refreshing"] .drive .tag:not(.tag-scanning) {
-  display: none;
-}
-
-
+/* Drive selection cards remain full and stable during scan */
 .drive:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -559,13 +535,53 @@ body {
   line-height: 1.4;
 }
 
-/* Progress Card & Realtime Metrics */
+/* Progress Card & Realtime Metrics: Always visible with idle standby mode */
 .progress-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   border-color: rgba(99, 102, 241, 0.3);
   background: linear-gradient(180deg, rgba(20, 27, 45, 0.85) 0%, rgba(13, 18, 30, 0.95) 100%);
+  transition: all 0.25s ease;
+}
+
+.progress-card.is-idle {
+  border-color: var(--border-subtle);
+  background: rgba(17, 24, 39, 0.45);
+  box-shadow: none;
+}
+
+.progress-card.is-idle .progress-title {
+  color: var(--text-dim);
+}
+
+.progress-card.is-idle .progress-subtitle {
+  color: #475569;
+}
+
+.progress-card.is-idle .chip {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-dim);
+  border-color: transparent;
+}
+
+.progress-card.is-idle .metric-tile {
+  background: rgba(255, 255, 255, 0.015);
+  border-color: rgba(255, 255, 255, 0.04);
+}
+
+.progress-card.is-idle .metric-label,
+.progress-card.is-idle .metric-value {
+  color: #475569;
+}
+
+.progress-card.is-idle .progress-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.progress-card.is-idle .progress-controls .btn {
+  opacity: 0.3;
+  pointer-events: none;
 }
 
 .progress-header {

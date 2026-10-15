@@ -58,9 +58,30 @@ export function mountProgress(store: Store, actions: Actions): void {
 
   store.subscribe((s) => {
     const isRunning = s.mode !== "idle";
-    card.hidden = !isRunning;
+    card.hidden = false;
+    card.classList.toggle("is-idle", !isRunning);
+    card.dataset.state = s.mode;
+
     if (!isRunning) {
       card.classList.remove("is-paused", "is-stopping");
+      btnPause.disabled = true;
+      btnStop.disabled = true;
+      btnPause.dataset.paused = "false";
+      setIcon(pauseIcon, "pause", 14);
+      pauseLabel.textContent = "Pause";
+      btnStop.textContent = "Stop";
+      pausedBadge.hidden = true;
+      stepChip.textContent = "Standby";
+      stepChip.hidden = false;
+      stepIcon.hidden = true;
+      titleEl.textContent = "Operation Progress";
+      subtitleEl.textContent = "Standby · Select drives and click Safe Scan";
+      bar.style.width = "0%";
+      track.classList.remove("indeterminate");
+      statFiles.textContent = "--";
+      statBytes.textContent = "--";
+      statSpeed.textContent = "--";
+      statEta.textContent = "--";
       return;
     }
 
