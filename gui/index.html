@@ -21,10 +21,6 @@
         </div>
       </div>
       <div class="header-right">
-        <button id="btn-toggle-console" type="button" class="btn-console-pill active" title="Toggle Diagnostics Console (Ctrl+`)">
-          <span class="console-icon-sym">&gt;_</span>
-          <span class="console-label">Console</span>
-        </button>
         <div class="window-controls">
           <button id="btn-win-min" type="button" class="win-btn" title="Minimize" aria-label="Minimize">
             <svg viewBox="0 0 12 12" width="10" height="10"><path fill="currentColor" d="M1 6h10v1H1z"/></svg>
@@ -39,176 +35,183 @@
       </div>
     </header>
 
-    <!-- Main Grid -->
-    <main class="app-main">
-      <!-- Storage Drive Selector -->
-      <section class="card drives-section">
-        <div class="card-header">
-          <div class="card-title-group">
-            <h2 class="card-title">Target Storage</h2>
-            <span class="card-title-hint">Select one or multiple drives</span>
-          </div>
-          <div class="card-header-actions">
-            <button id="btn-select-all" type="button" class="btn-text">Select All</button>
-            <span class="header-sep">·</span>
-            <button id="btn-reload" type="button" class="btn-text" title="Scan for newly connected SSDs or drives">Detect Drives</button>
-          </div>
-        </div>
-        <div id="drives" class="drives-grid" role="group" aria-label="Storage Drives">
-          <div class="empty">Reading the drive list…</div>
-        </div>
-      </section>
-
-      <!-- Workflow Step Action Buttons -->
-      <section class="card workflow-section">
-        <div class="card-header">
-          <h2 class="card-title">Operations</h2>
-        </div>
-        <div class="workflow-grid">
-          <!-- Step 1: Safe Scan -->
-          <button id="btn-scan" type="button" class="action-card action-primary" data-state="ready">
-            <div class="action-top">
-              <span class="action-step">Step 1</span>
-              <span class="action-label">Ready</span>
+    <!-- Main Two-Column Master-Detail Layout -->
+    <main class="app-main app-two-column">
+      <!-- Left Column: Target Storage Sidebar List -->
+      <aside class="layout-sidebar">
+        <section class="card drives-section">
+          <div class="card-header">
+            <div class="card-title-group">
+              <h2 class="card-title">Target Storage</h2>
+              <span class="card-title-hint">Select drives</span>
             </div>
-            <div class="action-main">
-              <span class="action-icon"></span>
-              <div class="action-texts">
-                <span class="action-title">Safe Scan</span>
-                <span class="action-hint">Read-only. Finds slow files. Changes nothing.</span>
+            <div class="card-header-actions">
+              <button id="btn-select-all" type="button" class="btn-text">Select All</button>
+              <span class="header-sep">·</span>
+              <button id="btn-reload" type="button" class="btn-text" title="Scan for newly connected SSDs or drives">Detect</button>
+            </div>
+          </div>
+          <div id="drives" class="drives-list" role="group" aria-label="Storage Drives">
+            <div class="empty">Reading the drive list…</div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- Right Column: Operations, Progress, Diagnostics Console -->
+      <div class="layout-content">
+        <!-- Workflow Step Action Buttons -->
+        <section class="card workflow-section">
+          <div class="card-header">
+            <h2 class="card-title">Operations</h2>
+          </div>
+          <div class="workflow-grid">
+            <!-- Step 1: Safe Scan -->
+            <button id="btn-scan" type="button" class="action-card action-primary" data-state="ready">
+              <div class="action-top">
+                <span class="action-step">Step 1</span>
+                <span class="action-label">Ready</span>
+              </div>
+              <div class="action-main">
+                <span class="action-icon"></span>
+                <div class="action-texts">
+                  <span class="action-title">Safe Scan</span>
+                  <span class="action-hint">Read-only. Finds slow files. Changes nothing.</span>
+                </div>
+              </div>
+            </button>
+
+            <!-- Step 2: Selective Refresh -->
+            <button id="btn-refresh" type="button" class="action-card action-secondary" data-state="locked" disabled>
+              <div class="action-top">
+                <span class="action-step">Step 2</span>
+                <span class="action-label">Locked</span>
+              </div>
+              <div class="action-main">
+                <span class="action-icon"></span>
+                <div class="action-texts">
+                  <span class="action-title">Selective Refresh</span>
+                  <span class="action-hint">Rewrites slow files only. Run scan first.</span>
+                </div>
+              </div>
+            </button>
+          </div>
+        </section>
+
+        <!-- Realtime Operation Progress Card: Always visible with idle standby state -->
+        <section id="progress-card" class="card progress-card is-idle" data-state="idle">
+          <div class="progress-header">
+            <div class="progress-header-left">
+              <span id="progress-step-icon" class="progress-spinner-wrap" hidden></span>
+              <span id="progress-step-chip" class="chip">Standby</span>
+              <div class="progress-title-wrap">
+                <h3 id="progress-title" class="progress-title">Operation Progress</h3>
+                <span id="progress-subtitle" class="progress-subtitle">Standby · Select drives and click Safe Scan</span>
               </div>
             </div>
-          </button>
-
-          <!-- Step 2: Selective Refresh -->
-          <button id="btn-refresh" type="button" class="action-card action-secondary" data-state="locked" disabled>
-            <div class="action-top">
-              <span class="action-step">Step 2</span>
-              <span class="action-label">Locked</span>
-            </div>
-            <div class="action-main">
-              <span class="action-icon"></span>
-              <div class="action-texts">
-                <span class="action-title">Selective Refresh</span>
-                <span class="action-hint">Rewrites slow files only. Run scan first.</span>
-              </div>
-            </div>
-          </button>
-        </div>
-      </section>
-
-      <!-- Realtime Operation Progress Card: Always visible with idle standby state -->
-      <section id="progress-card" class="card progress-card is-idle" data-state="idle">
-        <div class="progress-header">
-          <div class="progress-header-left">
-            <span id="progress-step-icon" class="progress-spinner-wrap" hidden></span>
-            <span id="progress-step-chip" class="chip">Standby</span>
-            <div class="progress-title-wrap">
-              <h3 id="progress-title" class="progress-title">Operation Progress</h3>
-              <span id="progress-subtitle" class="progress-subtitle">Standby · Select drives and click Safe Scan</span>
+            <div class="progress-header-right">
+              <span id="badge-paused" class="badge badge-paused" hidden>PAUSED</span>
             </div>
           </div>
-          <div class="progress-header-right">
-            <span id="badge-paused" class="badge badge-paused" hidden>PAUSED</span>
-          </div>
-        </div>
 
-        <!-- Track / Fill Bar -->
-        <div id="progress-track" class="progress-track">
-          <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
-        </div>
+          <!-- Track / Fill Bar -->
+          <div id="progress-track" class="progress-track">
+            <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+          </div>
 
-        <!-- Metric Grid -->
-        <div class="metrics-grid">
-          <div class="metric-tile">
-            <span class="metric-label">Files</span>
-            <span id="stat-files" class="metric-value font-mono">--</span>
+          <!-- Metric Grid -->
+          <div class="metrics-grid">
+            <div class="metric-tile">
+              <span class="metric-label">Files</span>
+              <span id="stat-files" class="metric-value font-mono">--</span>
+            </div>
+            <div class="metric-tile">
+              <span class="metric-label">Processed</span>
+              <span id="stat-bytes" class="metric-value font-mono">--</span>
+            </div>
+            <div class="metric-tile">
+              <span class="metric-label">Speed</span>
+              <span id="stat-speed" class="metric-value font-mono">--</span>
+            </div>
+            <div class="metric-tile">
+              <span class="metric-label">Time Left</span>
+              <span id="stat-eta" class="metric-value font-mono">--</span>
+            </div>
           </div>
-          <div class="metric-tile">
-            <span class="metric-label">Processed</span>
-            <span id="stat-bytes" class="metric-value font-mono">--</span>
-          </div>
-          <div class="metric-tile">
-            <span class="metric-label">Speed</span>
-            <span id="stat-speed" class="metric-value font-mono">--</span>
-          </div>
-          <div class="metric-tile">
-            <span class="metric-label">Time Left</span>
-            <span id="stat-eta" class="metric-value font-mono">--</span>
-          </div>
-        </div>
 
-        <!-- Action Controls -->
-        <div class="progress-controls">
-          <button id="btn-pause" type="button" class="btn btn-secondary" disabled>
-            <span id="btn-pause-icon"></span>
-            <span id="btn-pause-label">Pause</span>
-          </button>
-          <button id="btn-stop" type="button" class="btn btn-danger" disabled>
-            <span id="btn-stop-icon"></span>
-            <span>Stop</span>
-          </button>
-        </div>
-      </section>
-
-      <!-- Diagnostics & System Log Console Card -->
-      <section id="console-drawer" class="card console-card">
-        <div class="console-toolbar">
-          <div class="console-title-wrap">
-            <span class="console-sym">&gt;_</span>
-            <h3 class="console-title">Diagnostics &amp; System Logs</h3>
-            <span id="console-log-count" class="chip">0 entries</span>
-          </div>
-          <div class="console-actions">
-            <button id="btn-copy-log" type="button" class="btn-sm" title="Copy diagnostic report to clipboard">
-              <span>Copy Log</span>
+          <!-- Action Controls -->
+          <div class="progress-controls">
+            <button id="btn-pause" type="button" class="btn btn-secondary" disabled>
+              <span id="btn-pause-icon"></span>
+              <span id="btn-pause-label">Pause</span>
             </button>
-            <button id="btn-save-log" type="button" class="btn-sm" title="Download diagnostic log file">
-              <span>Save File</span>
+            <button id="btn-stop" type="button" class="btn btn-danger" disabled>
+              <span id="btn-stop-icon"></span>
+              <span>Stop</span>
             </button>
-            <button id="btn-report-issue" type="button" class="btn-sm btn-report" title="Open GitHub bug report">
-              <span>Report Issue</span>
-            </button>
-            <button id="btn-clear-log" type="button" class="btn-sm" title="Clear console output">
-              <span>Clear</span>
-            </button>
-            <button id="btn-close-console" type="button" class="btn-icon" aria-label="Close Console">&times;</button>
           </div>
-        </div>
-        <div id="console-log-view" class="console-stream font-mono"></div>
-      </section>
+        </section>
 
-      <!-- Notice Alert Banner -->
-      <section id="notice-card" class="notice-card" hidden>
-        <span id="notice-icon" class="notice-icon"></span>
-        <div class="notice-content">
-          <h4 id="notice-title" class="notice-title">Notice</h4>
-          <p id="notice-body" class="notice-body"></p>
-        </div>
-        <button id="btn-notice-dismiss" type="button" class="btn-icon" aria-label="Dismiss">&times;</button>
-      </section>
-
-      <!-- Slow Files Table Card -->
-      <section id="slow-files-card" class="card slow-files-card" hidden>
-        <div class="card-header">
-          <div>
-            <h3 id="slow-files-count" class="card-title">Identified Slow Files</h3>
-            <span id="slow-report-path" class="text-subtle font-mono"></span>
+        <!-- Diagnostics & System Log Console Card -->
+        <section id="console-drawer" class="card console-card">
+          <div class="console-toolbar">
+            <div class="console-title-wrap">
+              <span class="console-sym">&gt;_</span>
+              <h3 class="console-title">Diagnostics &amp; System Logs</h3>
+              <span id="console-log-count" class="chip">0 entries</span>
+            </div>
+            <div class="console-actions">
+              <button id="btn-copy-log" type="button" class="btn-sm" title="Copy diagnostic report to clipboard">
+                <span>Copy Log</span>
+              </button>
+              <button id="btn-save-log" type="button" class="btn-sm" title="Download diagnostic log file">
+                <span>Save File</span>
+              </button>
+              <button id="btn-open-log" type="button" class="btn-sm" title="Open diagnostic report in system text editor">
+                <span>Open File</span>
+              </button>
+              <button id="btn-report-issue" type="button" class="btn-sm btn-report" title="Open GitHub bug report">
+                <span>Report Issue</span>
+              </button>
+              <button id="btn-clear-log" type="button" class="btn-sm" title="Clear console output">
+                <span>Clear</span>
+              </button>
+            </div>
           </div>
-        </div>
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Path</th>
-                <th class="w-32">Size</th>
-                <th class="w-32 text-right">Speed</th>
-              </tr>
-            </thead>
-            <tbody id="slow-files-body" class="font-mono"></tbody>
-          </table>
-        </div>
-      </section>
+          <div id="console-log-view" class="console-stream font-mono"></div>
+        </section>
+
+        <!-- Notice Alert Banner -->
+        <section id="notice-card" class="notice-card" hidden>
+          <span id="notice-icon" class="notice-icon"></span>
+          <div class="notice-content">
+            <h4 id="notice-title" class="notice-title">Notice</h4>
+            <p id="notice-body" class="notice-body"></p>
+          </div>
+          <button id="btn-notice-dismiss" type="button" class="btn-icon" aria-label="Dismiss">&times;</button>
+        </section>
+
+        <!-- Slow Files Table Card -->
+        <section id="slow-files-card" class="card slow-files-card" hidden>
+          <div class="card-header">
+            <div>
+              <h3 id="slow-files-count" class="card-title">Identified Slow Files</h3>
+              <span id="slow-report-path" class="text-subtle font-mono"></span>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th class="w-32">Size</th>
+                  <th class="w-32 text-right">Speed</th>
+                </tr>
+              </thead>
+              <tbody id="slow-files-body" class="font-mono"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </main>
 
     <!-- Confirmation Modal Dialog -->

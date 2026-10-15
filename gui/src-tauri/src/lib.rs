@@ -17,6 +17,7 @@ pub fn run() {
             commands::window_toggle_maximize,
             commands::window_close,
             commands::open_url,
+            commands::write_and_open_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

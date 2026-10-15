@@ -123,37 +123,15 @@ export function buildDiagnosticReport(store: Store): string {
 
 export function mountConsole(store: Store): void {
   const drawer = $<HTMLElement>("console-drawer");
-  const toggleBtn = $<HTMLButtonElement>("btn-toggle-console");
-  const closeBtn = $<HTMLButtonElement>("btn-close-console");
   const copyBtn = $<HTMLButtonElement>("btn-copy-log");
   const saveBtn = $<HTMLButtonElement>("btn-save-log");
+  const openBtn = $<HTMLButtonElement>("btn-open-log");
   const reportBtn = $<HTMLButtonElement>("btn-report-issue");
   const clearBtn = $<HTMLButtonElement>("btn-clear-log");
   const logView = $<HTMLElement>("console-log-view");
   const countEl = $<HTMLElement>("console-log-count");
 
-  function toggleDrawer(): void {
-    const isHidden = drawer.hidden;
-    drawer.hidden = !isHidden;
-    toggleBtn.classList.toggle("active", isHidden);
-    if (isHidden) {
-      logView.scrollTop = logView.scrollHeight;
-    }
-  }
-
-  toggleBtn.addEventListener("click", toggleDrawer);
-  closeBtn.addEventListener("click", () => {
-    drawer.hidden = true;
-    toggleBtn.classList.remove("active");
-  });
-
-  // Global Keyboard Shortcut: Ctrl + ` or F12
-  window.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey && e.key === "`") || e.key === "F12") {
-      e.preventDefault();
-      toggleDrawer();
-    }
-  });
+  drawer.hidden = false;
 
   // 1. Copy Diagnostic Log to Clipboard
   copyBtn.addEventListener("click", async () => {
@@ -183,7 +161,18 @@ export function mountConsole(store: Store): void {
     logMessage("info", `Diagnostic log downloaded as ${a.download}`);
   });
 
-  // 3. One-Click Report Issue on GitHub
+  // 3. Open Diagnostic Report directly in system default text editor
+  openBtn.addEventListener("click", async () => {
+    const report = buildDiagnosticReport(store);
+    try {
+      await api.writeAndOpenLog(report);
+      logMessage("info", "Diagnostic report opened in system default text editor.");
+    } catch (err) {
+      logMessage("error", `Failed to open log file: ${err}`);
+    }
+  });
+
+  // 4. One-Click Report Issue on GitHub
   reportBtn.addEventListener("click", () => {
     const state = store.get();
     const body = encodeURIComponent(
@@ -194,7 +183,7 @@ export function mountConsole(store: Store): void {
     logMessage("info", "Opened GitHub Issues in default browser.");
   });
 
-  // 4. Clear Log View
+  // 5. Clear Log View
   clearBtn.addEventListener("click", () => {
     logs.length = 0;
     logView.replaceChildren();
@@ -204,5 +193,5 @@ export function mountConsole(store: Store): void {
   });
 
   // Initial welcome message
-  logMessage("info", "ssd-refresh GUI engine ready. Press Ctrl+` to toggle console anytime.");
+  logMessage("info", "ssd-refresh GUI engine ready.");
 }

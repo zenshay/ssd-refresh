@@ -78,6 +78,25 @@ pub fn open_url(url: String) {
 }
 
 #[tauri::command]
+pub fn write_and_open_log(app: AppHandle, content: String) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("latest-diagnostic.log");
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &path.to_string_lossy()])
+            .spawn();
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn start_scan(app: AppHandle, state: State<'_, AppState>, root: String) -> Result<ScanOutcome, String> {
     if !Path::new(&root).is_dir() {
         return Err(format!("{root} is not a folder."));

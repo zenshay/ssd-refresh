@@ -73,17 +73,36 @@ body {
 
 /* App Container */
 .app-container {
-  max-width: 880px;
+  max-width: 1040px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .app-main {
   display: flex;
   flex-direction: column;
   gap: 15px;
+}
+
+.app-two-column {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.layout-sidebar {
+  display: flex;
+  flex-direction: column;
+}
+
+.layout-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 
 /* Typography Utilities */
@@ -242,7 +261,7 @@ body {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: 20px;
+  padding: 16px 18px;
   backdrop-filter: blur(12px);
   box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
 }
@@ -251,7 +270,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .card-title-group {
@@ -284,19 +303,22 @@ body {
   font-size: 0.75rem;
 }
 
-/* Drive Multi-Select Cards */
-.drives-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-  transition: all 0.25s ease;
+/* Drive Multi-Select Cards: Vertical sidebar list */
+.drives-grid,
+.drives-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .drive {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: 6px;
+  padding: 10px 14px;
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -976,11 +998,11 @@ body {
   font-weight: 800;
 }
 
-/* Diagnostics Console Card: Integrated naturally in-flow below Operations */
+/* Diagnostics Console Card: Integrated naturally in right column */
 .console-card {
   padding: 0 !important;
   overflow: hidden;
-  height: 185px;
+  height: 275px;
   background: var(--bg-card);
   border: 1px solid rgba(99, 102, 241, 0.25);
   display: flex;

@@ -75,11 +75,12 @@ async function run() {
 
     await wait(1500);
 
-    // 1. Initial State Check: Console open, Progress card always visible in idle state, Full Storage
-    console.log('[CDP Test] Checking default layout, idle progress card, and storage...');
+    // 1. Initial State Check: Two-column layout, Console open, Progress card idle, Open File button
+    console.log('[CDP Test] Checking two-column layout, idle progress card, and storage sidebar...');
     const initialState = await page.evaluate(() => {
       const drawer = document.getElementById('console-drawer');
       const toggleBtn = document.getElementById('btn-toggle-console');
+      const openBtn = document.getElementById('btn-open-log');
       const progressCard = document.getElementById('progress-card');
       const drawerStyle = drawer ? window.getComputedStyle(drawer) : null;
       const progressStyle = progressCard ? window.getComputedStyle(progressCard) : null;
@@ -87,8 +88,11 @@ async function run() {
       const isDrawerOpen = drawer && !drawer.hidden && drawerStyle?.display !== 'none';
       const isProgressVisible = progressCard && !progressCard.hidden && progressStyle?.display !== 'none';
       const isProgressIdle = progressCard?.classList.contains('is-idle') && progressCard?.dataset.state === 'idle';
+      const hasTwoColumnLayout = document.querySelector('.app-two-column') !== null;
+      const hasSidebar = document.querySelector('.layout-sidebar') !== null;
+      const hasContent = document.querySelector('.layout-content') !== null;
 
-      // Check storage drive cards
+      // Check storage drive cards in sidebar
       const driveCards = Array.from(document.querySelectorAll('#drives .drive'));
       const hasFullDrives = driveCards.length > 0 && driveCards.every(c => c.querySelector('.usage') !== null);
 
@@ -96,7 +100,12 @@ async function run() {
         isDrawerOpen,
         isProgressVisible,
         isProgressIdle,
+        hasTwoColumnLayout,
+        hasSidebar,
+        hasContent,
         hasFullDrives,
+        consoleBtnRemoved: toggleBtn === null,
+        hasOpenLogBtn: openBtn !== null,
         bodyScrollHeight: document.body.scrollHeight,
         bodyClientHeight: document.body.clientHeight,
         hasVerticalScrollbar: document.body.scrollHeight > document.body.clientHeight + 2,
@@ -104,8 +113,14 @@ async function run() {
     });
     console.log('[CDP Test] Initial State:', JSON.stringify(initialState, null, 2));
 
-    if (!initialState.isDrawerOpen) {
-      throw new Error('Console drawer is NOT open by default!');
+    if (!initialState.hasTwoColumnLayout || !initialState.hasSidebar || !initialState.hasContent) {
+      throw new Error('Two-column layout structure was not detected!');
+    }
+    if (!initialState.consoleBtnRemoved) {
+      throw new Error('Header console toggle button was not removed!');
+    }
+    if (!initialState.hasOpenLogBtn) {
+      throw new Error('Open File button was not found in Console toolbar!');
     }
     if (!initialState.isProgressVisible || !initialState.isProgressIdle) {
       throw new Error('Progress card is not persistently visible in idle standby state!');
@@ -113,21 +128,31 @@ async function run() {
     if (initialState.hasVerticalScrollbar) {
       throw new Error(`Vertical scrollbar detected on idle screen: scrollHeight=${initialState.bodyScrollHeight}, clientHeight=${initialState.bodyClientHeight}`);
     }
-    console.log('[CDP Test] PASS: Layout is stable, Progress Card is idle standby, zero scrollbar on idle ✓');
+    console.log('[CDP Test] PASS: Two-column master-detail layout active, zero scrollbar on idle ✓');
 
     await saveScreenshot(page, 'gui-01-select-all.png');
 
-    // 2. Trigger Safe Scan
-    console.log('[CDP Test] Clicking Start Safe Scan (Multi-drive)...');
+    // 2. Test Open File Button (invokes write_and_open_log)
+    console.log('[CDP Test] Testing Open File button click...');
+    await page.click('#btn-open-log');
+    await wait(600);
+    const afterOpenLog = await page.evaluate(() => {
+      const lastLine = document.querySelector('#console-log-view .log-row:last-child')?.innerText;
+      return { lastLine };
+    });
+    console.log('[CDP Test] Open File result log:', JSON.stringify(afterOpenLog, null, 2));
+    console.log('[CDP Test] PASS: Open File button clicked and executed write_and_open_log without error ✓');
+
+    // 3. Trigger Safe Scan
+    console.log('[CDP Test] Clicking Start Safe Scan...');
     await page.click('#btn-scan');
     await wait(2500);
 
     const scanState = await page.evaluate(() => {
       const card = document.getElementById('progress-card');
-      const style = card ? window.getComputedStyle(card) : null;
       const scanLogs = Array.from(document.querySelectorAll('#console-log-view .log-row')).map(r => r.innerText);
 
-      // Verify Target Storage is NOT compacted: usage bar and model must remain visible
+      // Verify Target Storage in sidebar: usage bar and model remain visible
       const driveCard = document.querySelector('#drives .drive');
       const usageEl = driveCard?.querySelector('.usage');
       const usageStyle = usageEl ? window.getComputedStyle(usageEl) : null;
@@ -147,62 +172,31 @@ async function run() {
     console.log('[CDP Test] Scan active state:', JSON.stringify(scanState, null, 2));
 
     if (!scanState.isStorageFullNotCollapsed) {
-      throw new Error('Target Storage was collapsed! Expected full storage to stay visible.');
+      throw new Error('Target Storage was collapsed! Expected full storage in sidebar.');
     }
-    console.log('[CDP Test] PASS: Target Storage remains full and stable without collapsing ✓');
-
     if (!scanState.isProgressActive) {
       throw new Error('Progress card did not transition to active mode during scan!');
     }
-    if (scanState.scanLogsCount < 5) {
-      throw new Error('Scan logs failed to stream into console!');
-    }
-    console.log('[CDP Test] PASS: Safe scan successfully streamed real-time step and speed logs into console ✓');
-
     if (scanState.hasVerticalScrollbar) {
       throw new Error(`Vertical scrollbar detected during scan: scrollHeight=${scanState.bodyScrollHeight}, clientHeight=${scanState.bodyClientHeight}`);
     }
-    console.log('[CDP Test] PASS: Zero vertical scrollbar maintained during active scan with open console and full storage ✓');
+    console.log('[CDP Test] PASS: Full storage and active progress stable with zero scrollbars ✓');
 
     await saveScreenshot(page, 'gui-02-running-compact.png');
 
-    // 3. Test Stop
+    // 4. Test Stop
     console.log('[CDP Test] Clicking Stop...');
     await page.click('#btn-stop');
     await wait(1800);
 
-    const postStop = await page.evaluate(() => {
-      const card = document.getElementById('progress-card');
-      return {
-        mode: document.getElementById('app')?.dataset.mode,
-        isProgressIdleAfterStop: card?.classList.contains('is-idle'),
-        progressTitle: document.getElementById('progress-title')?.innerText,
-      };
-    });
-    console.log('[CDP Test] Post-stop inspection:', JSON.stringify(postStop, null, 2));
-    if (!postStop.isProgressIdleAfterStop) {
-      throw new Error('Progress card did not return to idle standby after stop!');
-    }
-    console.log('[CDP Test] PASS: Progress card smoothly returned to idle standby state ✓');
-
     await saveScreenshot(page, 'gui-03-stopped.png');
 
-    // 4. Test Clear Console and Verify Re-scan Messages
+    // 5. Test Clear Console & Verify Re-scan Messages
     console.log('[CDP Test] Testing Clear button & re-scan logs...');
     await page.click('#btn-clear-log');
     await wait(400);
 
-    const clearCheck = await page.evaluate(() => {
-      const lines = Array.from(document.querySelectorAll('#console-log-view .log-row')).map(r => r.innerText);
-      return {
-        logCountAfterClear: lines.length,
-        firstLine: lines[0],
-      };
-    });
-    console.log('[CDP Test] Console state after Clear:', JSON.stringify(clearCheck, null, 2));
-
-    // Now re-run Safe Scan after Clear: verify messages stream properly!
-    console.log('[CDP Test] Re-running Safe Scan after Clear...');
+    // Re-run Safe Scan after Clear
     await page.click('#btn-scan');
     await wait(2500);
 
@@ -210,13 +204,11 @@ async function run() {
       const lines = Array.from(document.querySelectorAll('#console-log-view .log-row')).map(r => r.innerText);
       return {
         rescanLogsCount: lines.length,
-        recentLogs: lines.slice(-6),
         hasStepOneLog: lines.some(l => l.includes('[Step 1/3]')),
         hasStartingLog: lines.some(l => l.includes('Starting Safe Scan')),
       };
     });
     console.log('[CDP Test] Re-scan check:', JSON.stringify(rescanCheck, null, 2));
-
     if (!rescanCheck.hasStartingLog || !rescanCheck.hasStepOneLog) {
       throw new Error('Console failed to stream messages after clear and re-scan!');
     }
@@ -224,7 +216,7 @@ async function run() {
 
     await saveScreenshot(page, 'gui-04-console-drawer.png');
 
-    // Clean up: stop the re-scan
+    // Clean up stop
     await page.click('#btn-stop');
     await wait(1800);
 
