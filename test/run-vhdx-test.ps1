@@ -77,7 +77,8 @@ Start-Sleep -Seconds 3
 
 Step '3a. Refresh, stopping after 150 files (--stop-after)'
 $log = Join-Path $out 'refresh.csv'
-$common = @('refresh', '--from', $scan, '--out', $log, '--select', 'all', '--force', '--confirm', "${Letter}:")
+# 30% of the files form the control group: read, never moved (status CONTROL); verify compares them later.
+$common = @('refresh', '--from', $scan, '--out', $log, '--select', 'all', '--force', '--confirm', "${Letter}:", '--control-fraction', '0.3')
 $code = Run $tool ($common + @('--stop-after', '150')) 'refresh-1.log'
 $rows1 = @(Import-Csv $log).Count
 Check 'Exit code 4 when stopped early' ($code -eq 4) "exit code $code, $rows1 rows logged"
@@ -116,18 +117,38 @@ Check 'Untouched files identical, modified files at their latest version' ($code
 Run $kit @('lcnmap', $data, (Join-Path $out 'lcn-after.csv')) 'lcn-after.log' | Out-Null
 Run $kit @('lcndiff', (Join-Path $out 'lcn-before.csv'), (Join-Path $out 'lcn-after.csv')) 'lcndiff.log' | Out-Null
 
+Step '4b. Re-read with verify (read-only) and compare the groups'
+$vcsv = Join-Path $out 'verify.csv'
+$code = Run $tool @('verify', '--from', $log, '--out', $vcsv) 'verify-tool.log'
+Check 'verify finishes normally' ($code -eq 0) "exit code $code"
+$vtext = Get-Content (Join-Path $out 'verify-tool.log') -Raw
+Check 'verify warns that the refresh is less than 12 hours old' ($vtext -match 'less than 12 hours') ''
+Check 'verify summary shows both groups' ($vtext -match 'Rewritten' -and $vtext -match 'Read only' -and $vtext -match 'Slow then->now') ''
+$vr = Import-Csv $vcsv
+$lastLog = @{}; foreach ($r in (Import-Csv $log)) { $lastLog[$r.path] = $r }
+$wantRw = @($lastLog.Values | Where-Object status -in 'OK', 'CHANGED').Count
+$wantRo = @($lastLog.Values | Where-Object status -eq 'CONTROL').Count
+$gotRw = @($vr | Where-Object group -eq 'rewritten').Count
+$gotRo = @($vr | Where-Object group -eq 'read_only').Count
+Check 'verify groups match the log (OK/CHANGED = rewritten, CONTROL = read_only)' ($gotRw -eq $wantRw -and $gotRo -eq $wantRo -and $wantRo -gt 0) "rewritten $gotRw of $wantRw, read_only $gotRo of $wantRo"
+$vUntouched = @($vr | Where-Object { $byRel[(Rel $_.path)].mutate -eq '0' })
+$vUntouchedBad = @($vUntouched | Where-Object status -ne 'MEASURED')
+Check 'verify measures every untouched file (hash still matches the log)' ($vUntouchedBad.Count -eq 0 -and $vUntouched.Count -gt 0) "$($vUntouched.Count) checked, $($vUntouchedBad.Count) not MEASURED"
+$ctrlMoved = @($lastLog.Values | Where-Object { $_.status -eq 'CONTROL' -and [long]$_.moved_bytes -gt 0 })
+Check 'Control-group files were not moved' ($ctrlMoved.Count -eq 0) "$wantRo CONTROL files, $($ctrlMoved.Count) with moved data"
+
 # ---------- 5. Analyse the refresh log ----------
 Step '5. Analyse the refresh log'
 $rf = Import-Csv $log
-$final = @($rf | Where-Object { $_.status -in 'OK', 'CHANGED', 'SKIP_KIND', 'SKIP_FAST', 'ERROR', 'MOVE_FAILED', 'SKIP_MISSING' })
+$final = @($rf | Where-Object { $_.status -in 'OK', 'CHANGED', 'SKIP_KIND', 'SKIP_FAST', 'ERROR', 'MOVE_FAILED', 'SKIP_MISSING', 'CONTROL' })
 $dupes = @($final | Group-Object path | Where-Object Count -gt 1)
 Check 'Resume did not process finished files again' ($dupes.Count -eq 0) "$($dupes.Count) duplicates"
 $mm = @($rf | Where-Object status -eq 'MISMATCH')
 Check 'No unexplained hash difference (MISMATCH)' ($mm.Count -eq 0) "$($mm.Count) MISMATCH"
 $last = @{}; foreach ($r in $rf) { $last[$r.path] = $r }
 $untouched = @($last.Values | Where-Object { $byRel[(Rel $_.path)].mutate -eq '0' })
-$untouchedBad = @($untouched | Where-Object { $_.status -notin 'OK', 'SKIP_KIND' -or ($_.status -eq 'OK' -and $_.sha_before -ne $byRel[(Rel $_.path)].sha256) })
-Check 'Untouched files are OK, and their hash before the move equals the original' ($untouchedBad.Count -eq 0) "$($untouched.Count) checked, $($untouchedBad.Count) wrong"
+$untouchedBad = @($untouched | Where-Object { $_.status -notin 'OK', 'SKIP_KIND', 'CONTROL' -or ($_.status -in 'OK', 'CONTROL' -and $_.sha_before -ne $byRel[(Rel $_.path)].sha256) })
+Check 'Untouched files are OK or CONTROL, and their hash before the move equals the original' ($untouchedBad.Count -eq 0) "$($untouched.Count) checked, $($untouchedBad.Count) wrong"
 $moved = @($last.Values | Where-Object { [long]$_.moved_bytes -gt 0 })
 Check 'Data was actually moved' ($moved.Count -gt 0) "$($moved.Count) files moved, $([math]::Round(($moved | Measure-Object moved_bytes -Sum).Sum / 1MB)) MB"
 $metaChanged = @($last.Values | Where-Object { $_.status -eq 'OK' -and $_.meta_changed -eq '1' -and $byRel[(Rel $_.path)].mutate -eq '0' })

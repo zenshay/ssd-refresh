@@ -5,6 +5,13 @@
 - `scan` 只讀，不會改動磁碟上的任何東西。
 - `refresh` 請檔案系統把慢的檔案搬到新的叢集。正在使用中的檔案也安全。
 - 程式不直接寫入磁區，也不自己寫入檔案內容。
+- `verify` 隔一段時間再讀一次，讓你看到刷新的效果有沒有維持，以及重寫是否比只讀一遍更有效。
+
+**先跑 `scan`，不要直接 `refresh`。** 有些 SSD 只要把舊資料讀一遍，速度就會恢復：控制器發現某些資料要大量錯誤校正才讀得出來，會自己把它重寫。Crucial BX500 做一次唯讀掃描後，舊檔恢復到 250–470 MB/s。另一些 SSD 不會這樣，舊資料讀幾次都一樣慢，著名的例子是韌體修正前的 Samsung 840 EVO。各方對哪些 SSD 屬於哪一種說法不一，所以請實際量自己的磁碟：
+
+1. 用 `scan` 掃描整顆磁碟。這會把每個檔案讀一遍，第一種 SSD 可能就此恢復。
+2. 隔一天再 `scan` 一次（或對第一份報告執行 `verify --from`）。如果慢檔已經變快，代表讀一遍就夠，不需要 `refresh`。
+3. 如果還是慢，再用 `refresh` 刷新，並保留對照組（`--control-fraction 0.5`），隔一天以上執行 `verify`。見[驗證](#驗證刷新的效果能不能維持)。
 
 [English](README.md)
 
@@ -20,6 +27,49 @@ DiskFresh 這類整顆磁碟的刷新工具，做法是把每個磁區讀出來�
 2. 空白區域也會被重寫，浪費 SSD 的寫入壽命，事後還要再做一次 TRIM。
 
 ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用檔案系統自己的重組 API。檔案系統會和其他使用該檔案的程式同步，上面的競態就不會發生。
+
+和其他工具的差別：
+
+- DiskFresh、SpinRite、Hard Disk Sentinel 和 `chkdsk /r` 都以磁區為單位。它們都不會列出哪些檔案慢，而且在使用中的磁碟上寫回磁區並不安全。
+- Sysinternals Contig 用的是同一個搬移 API，但它會跳過沒有碎片的檔案，所以不能用來刷新。
+- 依修改日期挑檔案的工具看不出哪些檔案真的慢。舊檔不一定慢，慢檔也不一定舊。
+
+## 什麼時候用
+
+適合：
+
+- 檔案多年沒有改動的系統碟。
+- 遊戲庫與封存資料：寫入一次、很少讀取。
+- 長期沒有通電存放的磁碟。
+
+不適合：
+
+- SMART 的重新配置磁區數持續增加。請先備份並換碟，不要再增加寫入。
+- 傳統硬碟（HDD）。它們不會因為這個原因變慢。
+- 最近才寫入的資料。它變慢不是因為放太久。
+
+### 哪些磁碟
+
+下表的風險是**根據公開資訊推測，不是本專案實測**。請用 `scan` 和 `verify` 量自己的磁碟，實測結果見[實測過的磁碟](#實測過的磁碟)。
+
+| 磁碟類型 | 推測的舊資料變慢風險 |
+|---|---|
+| QLC（每個單元 4 位元） | 高 |
+| 早期平面 TLC，例如 Samsung 840 EVO | 高 |
+| 沒有 DRAM 的 SATA | 中到高 |
+| 沒有 DRAM 的 NVMe | 未知，尚待實測 |
+| 有 DRAM 的主流 TLC | 低 |
+| microSD 卡、隨身碟 | 很高（而且通常是 exFAT/FAT32，只能掃描） |
+
+## 實測過的磁碟
+
+| 磁碟 | 介面 | NAND／DRAM | 結果 | 日期 |
+|---|---|---|---|---|
+| Crucial BX500 480 GB | SATA | 沒有 DRAM | 讀一遍就恢復：做一次唯讀掃描（DiskFresh 唯讀模式）後，舊檔讀取 250–470 MB/s，卡頓從每天 129 次降到 5 次 | 2026-10-15 |
+
+結果分三種：*讀一遍就恢復*（read-only pass enough）、*需要重寫*（rewrite needed，只有重寫過的檔案恢復）、*沒有變慢*（no slowdown，舊檔本來就不慢）。
+
+歡迎用 [drive report](../../issues/new?template=drive-report.yml) 範本回報你的磁碟。附上含對照組的 `verify` 摘要最有幫助。
 
 ## 支援的平台
 
@@ -51,12 +101,14 @@ ssd-refresh scan C:\ --out C-scan.csv
 ssd-refresh refresh --from C-scan.csv --dry-run
 ssd-refresh refresh --from C-scan.csv --allow-system-volume
 Optimize-Volume -DriveLetter C -ReTrim
+ssd-refresh verify --from C-scan-refresh.csv
 ```
 
 1. 掃描磁碟，產生報告。
 2. 試跑：重新測量慢的檔案，不搬移任何東西。
 3. 刷新。開始前要輸入磁碟代號確認。
 4. 告訴 SSD 舊的位置已經空出來。
+5. 隔一天以上，確認檔案仍然夠快（見[驗證](#驗證刷新的效果能不能維持)）。
 
 Linux 用 `sudo` 執行，最後一步改成 `sudo fstrim -v /`。
 
@@ -163,6 +215,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `MOVE_FAILED` | 檔案系統拒絕搬移；檔案完整 |
 | `PARTIAL` | 中途停止；`--resume` 會重搬 |
 | `MISMATCH` | 雜湊變了，而且沒有偵測到其他寫入者。程式立刻停止。這不應該發生，請回報 |
+| `CONTROL` | 對照組（`--control-fraction`）：仍然慢，只讀取，刻意不搬 |
 | `ERROR` | 開不了或讀不了（見 `detail`） |
 
 ### 雜湊不同時怎麼判斷
@@ -173,6 +226,71 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 - 有沒有其他程式開著寫入。Windows 會用「不允許別人寫入」的共用模式開檔一瞬間測試；Linux 用讀取租約（`F_SETLEASE`）測試。
 
 任一項成立就記成 `CHANGED`，否則記成 `MISMATCH`。
+
+## 驗證：刷新的效果能不能維持
+
+刷新記錄的 `after_mbps` 是搬移後立刻量的，不能當證據：剛寫入的資料一定快，可能還在 SSD 的 SLC 快取裡。另外有兩個現象也會混淆結果：
+
+- 只讀一遍也可能讓速度恢復。SSD 讀取時如果需要大量錯誤校正，可能會自己把資料重寫一次（常稱為 read reclaim）。曾觀察到 Crucial BX500 只做一次唯讀掃描（例如 DiskFresh 唯讀模式），舊檔就恢復到 250–470 MB/s。
+- 單次讀得慢可能只是停頓（沒有 DRAM 的 SSD 閒置後 10–20 秒會變慢），不代表檔案慢。
+
+所以真正的證據是「隔一段時間再讀」，並且和「讀過但沒有重寫」的檔案比較。
+
+1. 刷新時保留對照組。一半的慢檔只讀不搬（狀態 `CONTROL`）。哪些檔案進對照組由路徑決定，`--resume` 時不會變。
+
+   ```powershell
+   ssd-refresh refresh --from C-scan.csv --allow-system-volume --control-fraction 0.5
+   ```
+
+2. 等一天以上。距離刷新不到 12 小時，`verify` 會警告。
+3. 重讀兩組並比較：
+
+   ```powershell
+   ssd-refresh verify --from C-scan-refresh.csv
+   ```
+
+`verify` 一次只讀一個檔案，用一般優先權，不經作業系統快取；讀得慢的檔案會再讀一次，每個 extent 取較快的時間。它會分別列出 `rewritten` 組（`OK`、`CHANGED`）和 `read_only` 組（`CONTROL`、`DRYRUN`），格式如下（數字只是示意）：
+
+```
+                         Rewritten  Read only
+  Files read                    60         60
+  Measured                      58         60
+  Slow then->now             58->1     60->41
+  Median MB/s then->now     38->455    35->120
+  Modified (left out)            2          0
+```
+
+- 「then」是搬移前那次讀取（掃描報告則是掃描結果），「now」是這次重讀。
+- 內容已經改變（SHA-256 不同）的檔案存的是新資料，不列入比較（`MODIFIED`）。
+- 表格下方會列出兩組中「當時慢、現在仍慢」的比例，並給一行結論。
+- 重寫組變快、對照組仍慢：重寫才有效。兩組都變快：這顆碟只讀一遍就夠。兩組又都變慢：資料退化得快，隔更久再比一次。
+- `--sample N`：每組最多讀 N 個檔案。抽樣由路徑決定，之後重跑會讀同一批。
+- `verify --from C-scan.csv`：檢查掃描報告裡的慢檔，看只讀一遍是否已經讓它們恢復。
+
+結果也會寫成 `<來源檔名>-verify-<日期>-<時間>.csv`，每個檔案一列。
+
+### 用 DiskSpd 獨立檢查單一檔案
+
+[DiskSpd](https://github.com/microsoft/diskspd) 是微軟的儲存裝置測速工具，可以不靠本工具量一個檔案：
+
+```powershell
+diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
+```
+
+| 參數 | 意思 |
+|---|---|
+| `-b1M` | 每個請求 1 MiB（小於幾 MB 的檔案改用 `-b64K`） |
+| `-o4 -t1` | 1 個執行緒，同時 4 個請求（和本工具預設的 `--qd 4` 相同） |
+| `-w0` | 寫入比例 0%：純讀取 |
+| `-Su` | 不用作業系統快取，等同 `FILE_FLAG_NO_BUFFERING`；讀取時用 `-Sh` 效果相同 |
+| `-W0` | 不暖機。預設暖機 5 秒，會把最慢的第一輪排除在外 |
+| `-d10` | 跑 10 秒。DiskSpd 從頭依序讀，讀到結尾再從頭開始 |
+| `-L` | 一併列出延遲百分位數 |
+
+看「Read IO」表格的 `MiB/s`。刷新前量一次，刷新後隔一天以上再量一次。
+
+- 不要加 `-c`（會建立或覆寫目標檔案）。對要保留的檔案不要用大於 0 的 `-w`：寫入測試會直接破壞資料，不會警告。
+- 結果是所有輪次的平均。慢檔的第一輪最慢，所以 `-d` 短一點差異最明顯。
 
 ## 暫停、停止與續跑
 
@@ -193,6 +311,8 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `--priority` | verylow | 掃描第 2 步與搬移的 I/O 優先權 |
 | `--measure-priority` | normal | 掃描第 3 步與刷新前後測速的 I/O 優先權 |
 | `--max-chunk-mb` | 16 | 每次搬移的最大長度 |
+| `--control-fraction` | 0 | refresh：慢檔中只讀不搬的比例（0 到 1），狀態記成 `CONTROL` |
+| `--sample` | 全部 | verify：每組最多讀 N 個檔案 |
 
 ## 搬移的原理
 
@@ -203,6 +323,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 ## 限制
 
 - 刷新只支援 Windows NTFS 與 Linux ext4。
+- exFAT 與 FAT32（microSD 卡、隨身碟常用）只能掃描，不能刷新：它們沒有能安全搬移檔案資料的 API。
 - 不搬移：NTFS 壓縮檔、WOF 壓縮的系統檔、小到放在 MFT 裡的檔案、檔案系統中繼資料、資料夾索引、替代資料流。
 - 被系統獨占的檔案（`pagefile.sys`、`hiberfil.sys`）打不開，會記成 `ERROR`。
 - 速度是量測結果，會受其他程式的磁碟活動影響。第 3 步能降低影響，但無法完全排除。
@@ -231,13 +352,18 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 1. 產生 711 個檔案，共約 1.9 GB（0 B 到 200 MB，含刻意做出的碎片檔），記錄 SHA-256。
 2. 重新掛載 VHDX 清掉快取，掃描並比對雜湊。
 3. 啟動修改程式，持續改寫約一成的檔案。方式包括開檔寫入再關閉、長期開著寫入、記憶體對應寫入、追加與截短。
-4. 刷新全部檔案，在第 150 個檔案時停止，再用 `--resume` 續跑，途中暫停 6 秒。
+4. 刷新全部檔案並保留 30% 對照組（`--control-fraction 0.3`），在第 150 個檔案時停止，再用 `--resume` 續跑，途中暫停 6 秒。
 5. 停止修改程式，重新掛載後驗證：沒被修改的檔案必須完全一致，被修改的檔案必須是最新版本。
-6. 確認每個檔案的資料都換了位置、搬移沒有改動時間戳記或 USN，最後執行 `chkdsk /scan`。
+6. 對刷新記錄執行 `verify`：分組要和記錄一致，每個沒被修改的檔案都要量到，對照組的檔案不能被搬移。
+7. 確認資料確實搬移、搬移沒有改動時間戳記或 USN，最後執行 `chkdsk /scan`。
+
+### 加入 verify 與對照組後的測試結果（2026-10-15 14:36）
+
+21 項檢查全部通過。共 711 個檔案，其中 51 個在刷新期間被修改（38 秒內 10,437 次）。最終狀態：OK 467、CHANGED 6、CONTROL 173、MISMATCH 0。`verify` 把 473 個檔案分到重寫組、173 個分到只讀組，和記錄完全一致。173 個對照組檔案都沒有被搬移。刷新後又被修改的 49 個檔案記成 `MODIFIED`，不列入比較。`chkdsk /scan` 沒有發現問題。
 
 ### 測試結果（2026-10-15，Windows 10 22H2，VHDX 放在 NVMe SSD 上）
 
-15 項檢查全部通過。
+15 項檢查全部通過（加入 verify 之前的版本）。
 
 | 項目 | 結果 |
 |---|---|
@@ -256,4 +382,11 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 ## 授權
 
-尚未選定。
+採用雙重授權，使用者可任選其一：
+
+- Apache License 2.0（[LICENSE-APACHE](LICENSE-APACHE)）
+- MIT 授權（[LICENSE-MIT](LICENSE-MIT)）
+
+除非你另外明確聲明，你依 Apache-2.0 定義有意提交、要納入本專案的貢獻，都以上述雙重授權釋出，不附加其他條款。
+
+具法律效力的是英文授權全文，本節只是摘要。

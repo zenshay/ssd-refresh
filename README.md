@@ -5,6 +5,13 @@ Find the files on an SSD whose old data has become slow to read, and have the fi
 - `scan` only reads. It changes nothing on the disk.
 - `refresh` asks the file system to move the slow files to new clusters. Files that are open and in use stay safe.
 - The tool never writes to the disk directly and never writes file data itself.
+- `verify` reads the files again later, so you can see whether a refresh lasted, and whether it did more than reading alone.
+
+**Start with `scan`, not `refresh`.** On some SSDs, reading old data once is enough to restore its speed: the controller notices data that needed heavy error correction and rewrites it by itself. On a Crucial BX500, a read-only pass brought old files back to 250–470 MB/s. Other drives do not do this, and their old data stays slow however often it is read; the Samsung 840 EVO before its firmware fix is the well-known example. Sources disagree on which drives do what, so measure your own:
+
+1. `scan` the drive. This reads every file once, which may already fix a drive of the first kind.
+2. `scan` again a day later (or `verify --from` the first report). If the slow files are fast now, reading was enough and you do not need `refresh`.
+3. If files are still slow, `refresh` them, keeping a control group (`--control-fraction 0.5`), and `verify` a day or more later. See [Verify](#verify-does-the-refresh-last).
 
 [繁體中文說明](README.zh-TW.md)
 
@@ -20,6 +27,49 @@ Whole-disk refreshers such as DiskFresh read every sector and write it back. Tha
 2. Empty space is rewritten too. That costs drive endurance and needs a TRIM afterwards.
 
 ssd-refresh works per file instead. It rewrites only files that are actually slow, and it uses the file system's own defragmentation API to do it. The file system coordinates the move with every other program that uses the file, so the race above cannot happen.
+
+How it differs from other tools:
+
+- DiskFresh, SpinRite, Hard Disk Sentinel and `chkdsk /r` work on sectors. None of them lists which files are slow, and writing sectors back is unsafe on a disk in use.
+- Sysinternals Contig uses the same move API, but it skips files that are not fragmented, so it cannot refresh them.
+- Tools that pick files by age (modification date) cannot see which files are actually slow. Old files are not always slow, and slow files are not always old.
+
+## When to use it
+
+Good candidates:
+
+- A system drive whose files have not changed for years.
+- Game libraries and archives: written once, read rarely.
+- A drive that was stored without power for a long time.
+
+Not a good idea:
+
+- The drive's SMART reallocated-sector count keeps rising. Back up and replace the drive; do not add writes.
+- Hard disks (HDD). They do not lose data this way.
+- Recently written data. It is not slow because of age.
+
+### Which drives
+
+The risk below is **an estimate from public information, not measured by this project**. Measure your own drive with `scan` and `verify`, and see [Tested drives](#tested-drives) for real results.
+
+| Drive type | Estimated risk of old data reading slowly |
+|---|---|
+| QLC (4 bits per cell) | High |
+| Early planar TLC, for example the Samsung 840 EVO | High |
+| DRAM-less SATA | Medium to high |
+| DRAM-less NVMe | Unknown; not yet tested |
+| Mainstream TLC with DRAM | Low |
+| microSD cards, USB flash drives | Very high (and they are usually exFAT/FAT32, so scan only) |
+
+## Tested drives
+
+| Drive | Interface | NAND / DRAM | Result | Date |
+|---|---|---|---|---|
+| Crucial BX500 480 GB | SATA | DRAM-less | Read-only pass enough: after one read-only pass (DiskFresh read-only mode), old files read at 250–470 MB/s and stalls dropped from 129 to 5 per day | 2026-10-15 |
+
+Results: *read-only pass enough* (reading restored the speed), *rewrite needed* (only rewritten files recovered), *no slowdown* (old files were never slow).
+
+Please report your drive with the [drive report](../../issues/new?template=drive-report.yml) issue template. A report with a `verify` summary that includes a control group is the most useful.
 
 ## Platforms
 
@@ -49,12 +99,14 @@ ssd-refresh scan C:\ --out C-scan.csv
 ssd-refresh refresh --from C-scan.csv --dry-run
 ssd-refresh refresh --from C-scan.csv --allow-system-volume
 Optimize-Volume -DriveLetter C -ReTrim
+ssd-refresh verify --from C-scan-refresh.csv
 ```
 
 1. Scan the drive and write a report.
 2. Preview: re-measure the slow files without moving anything.
 3. Refresh. You type the drive letter to confirm before anything is moved.
 4. Tell the SSD that the old locations are free.
+5. A day or more later, check that the files are still fast (see [Verify](#verify-does-the-refresh-last)).
 
 On Linux use `sudo`, and `sudo fstrim -v /` in the last step.
 
@@ -163,6 +215,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `MOVE_FAILED` | The file system refused a move; the file is intact |
 | `PARTIAL` | Stopped part way; `--resume` moves it again |
 | `MISMATCH` | The hash changed and no other writer was detected. The run stops at once. This should never happen; please report it |
+| `CONTROL` | Control group (`--control-fraction`): still slow, read only, deliberately not moved |
 | `ERROR` | The file could not be opened or read (see `detail`) |
 
 ### How a hash difference is explained
@@ -173,6 +226,71 @@ When the hash differs, the program checks two things:
 - whether another program had it open for writing. On Windows the file is opened for an instant with a sharing mode that denies writers; on Linux a read lease (`F_SETLEASE`) is tried.
 
 If either is true, the status is `CHANGED`. Otherwise it is `MISMATCH`.
+
+## Verify: does the refresh last?
+
+The `after_mbps` column of the refresh log is measured right after the move. It proves little: newly written data is always fast at first, and may still sit in the SSD's fast SLC cache. Two other effects can also hide what the refresh did:
+
+- Reading alone can restore speed. When an SSD needs heavy error correction to read data, it may rewrite that data by itself (often called read reclaim). A full read-only pass (for example DiskFresh in read-only mode) has been seen to bring old files on a Crucial BX500 back to 250–470 MB/s without any rewrite.
+- A single slow read can be a stall (a DRAM-less SSD can slow down for 10–20 s after being idle), not a slow file.
+
+So the evidence is a later re-read, compared with files that were read but not rewritten.
+
+1. Refresh with a control group. Half of the slow files are only read, never moved (status `CONTROL`). The choice is fixed per path, so `--resume` keeps it.
+
+   ```powershell
+   ssd-refresh refresh --from C-scan.csv --allow-system-volume --control-fraction 0.5
+   ```
+
+2. Wait a day or more. `verify` warns when less than 12 hours have passed.
+3. Re-read both groups and compare:
+
+   ```powershell
+   ssd-refresh verify --from C-scan-refresh.csv
+   ```
+
+`verify` reads each file once, alone, at normal priority and without the OS cache; a file that reads slowly is read a second time and the faster time of each extent counts. It prints, for the `rewritten` group (`OK`, `CHANGED`) and the `read_only` group (`CONTROL`, `DRYRUN`) a table like this one (illustrative numbers):
+
+```
+                         Rewritten  Read only
+  Files read                    60         60
+  Measured                      58         60
+  Slow then->now             58->1     60->41
+  Median MB/s then->now     38->455    35->120
+  Modified (left out)            2          0
+```
+
+- "Then" is the read before the move (or the scan's result for a scan report). "Now" is this run.
+- A file whose content changed since (different SHA-256) holds new data and is left out (`MODIFIED`).
+- Below the table, verify prints the share of each group that was slow then and is still slow now, and a one-line result.
+- Rewritten fast and read-only still slow: rewriting is what helped. Both fast: reading alone was enough on this drive. Both slow again: the data degrades quickly; compare again after a longer time.
+- `--sample N` reads at most N files per group; the sample is fixed per path, so later runs read the same files.
+- `verify --from C-scan.csv` checks the slow files of a scan report, to see whether reading alone has restored them.
+
+The result is also written to `<source>-verify-<date>-<time>.csv`, one row per file.
+
+### Checking a single file with DiskSpd
+
+[DiskSpd](https://github.com/microsoft/diskspd) is Microsoft's storage benchmark. It measures a file independently of this tool:
+
+```powershell
+diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
+```
+
+| Parameter | Meaning |
+|---|---|
+| `-b1M` | 1 MiB per request (use `-b64K` for files smaller than a few MB) |
+| `-o4 -t1` | one thread, 4 requests in flight (the same as this tool's default `--qd 4`) |
+| `-w0` | 0% writes: a read-only test |
+| `-Su` | no software (OS) cache, like `FILE_FLAG_NO_BUFFERING`; `-Sh` also works for reads |
+| `-W0` | no warm-up; the default 5 s warm-up would hide the first, slowest pass |
+| `-d10` | run 10 s; DiskSpd reads the file sequentially and starts again at the end |
+| `-L` | also report latency percentiles |
+
+Read the `MiB/s` of the "Read IO" table. Run it once before the refresh and again a day or more after it.
+
+- Never add `-c` (creates or overwrites the target), and never use `-w` with a value above 0 on a file you want to keep: write tests destroy data without warning.
+- The result is the average over all passes. For a slow file the first pass is the slowest, so a short `-d` shows the difference best.
 
 ## Pause, stop, resume
 
@@ -193,6 +311,8 @@ If either is true, the status is `CHANGED`. Otherwise it is `MISMATCH`.
 | `--priority` | verylow | I/O priority of scan step 2 and of the moves |
 | `--measure-priority` | normal | I/O priority of scan step 3 and of the before/after reads |
 | `--max-chunk-mb` | 16 | Largest piece moved at once |
+| `--control-fraction` | 0 | refresh: share of the slow files (0 to 1) that are only read, not moved (`CONTROL`) |
+| `--sample` | all | verify: read at most N files per group |
 
 ## How the move works
 
@@ -203,6 +323,7 @@ If either is true, the status is `CHANGED`. Otherwise it is `MISMATCH`.
 ## Limitations
 
 - Refresh supports Windows NTFS and Linux ext4 only.
+- exFAT and FAT32, common on microSD cards and USB flash drives, can be scanned but not refreshed: they have no API that moves a file's data safely.
 - Not moved: NTFS-compressed files, WOF-compressed system files, files small enough to live inside the MFT, file system metadata, directory indexes and alternate data streams.
 - Files the system holds exclusively (`pagefile.sys`, `hiberfil.sys`) cannot be opened and are recorded as `ERROR`.
 - Speed is a measurement. Other programs' disk activity affects it; step 3 reduces that but cannot remove it entirely.
@@ -231,13 +352,18 @@ The test:
 1. creates 711 files, about 1.9 GB (0 B to 200 MB, including deliberately fragmented files), and records their SHA-256;
 2. remounts the VHDX to empty the cache, scans it and compares the hashes;
 3. starts a program that keeps modifying about a tenth of the files: open-write-close, writes through handles held open, memory-mapped writes, appends and truncations;
-4. refreshes every file, stops after 150 files, resumes with `--resume`, and pauses for 6 s on the way;
+4. refreshes every file with a 30% control group (`--control-fraction 0.3`), stops after 150 files, resumes with `--resume`, and pauses for 6 s on the way;
 5. stops the modifying program, remounts, and verifies: untouched files must be identical, modified files must hold their latest version;
-6. checks that every file's data moved, that moving did not change timestamps or USNs, and runs `chkdsk /scan`.
+6. runs `verify` on the refresh log: the groups must match the log, every untouched file must be measured, and control-group files must not have moved;
+7. checks that data moved, that moving did not change timestamps or USNs, and runs `chkdsk /scan`.
+
+### Result with verify and a control group (2026-10-15 14:36)
+
+All 21 checks passed. 711 files; 51 modified during the refresh (10,437 modifications in 38 s). Final statuses: OK 467, CHANGED 6, CONTROL 173, MISMATCH 0. `verify` put 473 files in the rewritten group and 173 in the read-only group, exactly as in the log; none of the 173 control files was moved; 49 files modified since the refresh were left out as `MODIFIED`. `chkdsk /scan` found no problems.
 
 ### Result (2026-10-15, Windows 10 22H2, VHDX on an NVMe SSD)
 
-All 15 checks passed.
+All 15 checks passed (the test before verify was added).
 
 | Item | Result |
 |---|---|
@@ -256,4 +382,11 @@ All 15 checks passed.
 
 ## License
 
-Not chosen yet.
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in this work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

@@ -167,6 +167,28 @@ impl Priority {
     }
 }
 
+/// A fixed pseudo-random number in [0, 1) for a path (from its SHA-256). Used to pick the
+/// control group and samples, so the same path is always picked the same way, also on resume.
+pub fn path_rank(path: &str) -> f64 {
+    use sha2::{Digest, Sha256};
+    let h = Sha256::digest(path.as_bytes());
+    u64::from_be_bytes(h[..8].try_into().unwrap()) as f64 / 18446744073709551616.0
+}
+
+/// Seconds since 1970 (UTC).
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// 9000 s → "2h 30m"; 90000 s → "1d 1h"
+pub fn fmt_age(secs: u64) -> String {
+    match secs {
+        s if s >= 86400 => format!("{}d {}h", s / 86400, s / 3600 % 24),
+        s if s >= 3600 => format!("{}h {:02}m", s / 3600, s / 60 % 60),
+        s => format!("{}m {:02}s", s / 60, s % 60),
+    }
+}
+
 pub fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }

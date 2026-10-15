@@ -87,6 +87,14 @@ pub fn latest_by(rows: Vec<Row>, key: &str) -> Vec<Row> {
     out
 }
 
+/// The column names of an existing file (its first line).
+pub fn header(path: &Path) -> io::Result<Vec<String>> {
+    let mut line = String::new();
+    io::BufRead::read_line(&mut io::BufReader::new(File::open(path)?), &mut line)?;
+    let line = line.strip_prefix('\u{feff}').unwrap_or(&line);
+    Ok(parse(line).0.into_iter().next().unwrap_or_default())
+}
+
 /// All rows as column name -> value. An incomplete last row is ignored.
 pub fn read_all(path: &Path) -> io::Result<Vec<Row>> {
     let text = std::fs::read_to_string(path)?;

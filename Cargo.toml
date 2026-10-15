@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.83"
 description = "File-level SSD refresh: find files whose old data reads slowly and let the file system rewrite them safely"
 readme = "README.md"
+license = "MIT OR Apache-2.0"
 keywords = ["ssd", "defrag", "ntfs", "ext4", "storage"]
 categories = ["command-line-utilities", "filesystem"]
 

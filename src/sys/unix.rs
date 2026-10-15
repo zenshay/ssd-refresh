@@ -48,6 +48,16 @@ pub fn local_clock_after(secs: u64) -> Option<String> {
     Some(format!("{:02}:{:02}", tm.tm_hour, tm.tm_min))
 }
 
+/// Local date and time now, as "YYYYMMDD-HHMM" (for default file names).
+pub fn local_stamp() -> Option<String> {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as libc::time_t;
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
+        return None;
+    }
+    Some(format!("{:04}{:02}{:02}-{:02}{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min))
+}
+
 pub fn is_elevated() -> bool {
     unsafe { libc::geteuid() == 0 }
 }

@@ -1,0 +1,80 @@
+name: Drive report
+description: Share how old data on your SSD behaved (scan and verify results)
+title: "[Drive] <model> <capacity>"
+labels: ["drive-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Reports like this decide which drives need `refresh` and which recover from reading alone.
+        Please remove personal information (user names, file names) from the pasted summaries.
+  - type: input
+    id: model
+    attributes:
+      label: SSD model and firmware
+      description: For example "Crucial BX500 CT480BX500SSD1, firmware M6CR061". Windows shows both in Device Manager or `Get-PhysicalDisk | Select FriendlyName, FirmwareVersion`; Linux in `smartctl -i`.
+    validations:
+      required: true
+  - type: input
+    id: capacity
+    attributes:
+      label: Capacity
+      placeholder: 480 GB
+    validations:
+      required: true
+  - type: input
+    id: age
+    attributes:
+      label: Years in use
+      description: Roughly how long the drive has been in use, and the age of the oldest data on it if you know it.
+      placeholder: 5.4 years
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and file system
+      placeholder: Windows 10 22H2, NTFS
+    validations:
+      required: true
+  - type: textarea
+    id: scan
+    attributes:
+      label: scan summary
+      description: The "Summary of ..." block printed at the end of `ssd-refresh scan`.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: verify
+    attributes:
+      label: verify summary
+      description: The table and result printed by `ssd-refresh verify`, run a day or more after the refresh. Say whether the refresh used a control group (`--control-fraction`) and how long after the refresh verify ran.
+      render: text
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Read-only pass enough (files recovered after reading only)
+        - Rewrite needed (only rewritten files recovered)
+        - No slowdown (old files were never slow)
+        - Not sure yet
+    validations:
+      required: true
+  - type: dropdown
+    id: smart
+    attributes:
+      label: Any SMART warnings?
+      description: For example a rising reallocated-sector count, pending sectors or uncorrectable errors (CrystalDiskInfo or `smartctl -A`).
+      options:
+        - "No"
+        - "Yes (details below)"
+        - Not checked
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Other details
+      description: SMART details, interface (SATA/NVMe), whether the drive has DRAM, NAND type (TLC/QLC), anything else.

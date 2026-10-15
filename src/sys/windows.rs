@@ -361,6 +361,13 @@ pub fn local_clock_after(secs: u64) -> Option<String> {
     Some(format!("{:02}:{:02}", total / 3600, total / 60 % 60))
 }
 
+/// Local date and time now, as "YYYYMMDD-HHMM" (for default file names).
+pub fn local_stamp() -> Option<String> {
+    let mut t = [0u16; 8];
+    unsafe { GetLocalTime(&mut t) };
+    Some(format!("{:04}{:02}{:02}-{:02}{:02}", t[0], t[1], t[3], t[4], t[5]))
+}
+
 /// Used by scan to stay on one volume. Not needed on Windows: junctions and mount points are
 /// reparse points and are skipped anyway.
 pub fn dev_of(_m: &std::fs::Metadata) -> Option<u64> {

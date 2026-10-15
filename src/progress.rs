@@ -30,6 +30,8 @@ pub enum Phase {
     Recheck(u8),
     /// Refresh (or dry run): files are re-measured, moved and verified.
     Refresh { dry_run: bool },
+    /// Verify: files from a log or report are read again and compared.
+    Verify,
 }
 
 #[derive(Default)]
@@ -241,6 +243,24 @@ impl Inner {
                 ld(&c.moved),
                 ld(&c.changed),
                 ld(&c.failed),
+            ),
+            (Phase::Verify, true) => format!(
+                "{}Verify {f} of {} files  {} of {}  {rate:.0} MB/s  still slow {}  modified {}  errors {}  {eta}",
+                if paused { "PAUSED  " } else { "" },
+                self.total_files,
+                fmt_bytes(b),
+                fmt_bytes(self.total_bytes),
+                ld(&c.slow),
+                ld(&c.changed),
+                ld(&c.errors),
+            ),
+            (Phase::Verify, false) => format!(
+                "{}Vfy {f}/{} {}/{} slow {} {eta}",
+                if paused { "PAUSE " } else { "" },
+                self.total_files,
+                fmt_bytes(b),
+                fmt_bytes(self.total_bytes),
+                ld(&c.slow),
             ),
         }
     }

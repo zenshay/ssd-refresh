@@ -5,7 +5,7 @@
 //! updates the file's map in one step, synchronised with any other program that is
 //! reading or writing the same file.
 
-use crate::common::{fmt_bytes, fmt_count, hex, Kind, Priority};
+use crate::common::{fmt_bytes, fmt_count, hex, path_rank, unix_now, Kind, Priority};
 use crate::control::Control;
 use crate::csv::{self, CsvWriter};
 use crate::progress::{para, Phase, Progress};
@@ -28,16 +28,25 @@ pub struct RefreshOptions {
     /// For tests: stop after N files, as if interrupted.
     pub stop_after: usize,
     pub max_chunk_mb: u64,
+    /// Share (0..1) of the slow files that are only read, not moved (status CONTROL), so
+    /// `verify` can later tell the effect of rewriting from the effect of reading.
+    pub control_fraction: f64,
     pub read: ReadOptions,
 }
 
-pub const HEADER: [&str; 17] = [
+pub const HEADER: [&str; 18] = [
     "path", "size", "status", "before_mbps", "after_mbps", "before_slow", "after_slow", "moved_bytes", "moves",
     "move_failures", "extents_before", "extents_after", "writers", "meta_changed", "sha_before", "sha_after", "detail",
+    "time",
 ];
 
 /// Statuses that mean "done"; --resume skips these files.
-const FINAL: [&str; 8] = ["OK", "CHANGED", "SKIP_FAST", "SKIP_KIND", "SKIP_MISSING", "ERROR", "MOVE_FAILED", "DRYRUN"];
+const FINAL: [&str; 9] = ["OK", "CHANGED", "SKIP_FAST", "SKIP_KIND", "SKIP_MISSING", "ERROR", "MOVE_FAILED", "DRYRUN", "CONTROL"];
+
+/// Whether a file belongs to the control group. Fixed per path, so --resume picks the same files.
+pub fn in_control_group(path: &str, fraction: f64) -> bool {
+    fraction > 0.0 && path_rank(path) < fraction
+}
 
 pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
     let title = if o.dry_run { "dry run: re-measures only, moves nothing" } else { "MOVES FILE DATA" };
@@ -98,6 +107,11 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
 
     let mut done = HashSet::new();
     if o.resume && o.out.exists() {
+        if csv::header(&o.out)? != HEADER {
+            eprintln!("  The log was written by another version of ssd-refresh (different columns): {}", o.out.display());
+            eprintln!("  Start a new log with --out.");
+            return Ok(1);
+        }
         for r in csv::read_all(&o.out)? {
             if FINAL.contains(&r["status"].as_str()) {
                 done.insert(r["path"].clone());
@@ -129,6 +143,18 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
     } else {
         para(4, "2. If it is no longer slow, skip it (status SKIP_FAST).");
     }
+    if o.control_fraction > 0.0 {
+        let n = todo.iter().filter(|(p, _)| in_control_group(p, o.control_fraction)).count();
+        para(
+            4,
+            &format!(
+                "   Control group: about {:.0}% of the files ({} of {}) are only read, never moved (status CONTROL). The choice is fixed per path. Later, `ssd-refresh verify` compares them with the moved files, to show whether rewriting helped more than reading alone.",
+                o.control_fraction * 100.0,
+                fmt_count(n as u64),
+                fmt_count(todo.len() as u64)
+            ),
+        );
+    }
     if o.dry_run {
         para(4, "3. Dry run: stop here. Nothing is moved (status DRYRUN).");
     } else {
@@ -142,7 +168,8 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
         );
         para(4, "4. Read it again; compare SHA-256 and record the new speed. Same hash: OK. Different hash while another program was writing the file: CHANGED (expected). Different hash with no sign of another writer: MISMATCH, and the run stops at once.");
         para(2, &format!("Moves run at {} I/O priority, so other programs get the disk first.", priority_words(o.read.io_priority)));
-        para(2, &format!("Data written: about {} (each file is written once, at its new place).", fmt_bytes(todo_bytes)));
+        let control_bytes: u64 = todo.iter().filter(|(p, _)| in_control_group(p, o.control_fraction)).map(|t| t.1).sum();
+        para(2, &format!("Data written: at most {} (each moved file is written once, at its new place).", fmt_bytes(todo_bytes - control_bytes)));
         for w in sys::refresh_warnings(&vol) {
             para(2, &format!("Warning: {w}"));
         }
@@ -202,7 +229,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
                 prog.add_moved();
                 prog.add_changed();
             }
-            "SKIP_FAST" | "SKIP_KIND" | "SKIP_MISSING" | "DRYRUN" => prog.add_skipped(),
+            "SKIP_FAST" | "SKIP_KIND" | "SKIP_MISSING" | "DRYRUN" | "CONTROL" => prog.add_skipped(),
             _ => prog.add_failed(),
         }
         if row.status == "MISMATCH" {
@@ -235,6 +262,14 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
         if !hint.is_empty() {
             println!("  Next: {hint}");
         }
+    }
+    if !o.dry_run {
+        println!();
+        para(
+            0,
+            "The 'after' speed in the log was measured right after the move. New data is always fast at first (it may still be in the SSD's fast cache), so it does not prove the refresh lasts. In a day or more, check again:",
+        );
+        println!("  ssd-refresh verify --from \"{}\"", o.out.display());
     }
     Ok(code)
 }
@@ -272,6 +307,8 @@ struct Row {
     sha_before: String,
     sha_after: String,
     detail: String,
+    /// When the file was finished (seconds since 1970, UTC)
+    time: u64,
 }
 
 impl Row {
@@ -294,6 +331,7 @@ impl Row {
             self.sha_before.clone(),
             self.sha_after.clone(),
             self.detail.clone(),
+            self.time.to_string(),
         ]
     }
 }
@@ -305,6 +343,7 @@ impl Run<'_> {
             row.status = "ERROR".into();
             row.detail = e.to_string();
         }
+        row.time = unix_now();
         row
     }
 
@@ -334,6 +373,11 @@ impl Run<'_> {
         row.sha_before = pre.sha256.map(|h| hex(&h)).unwrap_or_default();
         if !self.o.force && !pre.is_slow() {
             row.status = "SKIP_FAST".into();
+            return Ok(());
+        }
+        if in_control_group(&row.path, self.o.control_fraction) {
+            row.status = "CONTROL".into();
+            row.detail = "control group: read only, not moved".into();
             return Ok(());
         }
         let Some(reloc) = self.reloc.as_mut() else {
