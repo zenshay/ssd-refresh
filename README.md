@@ -1,5 +1,9 @@
 # ssd-refresh
 
+<img src="docs/images/task-manager-stall.png" width="360" alt="Windows Task Manager (Traditional Chinese UI), disk panel for drive C:, a Crucial CT480BX500SSD1: active time 100%, average response time 49.8 ms, read speed 1.0 MB/s, write speed 1.0 MB/s.">
+
+Task Manager on a 5-year-old Crucial BX500: 100% active time, ~50 ms response time, yet only 1 MB/s read and write. After its old data was read once, stalls like this dropped from 129 to 5 per day.
+
 Find the files on an SSD whose old data has become slow to read, and have the file system rewrite them.
 
 - `scan` only reads. It changes nothing on the disk.
@@ -360,6 +364,8 @@ The test:
 ### Result with verify and a control group (2026-10-15 14:36)
 
 All 21 checks passed. 711 files; 51 modified during the refresh (10,437 modifications in 38 s). Final statuses: OK 467, CHANGED 6, CONTROL 173, MISMATCH 0. `verify` put 473 files in the rewritten group and 173 in the read-only group, exactly as in the log; none of the 173 control files was moved; 49 files modified since the refresh were left out as `MODIFIED`. `chkdsk /scan` found no problems.
+
+The location check reported 489 files at a new place and 16 "still overlapping their old place": 473 are the refreshed files, and the 16 are control-group files that the modifying program appended to or truncated. Their extent maps changed, but they still include the original clusters; the refresh never moved them.
 
 ### Result (2026-10-15, Windows 10 22H2, VHDX on an NVMe SSD)
 
