@@ -1,7 +1,5 @@
-// @ts-ignore
-const invoke = window.__TAURI__ ? window.__TAURI__.core.invoke : async () => null;
-// @ts-ignore
-const listen = window.__TAURI__ ? window.__TAURI__.event.listen : async () => () => {};
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 interface Volume {
   root: string;

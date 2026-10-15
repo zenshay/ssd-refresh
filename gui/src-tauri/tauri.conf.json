@@ -19,6 +19,7 @@
     ],
     "security": {
       "csp": null
-    }
+    },
+    "withGlobalTauri": true
   }
 }
