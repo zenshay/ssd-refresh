@@ -1109,15 +1109,24 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  gap: 12px;
+  padding: 8px 14px;
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
 }
 
 .console-title-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.console-title-wrap .chip {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .console-sym {
@@ -1125,30 +1134,37 @@ body {
   font-family: var(--font-mono);
   font-weight: 800;
   font-size: 0.85rem;
+  flex-shrink: 0;
 }
 
 .console-title {
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-main);
+  white-space: nowrap;
+  letter-spacing: -0.01em;
 }
 
 .console-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 
 .btn-sm {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 600;
-  padding: 3px 9px;
+  padding: 3px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-medium);
   background: var(--bg-surface);
   color: var(--text-muted);
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-sm:hover {
