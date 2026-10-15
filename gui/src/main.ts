@@ -46,9 +46,12 @@ async function loadDrives() {
   const container = document.getElementById("drive-list")!;
   container.innerHTML = `<div class="p-4 rounded-xl border border-slate-800 bg-slate-800/30 animate-pulse text-xs text-slate-500">Querying system storage & SMART attributes...</div>`;
   try {
-    volumes = await invoke("get_volumes");
+    const res: any = await invoke("get_volumes");
+    console.log("INVOKE_GET_VOLUMES_RESULT:", JSON.stringify(res));
+    volumes = res || [];
     renderDrives();
   } catch (err) {
+    console.error("INVOKE_GET_VOLUMES_ERROR:", err);
     container.innerHTML = `<div class="p-4 rounded-xl border border-rose-500/30 bg-rose-500/10 text-xs text-rose-300">Failed to load drives: ${err}</div>`;
   }
 }

@@ -446,7 +446,7 @@ pub fn check_smart(device: &str) -> DiskHealth {
     let h_phys = unsafe {
         CreateFileW(
             phys_w.as_ptr(),
-            GENERIC_READ,
+            0,
             SHARE_READ | SHARE_WRITE,
             std::ptr::null_mut(),
             OPEN_EXISTING,
