@@ -32,3 +32,14 @@ libc = "0.2"
 lto = true
 codegen-units = 1
 strip = true
+
+[profile.dev]
+opt-level = 0
+debug = 1
+codegen-units = 16
+
+[workspace]
+members = [
+    ".",
+    "gui/src-tauri"
+]
