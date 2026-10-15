@@ -1,3 +1,4 @@
+import { api } from "../api";
 import { $, el } from "../dom";
 import type { Store } from "../store";
 
@@ -133,7 +134,8 @@ export function mountConsole(store: Store): void {
       `### Problem Description\n<!-- Describe what went wrong -->\n\n### Environment\n- OS: Windows\n- Elevated: ${state.elevated}\n- Drives: ${state.volumes.map((v) => v.root.slice(0, 2)).join(", ")}\n\n### Log Summary\n\`\`\`\n${logs.slice(-20).map((l) => `[${l.timestamp}] [${l.level}] ${l.text}`).join("\n")}\n\`\`\``
     );
     const url = `https://github.com/my-org/ssd-refresh/issues/new?title=[Bug]+Diagnostic+Report&body=${body}`;
-    window.open(url, "_blank");
+    void api.openUrl(url);
+    logMessage("info", "Opened GitHub Issues in default browser.");
   });
 
   // 4. Clear Log View

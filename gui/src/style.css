@@ -83,7 +83,7 @@ body {
 .app-main {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 18px;
 }
 
 /* Typography Utilities */
@@ -964,7 +964,7 @@ body {
 .console-card {
   padding: 0 !important;
   overflow: hidden;
-  height: 200px;
+  height: 185px;
   background: var(--bg-card);
   border: 1px solid rgba(99, 102, 241, 0.25);
   display: flex;

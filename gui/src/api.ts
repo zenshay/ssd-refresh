@@ -60,6 +60,7 @@ export const api = {
   windowMinimize: () => invoke<void>("window_minimize"),
   windowToggleMaximize: () => invoke<void>("window_toggle_maximize"),
   windowClose: () => invoke<void>("window_close"),
+  openUrl: (url: string) => invoke<void>("open_url", { url }),
   onProgress: (handler: (p: Progress) => void): Promise<UnlistenFn> =>
     listen<Progress>("progress", (event) => handler(event.payload)),
 };

@@ -68,6 +68,16 @@ pub fn window_close(window: tauri::Window) {
 }
 
 #[tauri::command]
+pub fn open_url(url: String) {
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn();
+    }
+}
+
+#[tauri::command]
 pub async fn start_scan(app: AppHandle, state: State<'_, AppState>, root: String) -> Result<ScanOutcome, String> {
     if !Path::new(&root).is_dir() {
         return Err(format!("{root} is not a folder."));
