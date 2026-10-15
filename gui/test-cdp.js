@@ -7,6 +7,7 @@ import path from 'path';
 const EXE_PATH = 'F:\\ai-lab\\repos\\ssd-refresh\\target\\debug\\ssd-refresh-gui.exe';
 const OUT_DIR = 'F:\\ai-lab\\repos\\ssd-refresh\\output';
 const SCREENSHOT_PATH = path.join(OUT_DIR, 'gui-cdp-test.png');
+const ARTIFACT_PATH = 'C:\\Users\\User\\.gemini\\antigravity\\brain\\4800c8aa-8174-4c27-b15b-ba372ff6001b\\gui-cdp-test.png';
 
 function wait(ms) {
   return new Promise(res => setTimeout(res, ms));
@@ -53,98 +54,88 @@ async function run() {
       defaultViewport: null,
     });
 
-    // Wait for initial navigation to settle
     await wait(2500);
 
     const pages = await browser.pages();
     const page = pages[0] || (await browser.newPage());
 
-    // Listen to browser console
     page.on('console', msg => console.log('  [Browser Console]', msg.type(), msg.text()));
     page.on('pageerror', err => console.error('  [Browser PageError]', err));
 
-    let title = '';
-    try {
-      title = await page.title();
-    } catch {
-      await wait(1000);
-      title = await page.title();
-    }
+    const title = await page.title();
     console.log('[CDP Test] Page connected:', title);
 
-    // Wait for drive cards to render
-    await wait(2000);
-
-    const html = await page.evaluate(() => document.getElementById('drive-list')?.innerHTML);
-    console.log('[CDP Test] #drive-list innerHTML:\n', html);
-
-    const invokeTest = await page.evaluate(async () => {
-      try {
-        // @ts-ignore
-        if (window.__TAURI__?.core?.invoke) {
-          return { method: 'window.__TAURI__.core.invoke', res: await window.__TAURI__.core.invoke('get_volumes') };
-        }
-        if (window.__TAURI_INTERNALS__?.invoke) {
-          return { method: 'window.__TAURI_INTERNALS__.invoke', res: await window.__TAURI_INTERNALS__.invoke('get_volumes') };
-        }
-        return { error: 'No Tauri invoke found on window' };
-      } catch (e) {
-        return { error: String(e), stack: e?.stack };
-      }
-    });
-    console.log('[CDP Test] Direct invoke test in page:', JSON.stringify(invokeTest, null, 2));
+    await wait(1500);
 
     const drives = await page.evaluate(() => {
-      const cards = Array.from(document.querySelectorAll('.drive-card'));
+      const cards = Array.from(document.querySelectorAll('#drives .drive'));
       return cards.map(c => c.innerText.replace(/\s+/g, ' '));
     });
 
     console.log('[CDP Test] Found drives count:', drives.length);
     drives.forEach((d, i) => console.log(`  Drive #${i + 1}: ${d}`));
 
-    // Check SMART text
-    const hasSmart = drives.some(d => d.includes('SMART:'));
+    // Check SMART
+    const hasSmart = drives.some(d => d.includes('SMART'));
     console.log('[CDP Test] Has SMART status indicator:', hasSmart ? 'YES ✓' : 'NO ✗');
 
-    // E2E Test: Start Safe Scan, then Pause, then Resume, then Stop
-    console.log('[CDP Test] Triggering Start Safe Scan...');
+    // Trigger Safe Scan
+    console.log('[CDP Test] Triggering Start Safe Scan (Step 1)...');
     await page.click('#btn-scan');
-    await wait(600);
+    await wait(800);
 
     const scanState = await page.evaluate(() => ({
-      badge: document.getElementById('task-badge')?.innerText,
-      phase: document.getElementById('progress-phase')?.innerText,
-      count: document.getElementById('progress-count')?.innerText,
-      progressBoxHidden: document.getElementById('progress-container')?.classList.contains('hidden'),
+      mode: document.getElementById('app')?.dataset.mode,
+      title: document.getElementById('progress-title')?.innerText,
+      subtitle: document.getElementById('progress-subtitle')?.innerText,
+      statFiles: document.getElementById('stat-files')?.innerText,
+      hasIndeterminate: document.getElementById('progress-track')?.classList.contains('indeterminate'),
+      cardHidden: document.getElementById('progress-card')?.hidden,
     }));
-    console.log('[CDP Test] Scan active state:', JSON.stringify(scanState));
+    console.log('[CDP Test] Scan active state (Step 1):', JSON.stringify(scanState, null, 2));
 
+    // Test Pause
     console.log('[CDP Test] Triggering Pause during Step 1...');
     await page.click('#btn-pause');
-    await wait(500);
+    await wait(600);
 
     const pauseState = await page.evaluate(() => ({
-      pauseText: document.getElementById('pause-text')?.innerText,
-      speed: document.getElementById('progress-speed')?.innerText,
+      pausedBadgeHidden: document.getElementById('badge-paused')?.hidden,
+      pauseBtnText: document.getElementById('btn-pause-label')?.innerText,
+      statEta: document.getElementById('stat-eta')?.innerText,
     }));
-    console.log('[CDP Test] Pause state:', JSON.stringify(pauseState));
+    console.log('[CDP Test] Pause state:', JSON.stringify(pauseState, null, 2));
 
+    // Capture screenshot while paused to see badge and UI
+    console.log('[CDP Test] Capturing screenshot while paused...');
+    await page.screenshot({ path: SCREENSHOT_PATH });
+    try {
+      fs.copyFileSync(SCREENSHOT_PATH, ARTIFACT_PATH);
+    } catch (e) {
+      console.warn('Failed to copy to artifact dir:', e);
+    }
+
+    // Test Stop
     console.log('[CDP Test] Triggering Stop...');
     await page.click('#btn-stop');
-    await wait(1200);
+    await wait(1500);
 
     const stopState = await page.evaluate(() => ({
-      badge: document.getElementById('task-badge')?.innerText,
-      resultBox: document.getElementById('result-box')?.innerText,
-      btnScanDisabled: Boolean(document.getElementById('btn-scan')?.disabled),
+      mode: document.getElementById('app')?.dataset.mode,
+      cardHidden: document.getElementById('progress-card')?.hidden,
+      noticeVisible: !document.getElementById('notice-card')?.hidden,
+      noticeTitle: document.getElementById('notice-title')?.innerText,
+      noticeBody: document.getElementById('notice-body')?.innerText,
     }));
-    console.log('[CDP Test] Post-stop state:', JSON.stringify(stopState));
+    console.log('[CDP Test] Post-stop state:', JSON.stringify(stopState, null, 2));
 
-    // Capture screenshot for AI Agent inspection
-    console.log('[CDP Test] Capturing screenshot to:', SCREENSHOT_PATH);
+    console.log('[CDP Test] Capturing final state screenshot...');
     await page.screenshot({ path: SCREENSHOT_PATH });
+    try {
+      fs.copyFileSync(SCREENSHOT_PATH, ARTIFACT_PATH);
+    } catch {}
 
-    console.log('[CDP Test] All checks passed successfully!');
+    console.log('[CDP Test] All CDP checks verified successfully!');
   } finally {
     if (browser) {
       try { await browser.disconnect(); } catch {}

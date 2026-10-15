@@ -1,124 +1,180 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SSD Refresh</title>
   <link rel="stylesheet" href="./src/style.css" />
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans selection:bg-indigo-500 selection:text-white">
-  <div class="max-w-4xl mx-auto p-6 space-y-6">
+<body>
+  <div id="app" class="app-container" data-mode="idle" data-next="scan">
     <!-- Header -->
-    <header class="flex items-center justify-between border-b border-slate-800 pb-4">
-      <div class="flex items-center space-x-3">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-400 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/20">
-          SSD
-        </div>
-        <div>
-          <h1 class="text-xl font-bold tracking-tight">ssd-refresh</h1>
-          <p class="text-xs text-slate-400">File-level SSD speed restorer &bull; DiskFresh alternative</p>
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-logo">SSD</div>
+        <div class="brand-text">
+          <div class="brand-title-row">
+            <h1 class="brand-name">ssd-refresh</h1>
+            <span id="mode-chip" class="chip" data-tone="idle">Ready</span>
+          </div>
+          <p class="brand-desc">File-level SSD read speed restorer · Safe unbuffered rewrite</p>
         </div>
       </div>
-      <div id="uac-badge" class="px-2.5 py-1 text-xs rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center space-x-1.5">
-        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span>Administrator</span>
+      <div class="header-status">
+        <span id="env-badge" class="badge" data-tone="plain" hidden>Standard user</span>
       </div>
     </header>
 
-    <!-- Drive Selector Card -->
-    <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur space-y-4">
-      <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Select Target Storage</h2>
-        <button id="btn-refresh-drives" class="text-xs text-indigo-400 hover:text-indigo-300 transition">Refresh List</button>
-      </div>
-
-      <div id="drive-list" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <!-- Drive cards rendered by JS -->
-        <div class="p-4 rounded-xl border border-slate-800 bg-slate-800/30 animate-pulse text-xs text-slate-500">
-          Loading system storage drives...
+    <!-- Main Grid -->
+    <main class="app-main">
+      <!-- Storage Drive Selector -->
+      <section class="card drives-section">
+        <div class="card-header">
+          <h2 class="card-title">Target Storage</h2>
+          <button id="btn-reload" type="button" class="btn-text">Reload Drives</button>
         </div>
-      </div>
-    </div>
+        <div id="drives" class="drives-grid" role="radiogroup" aria-label="Storage Drives">
+          <div class="empty">Reading the drive list…</div>
+        </div>
+      </section>
 
-    <!-- Actions & Status Card -->
-    <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur space-y-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-center space-x-2">
-            <h2 class="text-lg font-bold">Diagnostics & Action</h2>
-            <span id="task-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono tracking-wide uppercase border border-slate-700 bg-slate-800 text-slate-300">
-              Ready
-            </span>
+      <!-- Workflow Step Action Buttons -->
+      <section class="card workflow-section">
+        <div class="card-header">
+          <h2 class="card-title">Operations</h2>
+        </div>
+        <div class="workflow-grid">
+          <!-- Step 1: Safe Scan -->
+          <button id="btn-scan" type="button" class="action-card action-primary" data-state="ready">
+            <div class="action-top">
+              <span class="action-step">Step 1</span>
+              <span class="action-label">Ready</span>
+            </div>
+            <div class="action-main">
+              <span class="action-icon"></span>
+              <div class="action-texts">
+                <span class="action-title">Safe Scan</span>
+                <span class="action-hint">Read-only. Finds slow files. Changes nothing.</span>
+              </div>
+            </div>
+          </button>
+
+          <!-- Step 2: Selective Refresh -->
+          <button id="btn-refresh" type="button" class="action-card action-secondary" data-state="locked" disabled>
+            <div class="action-top">
+              <span class="action-step">Step 2</span>
+              <span class="action-label">Locked</span>
+            </div>
+            <div class="action-main">
+              <span class="action-icon"></span>
+              <div class="action-texts">
+                <span class="action-title">Selective Refresh</span>
+                <span class="action-hint">Rewrites slow files only. Run scan first.</span>
+              </div>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <!-- Realtime Operation Progress Card -->
+      <section id="progress-card" class="card progress-card" hidden>
+        <div class="progress-header">
+          <div class="progress-header-left">
+            <span id="progress-step-icon" class="progress-spinner-wrap" hidden></span>
+            <span id="progress-step-chip" class="chip">Step 1/3</span>
+            <div class="progress-title-wrap">
+              <h3 id="progress-title" class="progress-title">Finding files to scan</h3>
+              <span id="progress-subtitle" class="progress-subtitle">0 files cataloged…</span>
+            </div>
           </div>
-          <p id="action-hint" class="text-xs text-slate-400 mt-1">Step 1 is prioritized: run unbuffered read pass to test NAND cell health first.</p>
-        </div>
-        <div class="flex items-center space-x-3">
-          <!-- Step 1: Scan (Priority Button) -->
-          <button id="btn-scan" class="relative group px-5 py-2.5 rounded-xl font-medium text-sm bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white shadow-lg shadow-indigo-600/30 transition-all border border-indigo-400/30 disabled:opacity-50 disabled:shadow-none flex items-center space-x-2">
-            <span class="w-1.5 h-1.5 rounded-full bg-indigo-300 animate-ping"></span>
-            <span class="font-bold">1. Start Safe Scan</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded bg-indigo-900/60 text-indigo-200 border border-indigo-400/30">Priority</span>
-          </button>
-          <!-- Step 2: Refresh (Secondary Button) -->
-          <button id="btn-refresh" disabled class="px-5 py-2.5 rounded-xl font-medium text-sm bg-slate-800 border border-slate-700/60 text-slate-400 shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1.5">
-            <span>2. Selective Refresh</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Realtime Progress Meter -->
-      <div id="progress-container" class="space-y-2 hidden">
-        <div class="flex justify-between items-center text-xs text-slate-400">
-          <span id="progress-phase" class="font-medium text-slate-200">Reading files directly from disk...</span>
-          <div class="flex items-center space-x-2 font-mono">
-            <span id="progress-pct" class="text-indigo-400 font-bold">0.0%</span>
-            <span class="text-slate-600">•</span>
-            <span id="progress-speed" class="text-cyan-400">0 MB/s</span>
+          <div class="progress-header-right">
+            <span id="badge-paused" class="badge badge-paused" hidden>PAUSED</span>
           </div>
         </div>
-        <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden p-0.5">
-          <div id="progress-bar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full rounded-full transition-all duration-200" style="width: 0%"></div>
+
+        <!-- Track / Fill Bar -->
+        <div id="progress-track" class="progress-track">
+          <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
         </div>
-        <div class="flex justify-between text-xs text-slate-500 font-mono">
-          <span id="progress-count">0 files</span>
-          <span id="progress-eta">ETA: --</span>
+
+        <!-- Metric Grid -->
+        <div class="metrics-grid">
+          <div class="metric-tile">
+            <span class="metric-label">Files</span>
+            <span id="stat-files" class="metric-value font-mono">0</span>
+          </div>
+          <div class="metric-tile">
+            <span class="metric-label">Processed</span>
+            <span id="stat-bytes" class="metric-value font-mono">0 MB</span>
+          </div>
+          <div class="metric-tile">
+            <span class="metric-label">Speed</span>
+            <span id="stat-speed" class="metric-value font-mono">0 MB/s</span>
+          </div>
+          <div class="metric-tile">
+            <span class="metric-label">ETA</span>
+            <span id="stat-eta" class="metric-value font-mono">--</span>
+          </div>
         </div>
-        <!-- Realtime Controls -->
-        <div class="flex items-center justify-end space-x-2 pt-1">
-          <button id="btn-pause" type="button" class="px-3 py-1 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center space-x-1">
-            <span id="pause-icon">⏸</span>
-            <span id="pause-text">Pause</span>
+
+        <!-- Action Controls -->
+        <div class="progress-controls">
+          <button id="btn-pause" type="button" class="btn btn-secondary">
+            <span id="btn-pause-icon"></span>
+            <span id="btn-pause-label">Pause</span>
           </button>
-          <button id="btn-stop" type="button" class="px-3 py-1 rounded-lg text-xs font-medium bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/50 transition flex items-center space-x-1">
-            <span>⏹</span>
+          <button id="btn-stop" type="button" class="btn btn-danger">
+            <span id="btn-stop-icon"></span>
             <span>Stop</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- Result Card -->
-      <div id="result-box" class="hidden p-4 rounded-xl border">
-        <!-- Dynamically injected message -->
-      </div>
-    </div>
+      <!-- Notice Alert Banner -->
+      <section id="notice-card" class="notice-card" hidden>
+        <span id="notice-icon" class="notice-icon"></span>
+        <div class="notice-content">
+          <h4 id="notice-title" class="notice-title">Notice</h4>
+          <p id="notice-body" class="notice-body"></p>
+        </div>
+        <button id="btn-notice-dismiss" type="button" class="btn-icon" aria-label="Dismiss">&times;</button>
+      </section>
 
-    <!-- Slow Files Table Preview -->
-    <div id="slow-files-card" class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 shadow-xl backdrop-blur space-y-3 hidden">
-      <h3 class="text-sm font-semibold uppercase tracking-wider text-slate-400">Identified Slow Files (<span id="slow-count">0</span>)</h3>
-      <div class="max-h-56 overflow-y-auto rounded-lg border border-slate-800/60 text-xs">
-        <table class="w-full text-left">
-          <thead class="bg-slate-800/40 text-slate-400 sticky top-0">
-            <tr>
-              <th class="p-2.5">Path</th>
-              <th class="p-2.5 w-24">Size</th>
-              <th class="p-2.5 w-24 text-right">Read Speed</th>
-            </tr>
-          </thead>
-          <tbody id="slow-table-body" class="divide-y divide-slate-800/40 font-mono">
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <!-- Slow Files Table Card -->
+      <section id="slow-files-card" class="card slow-files-card" hidden>
+        <div class="card-header">
+          <div>
+            <h3 id="slow-files-count" class="card-title">Identified Slow Files</h3>
+            <span id="slow-report-path" class="text-subtle font-mono"></span>
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Path</th>
+                <th class="w-32">Size</th>
+                <th class="w-32 text-right">Speed</th>
+              </tr>
+            </thead>
+            <tbody id="slow-files-body" class="font-mono"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <!-- Confirmation Modal Dialog -->
+    <dialog id="confirm-modal" class="modal-dialog">
+      <form method="dialog" class="modal-card">
+        <h3 id="confirm-title" class="modal-title">Confirm Operation</h3>
+        <p id="confirm-body" class="modal-body"></p>
+        <p id="confirm-warning" class="modal-warning" hidden></p>
+        <div class="modal-actions">
+          <button id="btn-confirm-cancel" type="button" class="btn btn-secondary">Cancel</button>
+          <button id="btn-confirm-ok" type="button" class="btn btn-primary">Confirm</button>
+        </div>
+      </form>
+    </dialog>
   </div>
 
   <script type="module" src="./src/main.ts"></script>
