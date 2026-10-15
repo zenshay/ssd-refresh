@@ -113,6 +113,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   const btnScan = document.getElementById("btn-scan") as HTMLButtonElement;
   const btnRefresh = document.getElementById("btn-refresh") as HTMLButtonElement;
+  const btnPause = document.getElementById("btn-pause") as HTMLButtonElement;
+  const btnStop = document.getElementById("btn-stop") as HTMLButtonElement;
+  const pauseIcon = document.getElementById("pause-icon")!;
+  const pauseText = document.getElementById("pause-text")!;
   const progressBox = document.getElementById("progress-container")!;
   const resultBox = document.getElementById("result-box")!;
   const progressBar = document.getElementById("progress-bar")!;
@@ -123,6 +127,41 @@ document.addEventListener("DOMContentLoaded", async () => {
   const slowCountEl = document.getElementById("slow-count")!;
   const slowTableBody = document.getElementById("slow-table-body")!;
 
+  let isPaused = false;
+  function updatePauseUI(paused: boolean) {
+    isPaused = paused;
+    if (paused) {
+      pauseIcon.textContent = "▶";
+      pauseText.textContent = "Resume";
+      btnPause.classList.remove("bg-slate-800", "text-slate-200");
+      btnPause.classList.add("bg-amber-600/30", "text-amber-200", "border-amber-500/50");
+    } else {
+      pauseIcon.textContent = "⏸";
+      pauseText.textContent = "Pause";
+      btnPause.classList.remove("bg-amber-600/30", "text-amber-200", "border-amber-500/50");
+      btnPause.classList.add("bg-slate-800", "text-slate-200");
+    }
+  }
+
+  btnPause?.addEventListener("click", async () => {
+    try {
+      const nowPaused = await invoke<boolean>("toggle_pause");
+      updatePauseUI(nowPaused);
+    } catch (err) {
+      console.warn("toggle_pause error:", err);
+    }
+  });
+
+  btnStop?.addEventListener("click", async () => {
+    try {
+      await invoke("stop_operation");
+      progressPhase.textContent = "Stopping operation safely...";
+      btnStop.disabled = true;
+    } catch (err) {
+      console.warn("stop_operation error:", err);
+    }
+  });
+
   // Listen to background progress events
   try {
     await listen("scan-progress", (event: any) => {
@@ -130,6 +169,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       progressPhase.textContent = data.phase || "Scanning...";
       if (data.mbps > 0) {
         progressSpeed.textContent = `${data.mbps.toFixed(0)} MB/s`;
+      } else if (data.phase && data.phase.includes("Paused")) {
+        progressSpeed.textContent = "0 MB/s";
       }
       if (data.files_done > 0) {
         progressCount.textContent = `${data.files_done} files measured`;
@@ -145,6 +186,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     btnScan.disabled = true;
     btnRefresh.disabled = true;
+    btnStop.disabled = false;
+    updatePauseUI(false);
     progressBox.classList.remove("hidden");
     resultBox.classList.add("hidden");
     slowCard.classList.add("hidden");

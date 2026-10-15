@@ -59,6 +59,16 @@ impl Control {
         self.key_paused.load(Ordering::Relaxed) || self.file_paused.load(Ordering::Relaxed)
     }
 
+    pub fn toggle_pause(&self) -> bool {
+        let now = !self.key_paused.load(Ordering::Relaxed);
+        self.key_paused.store(now, Ordering::Relaxed);
+        now
+    }
+
+    pub fn set_paused(&self, paused: bool) {
+        self.key_paused.store(paused, Ordering::Relaxed);
+    }
+
     /// Blocks while paused; returns how long it waited (returns at once when stopping).
     pub fn wait_while_paused(&self) -> Duration {
         let t = Instant::now();

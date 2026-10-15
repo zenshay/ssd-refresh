@@ -6,9 +6,14 @@ use ssd_refresh::scan::{self, ScanOptions};
 use ssd_refresh::list_volumes;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::Emitter;
+use tauri::{Emitter, State};
+
+#[derive(Default)]
+pub struct AppState {
+    pub control: Mutex<Option<Arc<Control>>>,
+}
 
 #[derive(Serialize)]
 pub struct GuiVolume {
@@ -80,7 +85,26 @@ fn get_volumes() -> Vec<GuiVolume> {
 }
 
 #[tauri::command]
-async fn start_scan(app: tauri::AppHandle, root: String) -> Result<ScanResult, String> {
+fn toggle_pause(state: State<'_, AppState>) -> Result<bool, String> {
+    if let Some(ctl) = &*state.control.lock().unwrap() {
+        Ok(ctl.toggle_pause())
+    } else {
+        Err("No active operation to pause".into())
+    }
+}
+
+#[tauri::command]
+fn stop_operation(state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(ctl) = &*state.control.lock().unwrap() {
+        ctl.request_stop();
+        Ok(())
+    } else {
+        Err("No active operation to stop".into())
+    }
+}
+
+#[tauri::command]
+async fn start_scan(app: tauri::AppHandle, state: State<'_, AppState>, root: String) -> Result<ScanResult, String> {
     let root_path = PathBuf::from(&root);
     let out_dir = PathBuf::from(r"F:\ai-lab\repos\ssd-refresh\output");
     let _ = std::fs::create_dir_all(&out_dir);
@@ -106,19 +130,28 @@ async fn start_scan(app: tauri::AppHandle, root: String) -> Result<ScanResult, S
     let app_clone = app.clone();
     let out_file_clone = out_file.clone();
 
+    let ctl = Control::new(None);
+    *state.control.lock().unwrap() = Some(ctl.clone());
+    let ctl_monitor = ctl.clone();
+
     // Background progress monitor
     let monitor = std::thread::spawn(move || {
         let start = Instant::now();
         while !done_clone.load(Ordering::Relaxed) {
+            let is_p = ctl_monitor.is_paused();
             let count = if out_file_clone.exists() {
                 ssd_refresh::csv::read_all(&out_file_clone).map(|r| r.len()).unwrap_or(0)
             } else {
                 0
             };
             let elapsed = start.elapsed().as_secs_f64().max(0.1);
-            let fake_speed = (count as f64 * 1.5 / elapsed).max(120.0).min(480.0);
+            let fake_speed = if is_p { 0.0 } else { (count as f64 * 1.5 / elapsed).max(120.0).min(480.0) };
             let payload = ProgressPayload {
-                phase: "Scanning files and measuring unbuffered read speed...".into(),
+                phase: if is_p {
+                    "Paused (Press Resume to continue)...".into()
+                } else {
+                    "Scanning files and measuring unbuffered read speed...".into()
+                },
                 percent: 0.0,
                 mbps: fake_speed,
                 files_done: count as u64,
@@ -128,8 +161,8 @@ async fn start_scan(app: tauri::AppHandle, root: String) -> Result<ScanResult, S
         }
     });
 
-    let ctl = Control::new(None);
     let run_res = scan::run(&opts, ctl);
+    *state.control.lock().unwrap() = None;
     done.store(true, Ordering::Relaxed);
     let _ = monitor.join();
 
@@ -166,7 +199,7 @@ async fn start_scan(app: tauri::AppHandle, root: String) -> Result<ScanResult, S
 }
 
 #[tauri::command]
-async fn start_refresh(_app: tauri::AppHandle, report_path: String) -> Result<RefreshResult, String> {
+async fn start_refresh(_app: tauri::AppHandle, state: State<'_, AppState>, report_path: String) -> Result<RefreshResult, String> {
     let from_file = PathBuf::from(&report_path);
     if !from_file.exists() {
         return Err(format!("Report file not found: {report_path}"));
@@ -196,7 +229,11 @@ async fn start_refresh(_app: tauri::AppHandle, report_path: String) -> Result<Re
     };
 
     let ctl = Control::new(None);
-    match refresh::run(&opts, ctl) {
+    *state.control.lock().unwrap() = Some(ctl.clone());
+    let run_res = refresh::run(&opts, ctl);
+    *state.control.lock().unwrap() = None;
+
+    match run_res {
         Ok(code) => {
             let rows = ssd_refresh::csv::read_all(&out_file).unwrap_or_default();
             let moved = rows.iter().filter(|r| r.get("status").map(|s| s.as_str()) == Some("OK")).count();
@@ -213,7 +250,14 @@ async fn start_refresh(_app: tauri::AppHandle, report_path: String) -> Result<Re
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_volumes, start_scan, start_refresh])
+        .manage(AppState::default())
+        .invoke_handler(tauri::generate_handler![
+            get_volumes,
+            start_scan,
+            start_refresh,
+            toggle_pause,
+            stop_operation
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

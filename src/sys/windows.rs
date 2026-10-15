@@ -502,7 +502,6 @@ pub fn check_smart(device: &str) -> DiskHealth {
             std::ptr::null_mut(),
         )
     };
-    unsafe { CloseHandle(h_phys) };
 
     if pred_ok != 0 {
         if pred.predict_failure != 0 {
@@ -511,8 +510,66 @@ pub fn check_smart(device: &str) -> DiskHealth {
             health.status = SmartStatus::Healthy;
         }
     } else {
-        health.status = SmartStatus::Unknown("SMART predict failure query not supported on this interface".to_string());
+        // Fallback: Query NVMe SMART / Health Log Page (Log ID 2) via IOCTL_STORAGE_QUERY_PROPERTY
+        #[repr(C)]
+        struct NVME_QUERY {
+            property_id: u32,
+            query_type: u32,
+            protocol_type: u32,
+            data_type: u32,
+            request_value: u32,
+            request_sub_value: u32,
+            offset: u32,
+            length: u32,
+            fixed_return: u32,
+            reserved: [u32; 3],
+        }
+        let nvme_q = NVME_QUERY {
+            property_id: 50, // StorageDeviceProtocolSpecificProperty
+            query_type: 0,
+            protocol_type: 3, // ProtocolTypeNvme
+            data_type: 2,     // NVMeDataTypeLogPage
+            request_value: 2, // SMART / Health Information
+            request_sub_value: 0,
+            offset: std::mem::size_of::<NVME_QUERY>() as u32,
+            length: 512,
+            fixed_return: 0,
+            reserved: [0; 3],
+        };
+        let mut nvme_buf = [0u8; 1024];
+        let mut nvme_ret = 0u32;
+        let nvme_ok = unsafe {
+            DeviceIoControl(
+                h_phys,
+                IOCTL_STORAGE_QUERY_PROPERTY,
+                (&nvme_q as *const NVME_QUERY).cast(),
+                std::mem::size_of::<NVME_QUERY>() as u32,
+                nvme_buf.as_mut_ptr().cast(),
+                nvme_buf.len() as u32,
+                &mut nvme_ret,
+                std::ptr::null_mut(),
+            )
+        };
+        if nvme_ok != 0 && nvme_ret >= 48 {
+            let offset = u32::from_le_bytes(nvme_buf[24..28].try_into().unwrap_or([0; 4])) as usize;
+            if offset > 0 && offset < nvme_buf.len() {
+                let critical_warning = nvme_buf[offset];
+                if critical_warning != 0 {
+                    health.status = SmartStatus::Failing(format!(
+                        "NVMe controller reports critical warning flag (0x{:02X})",
+                        critical_warning
+                    ));
+                } else {
+                    health.status = SmartStatus::Healthy;
+                }
+            } else {
+                health.status = SmartStatus::Unknown("SMART predict failure query not supported on this interface".to_string());
+            }
+        } else {
+            health.status = SmartStatus::Unknown("SMART predict failure query not supported on this interface".to_string());
+        }
     }
+    unsafe { CloseHandle(h_phys) };
 
     health
 }
