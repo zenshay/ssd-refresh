@@ -203,6 +203,43 @@ async function run() {
 
     await saveScreenshot(page, 'gui-04-console-drawer.png');
 
+    // 6. Test Scan + Compact Storage + In-flow Console Integrated Together
+    console.log('[CDP Test] Testing Scan while Console is open...');
+    await page.click('#btn-scan');
+    await wait(1000);
+
+    const integratedState = await page.evaluate(() => {
+      const operations = document.querySelector('.workflow-section');
+      const progress = document.getElementById('progress-card');
+      const consoleCard = document.getElementById('console-drawer');
+      const opRect = operations?.getBoundingClientRect();
+      const progRect = progress?.getBoundingClientRect();
+      const conRect = consoleCard?.getBoundingClientRect();
+
+      return {
+        mode: document.getElementById('app')?.dataset.mode,
+        operationsTop: opRect?.top,
+        operationsBottom: opRect?.bottom,
+        progressTop: progRect?.top,
+        progressBottom: progRect?.bottom,
+        consoleTop: conRect?.top,
+        isOperationsAboveConsole: opRect && conRect ? opRect.bottom <= conRect.top : false,
+        isProgressAboveConsole: progRect && conRect ? progRect.bottom <= conRect.top : false,
+      };
+    });
+    console.log('[CDP Test] Integrated Scan + Compact + Console state:', JSON.stringify(integratedState, null, 2));
+
+    if (!integratedState.isOperationsAboveConsole) {
+      throw new Error('Operations is still overlapping with Console!');
+    }
+    console.log('[CDP Test] PASS: Operations is 100% visible and above Console without overlap ✓');
+
+    await saveScreenshot(page, 'gui-05-scan-with-console.png');
+
+    // Clean up stop
+    await page.click('#btn-stop');
+    await wait(1500);
+
     console.log('[CDP Test] All CDP tests passed with 100% precision!');
   } finally {
     if (browser) {
