@@ -13,6 +13,21 @@ use std::time::{Duration, Instant};
 
 pub type Logger = Arc<dyn Fn(&str) + Send + Sync>;
 
+#[derive(Clone, Debug)]
+pub struct ProgressUpdate {
+    pub phase: String,
+    pub percent: f64,
+    pub mbps: f64,
+    pub files_done: u64,
+    pub total_files: u64,
+    pub bytes_done: u64,
+    pub total_bytes: u64,
+    pub eta_str: String,
+    pub is_paused: bool,
+}
+
+pub type ProgressReporter = Arc<dyn Fn(ProgressUpdate) + Send + Sync>;
+
 pub struct Control {
     key_paused: AtomicBool,
     stop: AtomicBool,
@@ -21,6 +36,7 @@ pub struct Control {
     last_check_ms: AtomicU64,
     start: Instant,
     log: Mutex<Option<Logger>>,
+    reporter: Mutex<Option<ProgressReporter>>,
 }
 
 impl Control {
@@ -33,12 +49,23 @@ impl Control {
             last_check_ms: AtomicU64::new(0),
             start: Instant::now(),
             log: Mutex::new(None),
+            reporter: Mutex::new(None),
         })
     }
 
     /// Where messages go (the progress display sets this so they appear above its line).
     pub fn set_logger(&self, f: Logger) {
         *self.log.lock().unwrap() = Some(f);
+    }
+
+    pub fn set_progress_reporter(&self, r: ProgressReporter) {
+        *self.reporter.lock().unwrap() = Some(r);
+    }
+
+    pub fn report_progress(&self, u: ProgressUpdate) {
+        if let Some(ref r) = *self.reporter.lock().unwrap() {
+            r(u);
+        }
     }
 
     fn say(&self, msg: &str) {

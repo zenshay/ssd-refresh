@@ -44,27 +44,40 @@
     <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 shadow-xl backdrop-blur space-y-6">
       <div class="flex items-center justify-between">
         <div>
-          <h2 class="text-lg font-bold">Diagnostics & Action</h2>
-          <p id="action-hint" class="text-xs text-slate-400">Step 1: Run read-only scan to wake SSD controller.</p>
+          <div class="flex items-center space-x-2">
+            <h2 class="text-lg font-bold">Diagnostics & Action</h2>
+            <span id="task-badge" class="px-2 py-0.5 rounded-full text-[10px] font-mono tracking-wide uppercase border border-slate-700 bg-slate-800 text-slate-300">
+              Ready
+            </span>
+          </div>
+          <p id="action-hint" class="text-xs text-slate-400 mt-1">Step 1 is prioritized: run unbuffered read pass to test NAND cell health first.</p>
         </div>
-        <div class="flex space-x-3">
-          <button id="btn-scan" class="px-5 py-2.5 rounded-xl font-medium text-sm bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 transition disabled:opacity-50">
-            Start Safe Scan
+        <div class="flex items-center space-x-3">
+          <!-- Step 1: Scan (Priority Button) -->
+          <button id="btn-scan" class="relative group px-5 py-2.5 rounded-xl font-medium text-sm bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white shadow-lg shadow-indigo-600/30 transition-all border border-indigo-400/30 disabled:opacity-50 disabled:shadow-none flex items-center space-x-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-indigo-300 animate-ping"></span>
+            <span class="font-bold">1. Start Safe Scan</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded bg-indigo-900/60 text-indigo-200 border border-indigo-400/30">Priority</span>
           </button>
-          <button id="btn-refresh" disabled class="px-5 py-2.5 rounded-xl font-medium text-sm bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-600/30 transition disabled:opacity-40 disabled:cursor-not-allowed">
-            Selective Refresh
+          <!-- Step 2: Refresh (Secondary Button) -->
+          <button id="btn-refresh" disabled class="px-5 py-2.5 rounded-xl font-medium text-sm bg-slate-800 border border-slate-700/60 text-slate-400 shadow-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center space-x-1.5">
+            <span>2. Selective Refresh</span>
           </button>
         </div>
       </div>
 
       <!-- Realtime Progress Meter -->
       <div id="progress-container" class="space-y-2 hidden">
-        <div class="flex justify-between text-xs text-slate-400">
-          <span id="progress-phase">Reading files directly from disk...</span>
-          <span id="progress-speed" class="font-mono text-cyan-400">0 MB/s</span>
+        <div class="flex justify-between items-center text-xs text-slate-400">
+          <span id="progress-phase" class="font-medium text-slate-200">Reading files directly from disk...</span>
+          <div class="flex items-center space-x-2 font-mono">
+            <span id="progress-pct" class="text-indigo-400 font-bold">0.0%</span>
+            <span class="text-slate-600">•</span>
+            <span id="progress-speed" class="text-cyan-400">0 MB/s</span>
+          </div>
         </div>
         <div class="w-full bg-slate-800 rounded-full h-3 overflow-hidden p-0.5">
-          <div id="progress-bar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+          <div id="progress-bar" class="bg-gradient-to-r from-indigo-500 to-cyan-400 h-full rounded-full transition-all duration-200" style="width: 0%"></div>
         </div>
         <div class="flex justify-between text-xs text-slate-500 font-mono">
           <span id="progress-count">0 files</span>

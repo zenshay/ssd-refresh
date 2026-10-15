@@ -40,6 +40,9 @@ pub struct ProgressPayload {
     pub percent: f64,
     pub mbps: f64,
     pub files_done: u64,
+    pub total_files: u64,
+    pub eta_str: String,
+    pub is_paused: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -125,46 +128,25 @@ async fn start_scan(app: tauri::AppHandle, state: State<'_, AppState>, root: Str
         read: ReadOptions::default(),
     };
 
-    let done = Arc::new(AtomicBool::new(false));
-    let done_clone = done.clone();
-    let app_clone = app.clone();
-    let out_file_clone = out_file.clone();
-
     let ctl = Control::new(None);
     *state.control.lock().unwrap() = Some(ctl.clone());
-    let ctl_monitor = ctl.clone();
 
-    // Background progress monitor
-    let monitor = std::thread::spawn(move || {
-        let start = Instant::now();
-        while !done_clone.load(Ordering::Relaxed) {
-            let is_p = ctl_monitor.is_paused();
-            let count = if out_file_clone.exists() {
-                ssd_refresh::csv::read_all(&out_file_clone).map(|r| r.len()).unwrap_or(0)
-            } else {
-                0
-            };
-            let elapsed = start.elapsed().as_secs_f64().max(0.1);
-            let fake_speed = if is_p { 0.0 } else { (count as f64 * 1.5 / elapsed).max(120.0).min(480.0) };
-            let payload = ProgressPayload {
-                phase: if is_p {
-                    "Paused (Press Resume to continue)...".into()
-                } else {
-                    "Scanning files and measuring unbuffered read speed...".into()
-                },
-                percent: 0.0,
-                mbps: fake_speed,
-                files_done: count as u64,
-            };
-            let _ = app_clone.emit("scan-progress", payload);
-            std::thread::sleep(Duration::from_millis(300));
-        }
-    });
+    let app_handle = app.clone();
+    ctl.set_progress_reporter(Arc::new(move |u| {
+        let payload = ProgressPayload {
+            phase: u.phase,
+            percent: u.percent,
+            mbps: u.mbps,
+            files_done: u.files_done,
+            total_files: u.total_files,
+            eta_str: u.eta_str,
+            is_paused: u.is_paused,
+        };
+        let _ = app_handle.emit("scan-progress", payload);
+    }));
 
     let run_res = scan::run(&opts, ctl);
     *state.control.lock().unwrap() = None;
-    done.store(true, Ordering::Relaxed);
-    let _ = monitor.join();
 
     if let Err(e) = run_res {
         return Err(format!("Scan failed: {e}"));
@@ -188,6 +170,9 @@ async fn start_scan(app: tauri::AppHandle, state: State<'_, AppState>, root: Str
         percent: 100.0,
         mbps: 0.0,
         files_done: total_files as u64,
+        total_files: total_files as u64,
+        eta_str: "Complete".into(),
+        is_paused: false,
     };
     let _ = app.emit("scan-progress", final_payload);
 
@@ -199,7 +184,7 @@ async fn start_scan(app: tauri::AppHandle, state: State<'_, AppState>, root: Str
 }
 
 #[tauri::command]
-async fn start_refresh(_app: tauri::AppHandle, state: State<'_, AppState>, report_path: String) -> Result<RefreshResult, String> {
+async fn start_refresh(app: tauri::AppHandle, state: State<'_, AppState>, report_path: String) -> Result<RefreshResult, String> {
     let from_file = PathBuf::from(&report_path);
     if !from_file.exists() {
         return Err(format!("Report file not found: {report_path}"));
@@ -230,6 +215,21 @@ async fn start_refresh(_app: tauri::AppHandle, state: State<'_, AppState>, repor
 
     let ctl = Control::new(None);
     *state.control.lock().unwrap() = Some(ctl.clone());
+
+    let app_handle = app.clone();
+    ctl.set_progress_reporter(Arc::new(move |u| {
+        let payload = ProgressPayload {
+            phase: u.phase,
+            percent: u.percent,
+            mbps: u.mbps,
+            files_done: u.files_done,
+            total_files: u.total_files,
+            eta_str: u.eta_str,
+            is_paused: u.is_paused,
+        };
+        let _ = app_handle.emit("scan-progress", payload);
+    }));
+
     let run_res = refresh::run(&opts, ctl);
     *state.control.lock().unwrap() = None;
 

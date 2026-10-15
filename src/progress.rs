@@ -285,6 +285,44 @@ impl Inner {
             let _ = writeln!(out, "{}", self.line(true));
         }
         let _ = out.flush();
+        self.report_to_control();
+    }
+
+    fn report_to_control(&self) {
+        let c = &self.c;
+        let ld = |a: &AtomicU64| a.load(Ordering::Relaxed);
+        let sec = self.start.elapsed().as_secs_f64();
+        let clamp = |v: u64, total: u64| if total > 0 { v.min(total) } else { v };
+        let (b, f) = (clamp(ld(&c.bytes), self.total_bytes), clamp(ld(&c.files), self.total_files));
+        let pct = if self.total_bytes > 0 {
+            100.0 * b as f64 / self.total_bytes as f64
+        } else if self.total_files > 0 {
+            100.0 * f as f64 / self.total_files as f64
+        } else {
+            0.0
+        };
+        let rate = if sec > 0.0 { b as f64 / 1e6 / sec } else { 0.0 };
+        let eta_str = eta(sec, b, self.total_bytes, f, self.total_files, true);
+        let paused = self.ctl.is_paused();
+
+        let phase_name = match self.phase {
+            Phase::Scan => "Step 2: Measuring unbuffered read speed...".to_string(),
+            Phase::Recheck(r) => format!("Step 3: Re-checking candidate slow files ({r}/2)..."),
+            Phase::Refresh { dry_run } => if dry_run { "Dry run preview...".to_string() } else { "Step 2: Rewriting slow files via NTFS defrag API...".to_string() },
+            Phase::Verify => "Verifying speeds...".to_string(),
+        };
+
+        self.ctl.report_progress(crate::control::ProgressUpdate {
+            phase: phase_name,
+            percent: (pct * 10.0).round() / 10.0,
+            mbps: (rate * 10.0).round() / 10.0,
+            files_done: f,
+            total_files: self.total_files,
+            bytes_done: b,
+            total_bytes: self.total_bytes,
+            eta_str,
+            is_paused: paused,
+        });
     }
 }
 

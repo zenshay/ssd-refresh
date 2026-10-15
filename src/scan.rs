@@ -81,7 +81,7 @@ pub fn enumerate_counted(root: &Path, count: &AtomicU64, bytes: &AtomicU64) -> V
 }
 
 /// Step 1, with a counter of the files that it found.
-fn enumerate_with_progress(root: &Path) -> Vec<(PathBuf, u64)> {
+fn enumerate_with_progress(root: &Path, ctl: &Arc<Control>) -> Vec<(PathBuf, u64)> {
     let count = Arc::new(AtomicU64::new(0));
     let bytes = Arc::new(AtomicU64::new(0));
     let done = Arc::new(AtomicBool::new(false));
@@ -99,7 +99,7 @@ fn enumerate_with_progress(root: &Path) -> Vec<(PathBuf, u64)> {
         }
     };
     let t = {
-        let (done, line) = (done.clone(), line.clone());
+        let (done, line, count, bytes, ctl) = (done.clone(), line.clone(), count.clone(), bytes.clone(), ctl.clone());
         std::thread::spawn(move || {
             let mut last_log = Instant::now();
             while !done.load(Ordering::Relaxed) {
@@ -110,6 +110,17 @@ fn enumerate_with_progress(root: &Path) -> Vec<(PathBuf, u64)> {
                     println!("{}", line());
                     last_log = Instant::now();
                 }
+                ctl.report_progress(crate::control::ProgressUpdate {
+                    phase: "Step 1: Finding and cataloging files...".to_string(),
+                    percent: 0.0,
+                    mbps: 0.0,
+                    files_done: count.load(Ordering::Relaxed),
+                    total_files: 0,
+                    bytes_done: bytes.load(Ordering::Relaxed),
+                    total_bytes: 0,
+                    eta_str: "Cataloging...".to_string(),
+                    is_paused: ctl.is_paused(),
+                });
                 std::thread::sleep(Duration::from_millis(250));
             }
         })
@@ -181,7 +192,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
     println!();
     println!("Step 1/3  Find the files");
     para(2, "The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.");
-    let found = enumerate_with_progress(&o.root);
+    let found = enumerate_with_progress(&o.root, &ctl);
     let files: Vec<_> = found.into_iter().filter(|(p, _)| !done.contains(&p.to_string_lossy().into_owned())).collect();
     let total: u64 = files.iter().map(|f| f.1).sum();
     println!("  Files to read: {}, {}.", fmt_count(files.len() as u64), fmt_bytes(total));
