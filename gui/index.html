@@ -21,6 +21,10 @@
         </div>
       </div>
       <div class="header-right">
+        <button id="btn-toggle-console" type="button" class="btn-console-pill" title="Toggle Diagnostics Console (Ctrl+`)">
+          <span class="console-icon-sym">&gt;_</span>
+          <span class="console-label">Console</span>
+        </button>
         <div class="window-controls">
           <button id="btn-win-min" type="button" class="win-btn" title="Minimize" aria-label="Minimize">
             <svg viewBox="0 0 12 12" width="10" height="10"><path fill="currentColor" d="M1 6h10v1H1z"/></svg>
@@ -179,6 +183,33 @@
         </div>
       </section>
     </main>
+
+    <!-- Diagnostics & System Log Console Drawer -->
+    <aside id="console-drawer" class="console-drawer" hidden>
+      <div class="console-toolbar">
+        <div class="console-title-wrap">
+          <span class="console-sym">&gt;_</span>
+          <h3 class="console-title">Diagnostics &amp; System Logs</h3>
+          <span id="console-log-count" class="chip">0 entries</span>
+        </div>
+        <div class="console-actions">
+          <button id="btn-copy-log" type="button" class="btn-sm" title="Copy diagnostic report to clipboard">
+            <span>Copy Log</span>
+          </button>
+          <button id="btn-save-log" type="button" class="btn-sm" title="Download diagnostic log file">
+            <span>Save File</span>
+          </button>
+          <button id="btn-report-issue" type="button" class="btn-sm btn-report" title="Open GitHub bug report">
+            <span>Report Issue</span>
+          </button>
+          <button id="btn-clear-log" type="button" class="btn-sm" title="Clear console output">
+            <span>Clear</span>
+          </button>
+          <button id="btn-close-console" type="button" class="btn-icon" aria-label="Close Console">&times;</button>
+        </div>
+      </div>
+      <div id="console-log-view" class="console-stream font-mono"></div>
+    </aside>
 
     <!-- Confirmation Modal Dialog -->
     <dialog id="confirm-modal" class="modal-dialog">

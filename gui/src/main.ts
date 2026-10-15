@@ -2,6 +2,7 @@ import { createActions } from "./actions";
 import { api } from "./api";
 import { createStore, initialState } from "./store";
 import { mountConfirm } from "./views/confirm";
+import { mountConsole, logMessage } from "./views/console";
 import { mountDrives } from "./views/drives";
 import { mountNotice } from "./views/notice";
 import { mountProgress } from "./views/progress";
@@ -15,6 +16,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Mount views
   mountConfirm();
+  mountConsole(store);
   mountWorkflow(store, actions);
   mountDrives(store, actions);
   mountProgress(store, actions);
@@ -30,24 +32,37 @@ window.addEventListener("DOMContentLoaded", async () => {
   maxBtn?.addEventListener("click", () => void api.windowToggleMaximize());
   closeBtn?.addEventListener("click", () => void api.windowClose());
 
-  // Listen to Tauri progress events
+  // Listen to Tauri progress events and feed console
   try {
     await api.onProgress((p) => {
-      // Direct pass-through: update progress snapshot in store
       store.set({ progress: p });
     });
   } catch (err) {
     console.error("Failed to bind progress event listener:", err);
+    logMessage("error", `IPC event binding error: ${err}`);
   }
+
+  // Subscribe to notices and feed console log
+  store.subscribe((s, prev) => {
+    if (s.notice && s.notice !== prev?.notice) {
+      logMessage(s.notice.kind === "ok" ? "info" : s.notice.kind, `${s.notice.title}: ${s.notice.body ?? ""}`);
+    }
+  });
 
   // Load environment privileges
   try {
     const env = await api.environment();
     store.set({ elevated: env.elevated });
+    logMessage("info", `User privilege detected: ${env.elevated ? "Administrator" : "Standard user"}`);
   } catch (err) {
     console.warn("Could not query user privilege:", err);
   }
 
   // Initial drive listing
   await actions.loadVolumes();
+  const currentVols = store.get().volumes;
+  logMessage(
+    "info",
+    `Storage inventory: ${currentVols.length} drives detected (${currentVols.map((v) => v.root.slice(0, 2)).join(", ")})`
+  );
 });

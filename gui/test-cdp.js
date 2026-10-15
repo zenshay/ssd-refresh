@@ -180,6 +180,29 @@ async function run() {
 
     await saveScreenshot(page, 'gui-03-stopped.png');
 
+    // 5. Test Diagnostics Console Drawer
+    console.log('[CDP Test] Testing Diagnostics Console Drawer...');
+    await page.click('#btn-toggle-console');
+    await wait(600);
+
+    const consoleState = await page.evaluate(() => {
+      const drawer = document.getElementById('console-drawer');
+      const style = drawer ? window.getComputedStyle(drawer) : null;
+      const lines = Array.from(document.querySelectorAll('#console-log-view .log-row')).map(r => r.innerText);
+      return {
+        drawerVisible: style?.display !== 'none',
+        logEntriesCount: lines.length,
+        firstLine: lines[0],
+      };
+    });
+    console.log('[CDP Test] Console drawer state:', JSON.stringify(consoleState, null, 2));
+    if (!consoleState.drawerVisible) {
+      throw new Error('Console drawer failed to open!');
+    }
+    console.log('[CDP Test] PASS: Diagnostics Console Drawer opened smoothly ✓');
+
+    await saveScreenshot(page, 'gui-04-console-drawer.png');
+
     console.log('[CDP Test] All CDP tests passed with 100% precision!');
   } finally {
     if (browser) {
