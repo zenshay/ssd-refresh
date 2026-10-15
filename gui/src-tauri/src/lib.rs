@@ -148,8 +148,14 @@ async fn start_scan(app: tauri::AppHandle, state: State<'_, AppState>, root: Str
     let run_res = scan::run(&opts, ctl);
     *state.control.lock().unwrap() = None;
 
-    if let Err(e) = run_res {
-        return Err(format!("Scan failed: {e}"));
+    match run_res {
+        Ok(130) => {
+            return Err("Scan safely stopped by user.".into());
+        }
+        Ok(_) => {}
+        Err(e) => {
+            return Err(format!("Scan failed: {e}"));
+        }
     }
 
     let rows = ssd_refresh::csv::read_all(&out_file).map_err(|e| e.to_string())?;

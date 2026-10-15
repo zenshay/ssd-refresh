@@ -106,6 +106,40 @@ async function run() {
     const hasSmart = drives.some(d => d.includes('SMART:'));
     console.log('[CDP Test] Has SMART status indicator:', hasSmart ? 'YES ✓' : 'NO ✗');
 
+    // E2E Test: Start Safe Scan, then Pause, then Resume, then Stop
+    console.log('[CDP Test] Triggering Start Safe Scan...');
+    await page.click('#btn-scan');
+    await wait(600);
+
+    const scanState = await page.evaluate(() => ({
+      badge: document.getElementById('task-badge')?.innerText,
+      phase: document.getElementById('progress-phase')?.innerText,
+      count: document.getElementById('progress-count')?.innerText,
+      progressBoxHidden: document.getElementById('progress-container')?.classList.contains('hidden'),
+    }));
+    console.log('[CDP Test] Scan active state:', JSON.stringify(scanState));
+
+    console.log('[CDP Test] Triggering Pause during Step 1...');
+    await page.click('#btn-pause');
+    await wait(500);
+
+    const pauseState = await page.evaluate(() => ({
+      pauseText: document.getElementById('pause-text')?.innerText,
+      speed: document.getElementById('progress-speed')?.innerText,
+    }));
+    console.log('[CDP Test] Pause state:', JSON.stringify(pauseState));
+
+    console.log('[CDP Test] Triggering Stop...');
+    await page.click('#btn-stop');
+    await wait(1200);
+
+    const stopState = await page.evaluate(() => ({
+      badge: document.getElementById('task-badge')?.innerText,
+      resultBox: document.getElementById('result-box')?.innerText,
+      btnScanDisabled: Boolean(document.getElementById('btn-scan')?.disabled),
+    }));
+    console.log('[CDP Test] Post-stop state:', JSON.stringify(stopState));
+
     // Capture screenshot for AI Agent inspection
     console.log('[CDP Test] Capturing screenshot to:', SCREENSHOT_PATH);
     await page.screenshot({ path: SCREENSHOT_PATH });

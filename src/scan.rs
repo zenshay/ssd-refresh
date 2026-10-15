@@ -42,14 +42,12 @@ const RECHECK_GAP: Duration = Duration::from_secs(30);
 /// In step 2, files of this size or larger go to the large-file lane (one at a time).
 const LARGE_FILE: u64 = 4 << 20;
 
-/// All files under `root`. It does not follow symbolic links, junctions or mount points.
-/// It stays on one volume.
 pub fn enumerate(root: &Path) -> Vec<(PathBuf, u64)> {
-    enumerate_counted(root, &AtomicU64::new(0), &AtomicU64::new(0))
+    enumerate_counted(root, &AtomicU64::new(0), &AtomicU64::new(0), &Control::new(None))
 }
 
-/// The same as `enumerate`. It also updates `count` and `bytes` for a progress line.
-pub fn enumerate_counted(root: &Path, count: &AtomicU64, bytes: &AtomicU64) -> Vec<(PathBuf, u64)> {
+/// The same as `enumerate`. It also updates `count` and `bytes` for a progress line, and honors pause/stop.
+pub fn enumerate_counted(root: &Path, count: &AtomicU64, bytes: &AtomicU64, ctl: &Control) -> Vec<(PathBuf, u64)> {
     let mut out = Vec::new();
     let Ok(md) = std::fs::symlink_metadata(root) else { return out };
     if md.is_file() {
@@ -59,9 +57,19 @@ pub fn enumerate_counted(root: &Path, count: &AtomicU64, bytes: &AtomicU64) -> V
     let dev = sys::dev_of(&md);
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
+        if ctl.stopped() {
+            break;
+        }
+        ctl.wait_while_paused();
+        if ctl.stopped() {
+            break;
+        }
         let Ok(rd) = std::fs::read_dir(&dir) else { continue };
         let mut subdirs = Vec::new();
         for ent in rd.flatten() {
+            if ctl.stopped() {
+                break;
+            }
             let Ok(m) = ent.metadata() else { continue };
             let p = ent.path();
             if m.is_dir() {
@@ -125,7 +133,7 @@ fn enumerate_with_progress(root: &Path, ctl: &Arc<Control>) -> Vec<(PathBuf, u64
             }
         })
     };
-    let files = enumerate_counted(root, &count, &bytes);
+    let files = enumerate_counted(root, &count, &bytes, ctl);
     done.store(true, Ordering::Relaxed);
     let _ = t.join();
     if interactive {
@@ -193,6 +201,10 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
     println!("Step 1/3  Find the files");
     para(2, "The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.");
     let found = enumerate_with_progress(&o.root, &ctl);
+    if ctl.stopped() {
+        println!("Scan stopped by user.");
+        return Ok(130);
+    }
     let files: Vec<_> = found.into_iter().filter(|(p, _)| !done.contains(&p.to_string_lossy().into_owned())).collect();
     let total: u64 = files.iter().map(|f| f.1).sum();
     println!("  Files to read: {}, {}.", fmt_count(files.len() as u64), fmt_bytes(total));

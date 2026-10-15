@@ -283,10 +283,17 @@ document.addEventListener("DOMContentLoaded", async () => {
         `;
         resultBox.classList.remove("hidden");
       }
-    } catch (err) {
-      resultBox.className = "p-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 text-sm";
-      resultBox.innerHTML = `<strong>Scan Error:</strong> ${err}`;
-      resultBox.classList.remove("hidden");
+    } catch (err: any) {
+      const msg = String(err);
+      if (msg.includes("stopped by user")) {
+        resultBox.className = "p-4 rounded-xl border border-slate-700 bg-slate-800/40 text-slate-300 text-sm flex items-center space-x-2";
+        resultBox.innerHTML = `<span>⏹</span><span>Scan stopped safely by user.</span>`;
+        resultBox.classList.remove("hidden");
+      } else {
+        resultBox.className = "p-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 text-sm";
+        resultBox.innerHTML = `<strong>Scan Error:</strong> ${err}`;
+        resultBox.classList.remove("hidden");
+      }
     } finally {
       btnScan.disabled = false;
       setTaskState("idle");
