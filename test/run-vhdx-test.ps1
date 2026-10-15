@@ -6,7 +6,8 @@ param(
     [string]$Letter = (Get-Content (Join-Path $PSScriptRoot '..\scratch\vhdx-letter.txt') -ErrorAction SilentlyContinue)
 )
 $ErrorActionPreference = 'Stop'
-# ssd-refresh 輸出 UTF-8。Windows PowerShell 5.1 預設用系統字碼頁（例如 CP950）解碼管線裡的輸出，中文會變亂碼。
+# ssd-refresh 輸出 UTF-8。PowerShell（5.1 與 7 都一樣）用 [Console]::OutputEncoding 解碼管線裡的外部程式輸出，
+# 主控台字碼頁是 950 之類的非 UTF-8 時，中文會變亂碼。
 $oldEncoding = [Console]::OutputEncoding
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
