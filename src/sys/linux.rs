@@ -166,6 +166,7 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
         total_bytes: s.f_blocks as u64 * bs,
         free_bytes: s.f_bavail as u64 * bs,
         id: dev,
+        health: Default::default(),
     })
 }
 
@@ -265,3 +266,11 @@ impl Relocator {
 
 /// How refresh moves data on this platform (shown before a refresh starts).
 pub const MOVE_METHOD: &str = "EXT4_IOC_MOVE_EXT, the ext4 online defragmentation API used by e4defrag";
+
+pub fn list_volumes() -> Vec<VolumeInfo> {
+    if let Ok(v) = volume(Path::new("/")) {
+        vec![v]
+    } else {
+        vec![]
+    }
+}

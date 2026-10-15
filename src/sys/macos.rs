@@ -59,6 +59,7 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
         total_bytes: s.f_blocks * bs,
         free_bytes: s.f_bavail * bs,
         id: std::fs::metadata(&abs)?.dev(),
+        health: Default::default(),
     })
 }
 
@@ -88,3 +89,11 @@ impl Relocator {
 
 /// How refresh moves data on this platform (shown before a refresh starts).
 pub const MOVE_METHOD: &str = "nothing (refresh is not supported on macOS)";
+
+pub fn list_volumes() -> Vec<VolumeInfo> {
+    if let Ok(v) = volume(Path::new("/")) {
+        vec![v]
+    } else {
+        vec![]
+    }
+}

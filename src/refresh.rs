@@ -91,6 +91,9 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
         fmt_bytes(vol.free_bytes),
         if vol.is_system { ", system volume" } else { "" }
     );
+    if let Some(ref model) = vol.health.model {
+        println!("  Drive:  {} (SMART: {})", model, vol.health.status);
+    }
     if !o.dry_run {
         if let Err(msg) = sys::refresh_check(&vol) {
             eprintln!("  {msg}");

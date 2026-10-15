@@ -198,11 +198,32 @@ fn run() -> Result<i32, String> {
             let v = sys::volume(&p).map_err(|e| e.to_string())?;
             println!("Root:          {}", v.root.display());
             println!("Device:        {}", v.device);
+            if let Some(ref m) = v.health.model {
+                println!("Drive model:   {}", m);
+            }
+            println!("SMART health:  {}", v.health.status);
             println!("File system:   {}", v.fs);
             println!("Cluster size:  {} bytes", v.block);
             println!("Size / free:   {} / {}", fmt_bytes(v.total_bytes), fmt_bytes(v.free_bytes));
             println!("System volume: {}", if v.is_system { "yes" } else { "no" });
             println!("Administrator or root: {}", if sys::is_elevated() { "yes" } else { "no" });
+            Ok(0)
+        }
+        "disks" => {
+            a.finish()?;
+            let vols = sys::list_volumes();
+            if vols.is_empty() {
+                println!("No local storage volumes found.");
+            } else {
+                println!("{:<6} {:<8} {:<14} {:<26} {}", "DRIVE", "FS", "FREE/TOTAL", "MODEL", "SMART");
+                println!("{}", "-".repeat(70));
+                for v in vols {
+                    let label = sys::volume_label(&v);
+                    let space = format!("{}/{}", fmt_bytes(v.free_bytes), fmt_bytes(v.total_bytes));
+                    let model = v.health.model.as_deref().unwrap_or("-");
+                    println!("{:<6} {:<8} {:<14} {:<26} {}", label, v.fs, space, model, v.health.status);
+                }
+            }
             Ok(0)
         }
         "help" | "-h" => Ok(help(&a.positional(0).unwrap_or_default())),

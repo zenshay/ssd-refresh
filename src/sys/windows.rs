@@ -4,7 +4,7 @@
 #![allow(clippy::upper_case_acronyms, non_snake_case)]
 
 use super::{AlignedBuf, MoveStats, RelocOptions};
-use crate::common::{Extent, Layout, Meta, Priority, VolumeInfo};
+use crate::common::{DiskHealth, Extent, Layout, Meta, Priority, SmartStatus, VolumeInfo};
 use crate::control::Control;
 use std::ffi::c_void;
 use std::fs::File;
@@ -80,6 +80,8 @@ extern "system" {
     fn GetCurrentThread() -> HANDLE;
     fn GetCurrentProcess() -> HANDLE;
     fn SetThreadPriority(t: HANDLE, p: i32) -> i32;
+    fn GetLogicalDrives() -> u32;
+    fn GetDriveTypeW(root: *const u16) -> u32;
 }
 
 #[link(name = "advapi32")]
@@ -115,6 +117,36 @@ const FSCTL_GET_VOLUME_BITMAP: u32 = 0x0009_006F;
 const FSCTL_GET_RETRIEVAL_POINTERS: u32 = 0x0009_0073;
 const FSCTL_MOVE_FILE: u32 = 0x0009_0074;
 const FSCTL_READ_FILE_USN_DATA: u32 = 0x0009_00EB;
+
+const IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS: u32 = 0x0056_0000;
+const IOCTL_STORAGE_PREDICT_FAILURE: u32 = 0x002D_1100;
+const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D_1400;
+
+#[repr(C)]
+struct DISK_EXTENT {
+    disk_number: u32,
+    starting_offset: i64,
+    extent_length: i64,
+}
+
+#[repr(C)]
+struct VOLUME_DISK_EXTENTS {
+    number_of_disk_extents: u32,
+    extents: [DISK_EXTENT; 4],
+}
+
+#[repr(C)]
+struct STORAGE_PREDICT_FAILURE {
+    predict_failure: u32,
+    vendor_specific: [u8; 512],
+}
+
+#[repr(C)]
+struct STORAGE_PROPERTY_QUERY {
+    property_id: u32,
+    query_type: u32,
+    additional_parameters: [u8; 1],
+}
 
 const ERROR_ACCESS_DENIED: i32 = 5;
 const ERROR_SHARING_VIOLATION: i32 = 32;
@@ -328,6 +360,7 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
     let mut win = [0u16; 260];
     unsafe { GetSystemWindowsDirectoryW(win.as_mut_ptr(), 260) };
     let windir = from_wide(&win);
+    let health = check_smart(&device);
     Ok(VolumeInfo {
         // Only a drive root ("C:\") can be the system volume; a volume mounted in a folder on C:
         // is a different volume.
@@ -339,7 +372,149 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
         total_bytes: total,
         free_bytes: free,
         id: serial as u64,
+        health,
     })
+}
+
+/// Enumerates all local storage volumes currently available on the system.
+pub fn list_volumes() -> Vec<VolumeInfo> {
+    let mut out = Vec::new();
+    let mask = unsafe { GetLogicalDrives() };
+    for i in 0..26 {
+        if mask & (1 << i) != 0 {
+            let letter = (b'A' + i) as char;
+            let root_str = format!("{}:\\", letter);
+            let root_w = wide(std::ffi::OsStr::new(&root_str));
+            let dtype = unsafe { GetDriveTypeW(root_w.as_ptr()) };
+            // 3 = DRIVE_FIXED, 2 = DRIVE_REMOVABLE
+            if dtype == 3 || dtype == 2 {
+                if let Ok(vol) = volume(Path::new(&root_str)) {
+                    out.push(vol);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Queries physical disk number, drive model name, and SMART predict-failure status.
+pub fn check_smart(device: &str) -> DiskHealth {
+    let mut health = DiskHealth::default();
+    let dev_w = wide(std::ffi::OsStr::new(device));
+    let h_vol = unsafe {
+        CreateFileW(
+            dev_w.as_ptr(),
+            0,
+            SHARE_READ | SHARE_WRITE,
+            std::ptr::null_mut(),
+            OPEN_EXISTING,
+            0,
+            0,
+        )
+    };
+    if h_vol == INVALID {
+        health.status = SmartStatus::Unknown(format!("Could not open device {device}"));
+        return health;
+    }
+
+    let mut extents: VOLUME_DISK_EXTENTS = unsafe { std::mem::zeroed() };
+    let mut ret = 0u32;
+    let ok = unsafe {
+        DeviceIoControl(
+            h_vol,
+            IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS,
+            std::ptr::null(),
+            0,
+            (&mut extents as *mut VOLUME_DISK_EXTENTS).cast(),
+            std::mem::size_of::<VOLUME_DISK_EXTENTS>() as u32,
+            &mut ret,
+            std::ptr::null_mut(),
+        )
+    };
+    unsafe { CloseHandle(h_vol) };
+
+    if ok == 0 || extents.number_of_disk_extents == 0 {
+        health.status = SmartStatus::Unknown("Could not map volume to physical drive".to_string());
+        return health;
+    }
+
+    let disk_num = extents.extents[0].disk_number;
+    health.disk_number = Some(disk_num);
+
+    let phys_name = format!(r"\\.\PhysicalDrive{}", disk_num);
+    let phys_w = wide(std::ffi::OsStr::new(&phys_name));
+    let h_phys = unsafe {
+        CreateFileW(
+            phys_w.as_ptr(),
+            GENERIC_READ,
+            SHARE_READ | SHARE_WRITE,
+            std::ptr::null_mut(),
+            OPEN_EXISTING,
+            0,
+            0,
+        )
+    };
+    if h_phys == INVALID {
+        health.status = SmartStatus::Unknown("Physical drive query requires administrator rights".to_string());
+        return health;
+    }
+
+    // Query Device Model Name
+    let query = STORAGE_PROPERTY_QUERY { property_id: 0, query_type: 0, additional_parameters: [0] };
+    let mut desc_buf = [0u8; 1024];
+    let mut desc_ret = 0u32;
+    let desc_ok = unsafe {
+        DeviceIoControl(
+            h_phys,
+            IOCTL_STORAGE_QUERY_PROPERTY,
+            (&query as *const STORAGE_PROPERTY_QUERY).cast(),
+            std::mem::size_of::<STORAGE_PROPERTY_QUERY>() as u32,
+            desc_buf.as_mut_ptr().cast(),
+            desc_buf.len() as u32,
+            &mut desc_ret,
+            std::ptr::null_mut(),
+        )
+    };
+    if desc_ok != 0 {
+        let product_id_offset = u32::from_le_bytes(desc_buf[16..20].try_into().unwrap()) as usize;
+        if product_id_offset > 0 && product_id_offset < desc_buf.len() {
+            let s = &desc_buf[product_id_offset..];
+            let len = s.iter().position(|&b| b == 0).unwrap_or(s.len());
+            let name = String::from_utf8_lossy(&s[..len]).trim().to_string();
+            if !name.is_empty() {
+                health.model = Some(name);
+            }
+        }
+    }
+
+    // Query SMART Predict Failure
+    let mut pred: STORAGE_PREDICT_FAILURE = unsafe { std::mem::zeroed() };
+    let mut pred_ret = 0u32;
+    let pred_ok = unsafe {
+        DeviceIoControl(
+            h_phys,
+            IOCTL_STORAGE_PREDICT_FAILURE,
+            std::ptr::null(),
+            0,
+            (&mut pred as *mut STORAGE_PREDICT_FAILURE).cast(),
+            std::mem::size_of::<STORAGE_PREDICT_FAILURE>() as u32,
+            &mut pred_ret,
+            std::ptr::null_mut(),
+        )
+    };
+    unsafe { CloseHandle(h_phys) };
+
+    if pred_ok != 0 {
+        if pred.predict_failure != 0 {
+            health.status = SmartStatus::Failing("Drive controller reports imminent hardware failure".to_string());
+        } else {
+            health.status = SmartStatus::Healthy;
+        }
+    } else {
+        health.status = SmartStatus::Unknown("SMART predict failure query not supported on this interface".to_string());
+    }
+
+    health
 }
 
 /// Drive letter such as "C:"; for a volume mounted in a folder, its root path.
@@ -436,7 +611,7 @@ pub fn enable_privileges() {
 
 pub const ELEVATION_HINT: &str = "Open PowerShell with \"Run as administrator\". Then run the command again.";
 
-/// Checks before refresh: file system and rights.
+/// Checks before refresh: file system, rights, and drive health.
 pub fn refresh_check(v: &VolumeInfo) -> Result<(), String> {
     if !v.fs.eq_ignore_ascii_case("NTFS") {
         return Err(format!("On Windows, the tool supports only NTFS. This volume is {}.", v.fs));
@@ -444,11 +619,25 @@ pub fn refresh_check(v: &VolumeInfo) -> Result<(), String> {
     if !is_elevated() {
         return Err(format!("The tool needs administrator rights to move clusters. {ELEVATION_HINT}"));
     }
+    if let SmartStatus::Failing(ref reason) = v.health.status {
+        return Err(format!(
+            "CRITICAL: SMART pre-check failed on {} ({}): {}. DO NOT refresh this drive! Back up your files immediately and replace the drive.",
+            volume_label(v),
+            v.health.model.as_deref().unwrap_or("unknown model"),
+            reason
+        ));
+    }
     Ok(())
 }
 
 /// Things the user should know before a refresh.
 pub fn refresh_warnings(v: &VolumeInfo) -> Vec<String> {
+    let mut warnings = Vec::new();
+    if let Some(ref model) = v.health.model {
+        if v.health.status == SmartStatus::Healthy {
+            warnings.push(format!("Drive: {model} (SMART status: Healthy)"));
+        }
+    }
     // The root path ends with a backslash, for drive letters ("C:\") and folder mount points alike.
     let out = std::process::Command::new("vssadmin").args(["list", "shadows", &format!("/for={}", v.root.display())]).output();
     match out {
@@ -456,13 +645,12 @@ pub fn refresh_warnings(v: &VolumeInfo) -> Vec<String> {
             let s = String::from_utf8_lossy(&o.stdout);
             let n = s.matches("HarddiskVolumeShadowCopy").count();
             if n > 0 {
-                vec![format!("{} has {n} shadow copies (restore points). When the tool moves clusters, the shadow copies need more space. Windows can delete old restore points to get space.", volume_label(v))]
-            } else {
-                vec![]
+                warnings.push(format!("{} has {n} shadow copies (restore points). When the tool moves clusters, the shadow copies need more space. Windows can delete old restore points to get space.", volume_label(v)));
             }
         }
-        Err(_) => vec!["could not list shadow copies (vssadmin failed).".into()],
+        Err(_) => warnings.push("could not list shadow copies (vssadmin failed).".into()),
     }
+    warnings
 }
 
 pub fn retrim_hint(v: &VolumeInfo) -> String {

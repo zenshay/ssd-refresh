@@ -148,6 +148,9 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
         vol.block,
         if vol.is_system { ", system volume" } else { "" }
     );
+    if let Some(ref model) = vol.health.model {
+        println!("  Drive:   {} (SMART: {})", model, vol.health.status);
+    }
     println!("  Report:  {}", o.out.display());
     para(11, "The scan saves each row immediately. If the scan stops, --resume can continue it.");
     if sys::is_elevated() {

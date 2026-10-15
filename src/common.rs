@@ -142,6 +142,36 @@ impl Kind {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SmartStatus {
+    Healthy,
+    Failing(String),
+    Unknown(String),
+}
+
+impl std::fmt::Display for SmartStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SmartStatus::Healthy => write!(f, "Healthy"),
+            SmartStatus::Failing(reason) => write!(f, "FAILING ({reason})"),
+            SmartStatus::Unknown(reason) => write!(f, "Unknown ({reason})"),
+        }
+    }
+}
+
+impl Default for SmartStatus {
+    fn default() -> Self {
+        SmartStatus::Unknown("Not queried".to_string())
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DiskHealth {
+    pub status: SmartStatus,
+    pub disk_number: Option<u32>,
+    pub model: Option<String>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct VolumeInfo {
     pub root: PathBuf,
@@ -153,6 +183,7 @@ pub struct VolumeInfo {
     pub free_bytes: u64,
     pub is_system: bool,
     pub id: u64,
+    pub health: DiskHealth,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

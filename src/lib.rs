@@ -15,3 +15,6 @@ pub mod refresh;
 pub mod scan;
 pub mod sys;
 pub mod verify;
+
+pub use common::{DiskHealth, SmartStatus, VolumeInfo};
+pub use sys::list_volumes;

@@ -19,6 +19,7 @@ Commands:
                                                      Read-only.
   ssd-refresh extents <file>                         Show where a file is on disk.
   ssd-refresh volume [<path>]                        Show volume data.
+  ssd-refresh disks                                  List drives and SMART status.
   ssd-refresh help scan                              Help for scan, with examples.
   ssd-refresh help refresh                           Help for refresh.
   ssd-refresh help verify                            Help for verify.
