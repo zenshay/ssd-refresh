@@ -49,6 +49,12 @@ impl Meta {
     pub fn changed_since(&self, before: &Meta) -> bool {
         self.size != before.size || self.mtime != before.mtime || self.ctime != before.ctime || self.seq != before.seq
     }
+
+    /// The fields `changed_since` compares, as text ("size:mtime:ctime:seq"), for logs. Two
+    /// snapshots with the same key were taken with no write to the file in between.
+    pub fn key(&self) -> String {
+        format!("{}:{}:{}:{}", self.size, self.mtime, self.ctime, self.seq)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

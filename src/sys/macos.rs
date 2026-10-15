@@ -63,7 +63,7 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
 }
 
 pub fn refresh_check(_v: &VolumeInfo) -> Result<(), String> {
-    Err("Refresh is not supported on macOS: APFS has no API that safely moves the data of a file in use. Scan works normally.".into())
+    Err("Refresh does not work on macOS. APFS has no API that moves the data of a file in use safely. Scan works normally.".into())
 }
 
 pub fn refresh_warnings(_v: &VolumeInfo) -> Vec<String> {

@@ -1,16 +1,15 @@
 #Requires -RunAsAdministrator
-# [Administrator] One command for the whole safety test: create a test VHDX, mount it in a folder (no drive
-# letter, so no Explorer window), run run-vhdx-test.ps1, then detach and delete the VHDX. The reports stay in
-# output\vhdx-test-<time>. The VHDX is deleted after a failed test too; add -KeepVhdx to keep it for debugging.
-# Build first, as a normal user: cargo build --release
+# [Administrator] One command for the full safety test. It makes a test VHDX and mounts it in a folder (no
+# drive letter, thus no Explorer window). It runs run-vhdx-test.ps1. Then it detaches and deletes the VHDX.
+# The reports stay in output\vhdx-test-<time>. It also deletes the VHDX after a failed test. To keep the VHDX
+# for debugging, give -KeepVhdx. First build as a normal user: cargo build --release
 #
-# Everything this script prints is also written to output\vhdx-test-<time>\vhdx-test.log, and the last thing
-# it does is write result.txt there ("PASSED" or "FAILED <code>"), so the result can be read without this
-# window, for example when it was started with Start-Process -Verb RunAs. -PauseSeconds keeps the window
-# open for a moment at the end.
+# The script also writes all its output to output\vhdx-test-<time>\vhdx-test.log. At the end, it writes
+# result.txt there ("PASSED" or "FAILED <code>"). Thus you can read the result without this window, for
+# example after Start-Process -Verb RunAs. -PauseSeconds keeps the window open for some seconds at the end.
 param(
     [switch]$KeepVhdx,
-    # Folder for the VHDX file and its mount folder; needs at least 4 GB free.
+    # The folder for the VHDX file and its mount folder. It needs 4 GB of free space or more.
     [string]$Dir = (Join-Path $PSScriptRoot '..\scratch'),
     [int]$SizeMB = 4096,
     [int]$PauseSeconds = 0
@@ -39,28 +38,44 @@ function Finish([int]$code) {
     exit $code
 }
 
-# ---------- Before anything is created ----------
+# ---------- Before the script makes anything ----------
 $tool = Join-Path $repo 'target\release\ssd-refresh.exe'
 foreach ($f in $tool, (Join-Path $repo 'target\release\refresh-test.exe')) {
-    if (-not (Test-Path $f)) { Write-Host "$f not found. Run 'cargo build --release' in $repo as a normal user first."; Finish 1 }
+    if (-not (Test-Path $f)) { Write-Host "$f does not exist. First run 'cargo build --release' in $repo as a normal user."; Finish 1 }
 }
 $newest = Get-ChildItem (Join-Path $repo 'src') -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($newest.LastWriteTime -gt (Get-Item $tool).LastWriteTime) {
-    Write-Host "$($newest.FullName) is newer than $tool. Run 'cargo build --release' in $repo as a normal user first."
+    Write-Host "$($newest.FullName) is newer than $tool. First run 'cargo build --release' in $repo as a normal user."
     Finish 1
 }
 New-Item -ItemType Directory -Force $Dir | Out-Null
+
+# If somebody closed the window of an earlier run, its VHDX and mount folder stay. Such a run has no
+# result.txt. Detach and delete these files. A run with -KeepVhdx has a result.txt, so its VHDX stays.
+foreach ($old in Get-ChildItem $Dir -Filter 'vhdx-test-*.vhdx') {
+    $oldStamp = $old.BaseName.Substring('vhdx-test-'.Length)
+    if ($oldStamp -eq $stamp -or (Test-Path (Join-Path $repo "output\vhdx-test-$oldStamp\result.txt"))) { continue }
+    Write-Host "An earlier run did not finish. Clean it: $($old.FullName)"
+    try {
+        & (Join-Path $PSScriptRoot 'vhdx-detach.ps1') -Path $old.FullName -Mount (Join-Path $Dir "vhdx-mnt-$oldStamp")
+        Remove-Item $old.FullName
+        Write-Host "Deleted $($old.FullName)"
+    } catch {
+        Write-Host "The script could not clean it: $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
 $need = [int64]$SizeMB * 1MB
 $free = ([IO.DriveInfo]::new([IO.Path]::GetPathRoot($Dir))).AvailableFreeSpace
 if ($free -lt $need) {
-    Write-Host ("Not enough free space on {0}: the test VHDX can grow to {1:N1} GB, but only {2:N1} GB is free." -f [IO.Path]::GetPathRoot($Dir), ($need / 1GB), ($free / 1GB))
-    Write-Host 'Free up space, or put the VHDX on another drive with -Dir <folder>.'
+    Write-Host ("Not sufficient free space on {0}. The test VHDX can become {1:N1} GB, but only {2:N1} GB is free." -f [IO.Path]::GetPathRoot($Dir), ($need / 1GB), ($free / 1GB))
+    Write-Host 'Make more space free, or put the VHDX on a different drive with -Dir <folder>.'
     Finish 1
 }
 
 $vhdx = Join-Path $Dir "vhdx-test-$stamp.vhdx"
 $mount = Join-Path $Dir "vhdx-mnt-$stamp"
-Write-Host ("Free space on {0}: {1:N1} GB (needs {2:N1} GB)" -f [IO.Path]::GetPathRoot($Dir), ($free / 1GB), ($need / 1GB))
+Write-Host ("Free space on {0}: {1:N1} GB (the test needs {2:N1} GB)" -f [IO.Path]::GetPathRoot($Dir), ($free / 1GB), ($need / 1GB))
 Write-Host "Results: $out"
 
 $code = 1
@@ -72,11 +87,11 @@ try {
     Write-Host "The test stopped with an error: $($_.Exception.Message)" -ForegroundColor Red
 } finally {
     Write-Host ''
-    try { & (Join-Path $PSScriptRoot 'vhdx-detach.ps1') -Path $vhdx -Mount $mount } catch { Write-Host "Could not detach: $($_.Exception.Message)" -ForegroundColor Red }
+    try { & (Join-Path $PSScriptRoot 'vhdx-detach.ps1') -Path $vhdx -Mount $mount } catch { Write-Host "The script could not detach the VHDX: $($_.Exception.Message)" -ForegroundColor Red }
     if ($KeepVhdx) {
-        Write-Host "Kept (detached, -KeepVhdx): $vhdx"
+        Write-Host "The script kept the VHDX (detached, -KeepVhdx): $vhdx"
     } elseif (Test-Path $vhdx) {
-        try { Remove-Item $vhdx; Write-Host "Deleted $vhdx" } catch { Write-Host "Could not delete $vhdx : $($_.Exception.Message)" -ForegroundColor Red }
+        try { Remove-Item $vhdx; Write-Host "Deleted $vhdx" } catch { Write-Host "The script could not delete $vhdx : $($_.Exception.Message)" -ForegroundColor Red }
     }
 }
 Finish $code

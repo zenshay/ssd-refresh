@@ -81,7 +81,7 @@ impl Control {
         let c = self.clone();
         let _ = ctrlc::set_handler(move || {
             if c.stopped() {
-                std::process::exit(130); // second Ctrl+C: quit now; every move is atomic, so files stay intact
+                std::process::exit(130); // second Ctrl+C: stop now. The file system moves each piece fully or not at all, so files are not damaged.
             }
             c.say("Ctrl+C: stopping after the current file (press again to quit at once).");
             c.request_stop();
@@ -99,13 +99,13 @@ impl Control {
                         let now = !c.key_paused.load(Ordering::Relaxed);
                         c.key_paused.store(now, Ordering::Relaxed);
                         c.say(if now {
-                            "Paused. Requests already sent finish first. Type p + Enter to resume."
+                            "Paused. The requests that the tool sent already finish first. To continue, type p and push Enter."
                         } else {
                             "Resumed."
                         });
                     }
                     "q" => {
-                        c.say("Stopping after the current file...");
+                        c.say("The tool stops after this file...");
                         c.request_stop();
                     }
                     _ => {}

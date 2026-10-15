@@ -177,6 +177,15 @@ pub fn open_direct(p: &Path) -> io::Result<File> {
     )
 }
 
+/// Write the cached data of the file to the disk (FlushFileBuffers). A program can write a file
+/// through the cache and close it; the new data then stays in the cache for some seconds. A read
+/// that does not use the cache must not see older data. The handle allows all sharing, so it
+/// does not block other programs. The tool does not write data with it.
+pub fn flush_file(p: &Path) -> io::Result<()> {
+    let f = open_raw(&long_path(p), GENERIC_WRITE, SHARE_READ | SHARE_WRITE | SHARE_DELETE, 0)?;
+    f.sync_all()
+}
+
 /// Whether another program has the file open for writing: open it for an instant with a sharing
 /// mode that denies writers, then close it.
 /// A program that tries to open the file for writing in that instant gets a sharing violation
@@ -365,6 +374,13 @@ pub fn local_clock_after(secs: u64) -> Option<String> {
     Some(format!("{:02}:{:02}", total / 3600, total / 60 % 60))
 }
 
+/// Local date and time now, as "YYYY-MM-DD HH:MM" (for logs).
+pub fn local_time_text() -> Option<String> {
+    let mut t = [0u16; 8];
+    unsafe { GetLocalTime(&mut t) };
+    Some(format!("{:04}-{:02}-{:02} {:02}:{:02}", t[0], t[1], t[3], t[4], t[5]))
+}
+
 /// Local date and time now, as "YYYYMMDD-HHMM" (for default file names).
 pub fn local_stamp() -> Option<String> {
     let mut t = [0u16; 8];
@@ -418,15 +434,15 @@ pub fn enable_privileges() {
     unsafe { CloseHandle(tok) };
 }
 
-pub const ELEVATION_HINT: &str = "Open PowerShell with \"Run as administrator\" and run it again.";
+pub const ELEVATION_HINT: &str = "Open PowerShell with \"Run as administrator\". Then run the command again.";
 
 /// Checks before refresh: file system and rights.
 pub fn refresh_check(v: &VolumeInfo) -> Result<(), String> {
     if !v.fs.eq_ignore_ascii_case("NTFS") {
-        return Err(format!("On Windows only NTFS is supported; this volume is {}.", v.fs));
+        return Err(format!("On Windows, the tool supports only NTFS. This volume is {}.", v.fs));
     }
     if !is_elevated() {
-        return Err(format!("Administrator rights are needed to move clusters. {ELEVATION_HINT}"));
+        return Err(format!("The tool needs administrator rights to move clusters. {ELEVATION_HINT}"));
     }
     Ok(())
 }
@@ -440,7 +456,7 @@ pub fn refresh_warnings(v: &VolumeInfo) -> Vec<String> {
             let s = String::from_utf8_lossy(&o.stdout);
             let n = s.matches("HarddiskVolumeShadowCopy").count();
             if n > 0 {
-                vec![format!("{} has {n} shadow copies (restore points). Moving clusters grows their difference area, and Windows may delete old restore points to make room.", volume_label(v))]
+                vec![format!("{} has {n} shadow copies (restore points). When the tool moves clusters, the shadow copies need more space. Windows can delete old restore points to get space.", volume_label(v))]
             } else {
                 vec![]
             }
@@ -456,7 +472,7 @@ pub fn retrim_hint(v: &VolumeInfo) -> String {
     } else {
         format!("Get-Volume -FilePath \"{}\" | Optimize-Volume -ReTrim", v.root.display())
     };
-    format!("tell the SSD the old places are free: {cmd} (PowerShell as administrator).")
+    format!("tell the SSD that the old places are free: {cmd} (PowerShell as administrator).")
 }
 
 // ---------------- overlapped read queue ----------------
@@ -697,7 +713,7 @@ impl Relocator {
     }
 
     /// Moves every extent that has a place on disk, in file order. Returns false when stopped part
-    /// way (the file is still intact).
+    /// way (the file is not damaged).
     pub fn relocate(&mut self, _path: &Path, file: &File, layout: &Layout, ctl: &Control, st: &mut MoveStats, log: &dyn Fn(&str)) -> io::Result<bool> {
         let cs = self.vol.block;
         let max_chunk = (self.opt.max_chunk / cs).max(1);
@@ -755,13 +771,13 @@ impl Relocator {
             st.failures += 1;
             self.map.mark(lcn, cnt as u64);
             if err.raw_os_error() == Some(ERROR_ACCESS_DENIED) && self.total_moves == 0 && !self.writable {
-                log("The volume handle opened for reading was refused; reopening it for read/write (this tool still never writes sectors itself).");
+                log("Windows did not allow the volume handle for reading. The tool opens it again for reading and writing. The tool still does not write sectors.");
                 self.writable = true;
                 self.handle = open_volume(&self.vol, true)?;
                 self.reload()?;
             }
             if failures > 10 {
-                return Err(io::Error::new(err.kind(), format!("too many failed moves (VCN {v}): {err}")));
+                return Err(io::Error::new(err.kind(), format!("too many moves failed (VCN {v}): {err}")));
             }
             if failures % 3 == 0 {
                 self.reload()?;

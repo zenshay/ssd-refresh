@@ -244,7 +244,7 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
         Some(n) => Some(mmap::Map::new(&root.join(n), data[n].len())?),
         None => None,
     };
-    println!("Mutator started: {} files, {} kept open, memory-mapped: {}.", targets.len(), held.len(), mm_name.as_deref().unwrap_or("none"));
+    println!("The program that changes files started: {} files, {} files open all the time, memory map: {}.", targets.len(), held.len(), mm_name.as_deref().unwrap_or("none"));
 
     let t0 = Instant::now();
     let mut total = 0u64;
@@ -288,7 +288,7 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
         *ops.get_mut(&t).unwrap() += 1;
         total += 1;
         if total % 500 == 0 {
-            println!("  {total} modifications ({:.0} s)", t0.elapsed().as_secs_f64());
+            println!("  {total} changes ({:.0} s)", t0.elapsed().as_secs_f64());
         }
         std::thread::sleep(Duration::from_millis(2));
     }
@@ -306,12 +306,12 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
         let want = sha_bytes(&data[t]);
         if sha_file(&root.join(t))? != want {
             bad += 1;
-            println!("  self-check mismatch: {t}");
+            println!("  error in the own check: {t}");
         }
         w.row([t.clone(), data[t].len().to_string(), want, ops[t].to_string()])?;
     }
     println!(
-        "Mutator finished: {total} modifications in {:.0} s; {} retries after sharing violations; {bad} self-check mismatches.",
+        "The program that changes files finished: {total} changes in {:.0} s, {} tries again after a sharing error, {bad} errors in the own check.",
         t0.elapsed().as_secs_f64(),
         SHARING_RETRIES.load(Ordering::Relaxed)
     );
@@ -345,10 +345,10 @@ fn verify(root: &Path, manifest: &Path, expected: &Path) -> io::Result<u8> {
             }
         } else {
             bad += 1;
-            println!("MISMATCH: {} ({})", r["path"], if is_mut { "modified file; should be its latest version" } else { "untouched file; should equal the original" });
+            println!("MISMATCH: {} ({})", r["path"], if is_mut { "changed file; it must have its last version" } else { "file without changes; it must be the same as the original" });
         }
     }
-    println!("Verify: {same} untouched files identical, {mutated} modified files at their latest version, {bad} mismatches, {missing} missing.");
+    println!("Compare: {same} files without changes are the same, {mutated} changed files have their last version, {bad} errors, {missing} not found.");
     Ok(if bad == 0 && missing == 0 { 0 } else { 1 })
 }
 
@@ -398,7 +398,7 @@ fn lcndiff(before: &Path, after: &Path) -> io::Result<u8> {
             overlap += 1;
         }
     }
-    println!("Location: {non_resident} files with data on disk, {moved} moved, {same} unchanged, {overlap} still overlapping their old place.");
+    println!("Location: {non_resident} files with data on the disk, {moved} at a new place, {same} at the same place, {overlap} partly at their old place.");
     Ok(0)
 }
 

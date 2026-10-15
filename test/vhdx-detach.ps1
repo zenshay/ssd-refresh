@@ -1,6 +1,6 @@
 #Requires -RunAsAdministrator
-# [Administrator] Detach a test VHDX. With -Mount, the folder mount point is removed first and the
-# (then empty) folder deleted. The VHDX file itself is kept.
+# [Administrator] Detach a test VHDX. With -Mount, first remove the folder mount point. Then delete the empty
+# folder. The script does not delete the VHDX file.
 param(
     [Parameter(Mandatory)][string]$Path,
     [string]$Mount = ''
@@ -17,6 +17,6 @@ if ($img -and $img.Attached) {
     Write-Host "Detached $Path"
 }
 if ($Mount -and (Test-Path $Mount)) {
-    # Not recursive: this only removes the empty folder (or a leftover mount point), never its contents.
+    # Not recursive: this deletes only the empty folder (or an old mount point). It does not delete files in it.
     [IO.Directory]::Delete([IO.Path]::GetFullPath($Mount))
 }

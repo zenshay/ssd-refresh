@@ -1,10 +1,10 @@
-//! One progress line, redrawn in place.
+//! One progress line. The tool writes it again at the same place.
 //!
-//! The line adapts to the terminal width: wide terminals get labelled fields
-//! ("suspects 12"), narrow ones (for example a 48-column side panel) get a compact
-//! form. The line never wraps, because a wrapped line cannot be redrawn in place.
-//! When stdout is not a terminal (redirected to a file or a pipe), a plain line is
-//! printed every 10 seconds instead.
+//! The line fits the width of the window. A wide window gets fields with names
+//! ("check 12"). A narrow window (for example a side panel of 48 columns) gets a
+//! short form. The line must not continue on a second line, because the tool cannot
+//! write a second line again at the same place. When stdout is not a window (a file
+//! or a pipe), the tool writes a new line each 10 seconds.
 
 use crate::common::fmt_bytes;
 use crate::control::Control;
@@ -14,23 +14,23 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Narrowest width we draw for. Below this the line is cut.
+/// The smallest width. In a narrower window, the tool cuts the line.
 const MIN_WIDTH: usize = 40;
-/// Width used when it cannot be detected.
+/// The width when the tool cannot find the width of the window.
 const FALLBACK_WIDTH: usize = 80;
-/// At or above this width the labelled ("verbose") layout is used.
+/// At this width or more, the line has fields with names ("verbose").
 const VERBOSE_WIDTH: usize = 90;
 
-/// What the progress line is counting.
+/// What the progress line counts.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    /// Scan, first pass: every file is read once.
+    /// Scan, step 2: the scan reads each file one time.
     Scan,
-    /// Scan, re-check of suspects (round 1 or 2).
+    /// Scan, step 3: the scan checks the files on the check list again (round 1 or 2).
     Recheck(u8),
-    /// Refresh (or dry run): files are re-measured, moved and verified.
+    /// Refresh (or dry run): the tool measures, moves and checks the files.
     Refresh { dry_run: bool },
-    /// Verify: files from a log or report are read again and compared.
+    /// Verify: the tool reads the files of a log or report again and compares them.
     Verify,
 }
 
@@ -38,7 +38,7 @@ pub enum Phase {
 struct Counters {
     files: AtomicU64,
     bytes: AtomicU64,
-    suspects: AtomicU64,
+    check: AtomicU64,
     slow: AtomicU64,
     errors: AtomicU64,
     moved: AtomicU64,
@@ -56,7 +56,7 @@ struct Inner {
     ctl: Arc<Control>,
     interactive: bool,
     done: AtomicBool,
-    /// Serialises output; also holds the time of the last non-interactive line.
+    /// Only one thread can write at a time. It also keeps the time of the last line (not a window).
     lock: Mutex<Instant>,
 }
 
@@ -95,8 +95,8 @@ impl Progress {
         self.inner.c.files.fetch_add(1, Ordering::Relaxed);
         self.inner.c.bytes.fetch_add(bytes, Ordering::Relaxed);
     }
-    pub fn add_suspect(&self) {
-        self.inner.c.suspects.fetch_add(1, Ordering::Relaxed);
+    pub fn add_check(&self) {
+        self.inner.c.check.fetch_add(1, Ordering::Relaxed);
     }
     pub fn add_slow(&self) {
         self.inner.c.slow.fetch_add(1, Ordering::Relaxed);
@@ -140,14 +140,21 @@ pub fn width() -> usize {
 /// Print `text` as a paragraph indented by `indent` spaces, word-wrapped to the terminal
 /// width (at most 100 columns, so long lines stay readable in wide windows).
 pub fn para(indent: usize, text: &str) {
+    print!("{}", para_string(indent, indent, text));
+}
+
+/// Like `para`, but returns the lines (each ending in '\n') instead of printing them.
+/// The first line is indented by `first`, the others by `indent`.
+pub fn para_string(first: usize, indent: usize, text: &str) -> String {
     let w = if std::io::stdout().is_terminal() { width() - 1 } else { 100 }.min(100);
-    let avail = w.saturating_sub(indent).max(20);
-    let pad = " ".repeat(indent);
+    let mut out = String::new();
     let mut line = String::new();
+    let mut pad = first;
     for word in text.split_whitespace() {
-        if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > avail {
-            println!("{pad}{line}");
+        if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > w.saturating_sub(pad).max(20) {
+            out += &format!("{}{line}\n", " ".repeat(pad));
             line.clear();
+            pad = indent;
         }
         if !line.is_empty() {
             line.push(' ');
@@ -155,8 +162,9 @@ pub fn para(indent: usize, text: &str) {
         line.push_str(word);
     }
     if !line.is_empty() {
-        println!("{pad}{line}");
+        out += &format!("{}{line}\n", " ".repeat(pad));
     }
+    out
 }
 
 impl Inner {
@@ -192,22 +200,22 @@ impl Inner {
         let paused = self.ctl.is_paused();
         match (self.phase, verbose) {
             (Phase::Scan, true) => format!(
-                "{}{pct:5.1}%  {} of {}  {rate:.0} MB/s  suspects {}  errors {}  {eta}",
+                "{}{pct:5.1}%  {} of {}  {rate:.0} MB/s  check {}  errors {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
                 fmt_bytes(b),
                 fmt_bytes(self.total_bytes),
-                ld(&c.suspects),
+                ld(&c.check),
                 ld(&c.errors),
             ),
             (Phase::Scan, false) => format!(
-                "{}{pct:.1}% {}/{} {rate:.0}MB/s sus {} {eta}",
+                "{}{pct:.1}% {}/{} {rate:.0}MB/s chk {} {eta}",
                 if paused { "PAUSE " } else { "" },
                 fmt_bytes(b),
                 fmt_bytes(self.total_bytes),
-                ld(&c.suspects),
+                ld(&c.check),
             ),
             (Phase::Recheck(r), true) => format!(
-                "{}Re-check {r}/2  {f} of {} files  {} of {}  still slow {}  {eta}",
+                "{}Check again {r}/2  {f} of {} files  {} of {}  slow {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
                 self.total_files,
                 fmt_bytes(b),
@@ -245,7 +253,7 @@ impl Inner {
                 ld(&c.failed),
             ),
             (Phase::Verify, true) => format!(
-                "{}Verify {f} of {} files  {} of {}  {rate:.0} MB/s  still slow {}  modified {}  errors {}  {eta}",
+                "{}Verify {f} of {} files  {} of {}  {rate:.0} MB/s  slow {}  changed {}  errors {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
                 self.total_files,
                 fmt_bytes(b),
@@ -280,7 +288,7 @@ impl Inner {
     }
 }
 
-/// "ETA 1:18 (10:55)" in the verbose layout, "1:18" in the compact one.
+/// "left 1h18m (done ~10:55)" in the wide form, "1h18m" in the short form.
 /// Uses bytes when the total is known, otherwise the file count.
 fn eta(sec: f64, b: u64, total_b: u64, f: u64, total_f: u64, verbose: bool) -> String {
     let left = if total_b > 0 && b > 0 && total_b > b {
@@ -296,8 +304,8 @@ fn eta(sec: f64, b: u64, total_b: u64, f: u64, total_f: u64, verbose: bool) -> S
         return short;
     }
     match sys::local_clock_after(s) {
-        Some(at) => format!("ETA {short} (done ~{at})"),
-        None => format!("ETA {short}"),
+        Some(at) => format!("left {short} (done ~{at})"),
+        None => format!("left {short}"),
     }
 }
 

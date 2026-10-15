@@ -181,10 +181,10 @@ fn mount_source(root: &Path) -> Option<String> {
 
 pub fn refresh_check(v: &VolumeInfo) -> Result<(), String> {
     if v.fs != "ext4" {
-        return Err(format!("On Linux only ext4 is supported so far; this volume is {}.", v.fs));
+        return Err(format!("On Linux, the tool supports only ext4 at this time. This volume is {}.", v.fs));
     }
     if !super::is_elevated() {
-        return Err(format!("Root is needed to move data blocks. {}", super::ELEVATION_HINT));
+        return Err(format!("The tool needs root to move data blocks. {}", super::ELEVATION_HINT));
     }
     Ok(())
 }
@@ -194,7 +194,7 @@ pub fn refresh_warnings(_v: &VolumeInfo) -> Vec<String> {
 }
 
 pub fn retrim_hint(v: &VolumeInfo) -> String {
-    format!("tell the SSD the old places are free: sudo fstrim -v {}", v.root.display())
+    format!("tell the SSD that the old places are free: sudo fstrim -v {}", v.root.display())
 }
 
 /// Moves a file's data into new blocks preallocated in a temporary donor file, using EXT4_IOC_MOVE_EXT.
@@ -252,7 +252,7 @@ impl Relocator {
                     continue;
                 }
                 if me.moved_len == 0 {
-                    break; // past the end (the file shrank meanwhile)
+                    break; // after the end (the file became smaller during the move)
                 }
                 start += me.moved_len;
                 st.moved_bytes += me.moved_len * bs;

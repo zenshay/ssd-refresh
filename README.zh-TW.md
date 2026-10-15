@@ -124,11 +124,11 @@ ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--
 
 掃描分三步。每一步開始前，程式會先印出這一步要做什麼。
 
-1. **Find files（列出檔案）**：走訪資料夾。不進入符號連結、junction 和掛載點，也不跨到別的磁碟區。
-2. **Read every file once（每個檔案讀一次）**：不經系統快取直接從磁碟讀，量每個 extent（檔案在磁碟上的一段連續資料）的時間。有 extent 低於 `--threshold`（100 MB/s）的檔案，列為**可疑（suspect）**。
-3. **Re-check the suspects（重新確認可疑檔案）**：每個可疑檔案用一般 I/O 優先權單獨重讀，共兩輪，第二輪至少在第一輪開始 30 秒後才開始。每個 extent 取三次讀取中最快的一次。這樣仍然慢，才判定為**慢（slow）**。
+1. **Find the files（列出檔案）**：掃描會走訪所有資料夾。它不進入符號連結、junction 和掛載點，也不跨到別的磁碟區。
+2. **Read each file one time（每個檔案讀一次）**：掃描不經系統快取，直接從磁碟讀每個檔案。它量每個 extent 的時間。extent 是檔案在磁碟上的一段連續資料。只要有一個 extent 低於 `--threshold`（100 MB/s），這個檔案就列入**待確認清單（check list）**。
+3. **Check the files on the check list again（再確認一次）**：掃描用一般 I/O 優先權，一次只讀一個檔案。它讀兩輪，第二輪在第一輪開始 30 秒以上之後才開始。每個 extent 取三次讀取中最快的一次。這樣還是慢，檔案才算**慢（slow）**。
 
-### 「可疑」不是結果
+### 待確認清單不是結果
 
 第 2 步追求速度，它的測速單獨看並不可靠：
 
@@ -136,17 +136,17 @@ ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--
 - **第 2 步用最低的 I/O 優先權**，讓其他程式先用磁碟。只要有其他程式在用磁碟，Windows 就會壓低最低優先權 I/O 的速度，健康的檔案也可能看起來很慢。
 - **SSD 本身會暫時變慢。** 沒有 DRAM 的 SSD 閒置一段時間後會做內部整理，接下來 10–20 秒的讀取全部變慢。
 
-所以第 2 步只產生「可疑」名單，它的進度列只計算可疑檔案數，不是慢檔數。慢檔數要等第 3 步做完才知道：第 3 步在沒有這些干擾的情況下，於兩個不同時間點重新測量。
+所以第 2 步只產生待確認清單。它的進度列計算的是清單上的檔案數，不是慢檔數。第 3 步在沒有這些干擾的情況下，於兩個不同時間點重新測量。做完第 3 步，才知道慢檔有幾個。
 
 ### 進度列
 
-進度列原地更新，寬度配合終端機。寬的視窗顯示完整欄位名稱，窄的視窗顯示簡寫。
+進度列原地更新，寬度配合視窗。寬的視窗顯示完整欄位名稱，窄的視窗顯示簡寫。
 
 第 2 步：
 
 ```
-12.3%  35.2G of 290G  245 MB/s  suspects 17  errors 0  ETA 17m20s (done ~11:05)
-12.3% 35.2G/290G 245MB/s sus 17 17m20s
+12.3%  35.2G of 290G  245 MB/s  check 17  errors 0  left 17m20s (done ~11:05)
+12.3% 35.2G/290G 245MB/s chk 17 17m20s
 ```
 
 | 欄位 | 意思 |
@@ -154,19 +154,19 @@ ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--
 | `12.3%` | 已讀的位元組占要讀總量的比例 |
 | `35.2G of 290G` | 已讀／要讀的位元組（1G = 10^9 位元組） |
 | `245 MB/s` | 第 2 步開始以來的平均速度 |
-| `suspects 17` | 這一輪讀得慢的檔案數，不是最終結果 |
+| `check 17` | 待確認清單上的檔案數。這不是結果 |
 | `errors 0` | 開不了或讀不了的檔案數 |
-| `ETA` | 照目前平均速度估計的剩餘時間，以及預計完成時刻 |
+| `left` | 照目前平均速度估計的剩餘時間，以及預計完成時刻 |
 
-小檔很多的資料夾，百分比會前進得很慢：這些檔案位元組少，但每個都要開一次。
+小檔很多的資料夾，百分比會前進得很慢。這些檔案位元組少，但每個都要開一次。
 
 第 3 步：
 
 ```
-Re-check 1/2  120 of 3,020 files  1.2G of 3.4G  still slow 15  ETA 2m10s
+Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
 ```
 
-`still slow` 是這一輪目前已確認、仍然慢的可疑檔案數。
+`slow` 是這一輪目前仍然慢的檔案數。
 
 ### 報告欄位
 
@@ -201,7 +201,7 @@ ssd-refresh refresh --from 報告.csv [--dry-run] [--allow-system-volume] [--res
 進度列：
 
 ```
-Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  ETA 3m20s
+Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3m20s
 ```
 
 `moved` 包含 `changed`。`skipped` 是已經不慢、不能搬、已不存在或試跑的檔案。`failed` 是沒能搬移或讀取的檔案，但檔案本身完整。
@@ -228,8 +228,9 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 - 檔案的大小、修改時間、變更時間、USN（NTFS）有沒有變。
 - 有沒有其他程式開著寫入。Windows 會用「不允許別人寫入」的共用模式開檔一瞬間測試；Linux 用讀取租約（`F_SETLEASE`）測試。
-
 任一項成立就記成 `CHANGED`，否則記成 `MISMATCH`。
+
+搬移前讀取之前，工具會先把這個檔案在快取裡的資料寫進磁碟（flush）。原因是程式可能透過快取寫入後就關檔，新資料會在快取裡留幾秒。本工具的讀取不經快取，不先 flush 的話，可能讀到磁碟上的舊資料。Windows 上，工具用允許所有共用的寫入權限開檔（不會擋住其他程式），呼叫 `FlushFileBuffers`。它不寫入任何資料，檔案時間也不會變。Linux 上呼叫 `fsync`。flush 失敗時（例如沒有寫入權限），工具會記在 `detail` 欄。這時 SHA-256 不同，照樣判成 `MISMATCH`。
 
 ## 驗證：刷新的效果能不能維持
 
@@ -256,22 +257,54 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 `verify` 一次只讀一個檔案，用一般優先權，不經作業系統快取；讀得慢的檔案會再讀一次，每個 extent 取較快的時間。它會分別列出 `rewritten` 組（`OK`、`CHANGED`）和 `read_only` 組（`CONTROL`、`DRYRUN`，有的話），格式如下（數字只是示意）：
 
 ```
-                         Rewritten  Read only
-  Files read                    60         60
-  Measured                      58         60
-  Slow then->now             58->1     60->41
-  Median MB/s then->now     38->455    35->120
-  Modified (left out)            2          0
+Summary
+                           Rewritten  Read only
+  Files read                      60         60
+  Files measured                  58         60
+  Slow before->now             58->1     60->41
+  Median MB/s before->now     38->455    35->120
+  Changed by a program             2          0
 ```
 
-- 「then」是搬移前那次讀取（掃描報告則是掃描結果），「now」是這次重讀。
-- 內容已經改變（SHA-256 不同）的檔案存的是新資料，不列入比較（`MODIFIED`）。
-- 表格下方會列出兩組中「當時慢、現在仍慢」的比例，並給一行結論。
-- 重寫組變快、對照組仍慢：重寫才有效。兩組都變快：這顆碟只讀一遍就夠。兩組又都變慢：資料退化得快，隔更久再比一次。
+- 「before」是搬移前那次讀取（掃描報告則是掃描結果）。「now」是這次重讀。
+- 被程式改過的檔案存的是新資料。`verify` 不把它列入比較（`MODIFIED`）。
 - `--sample N`：每組最多讀 N 個檔案。抽樣由路徑決定，之後重跑會讀同一批。
 - `verify --from C-scan.csv`：檢查掃描報告裡的慢檔，看只讀一遍是否已經讓它們恢復。
 
-結果也會寫成 `<來源檔名>-verify-<日期>-<時間>.csv`，每個檔案一列。
+### 結論：資料安不安全、快了幾倍
+
+表格之後，`verify` 直接回答三個問題（數字只是示意）：
+
+```
+Result
+  Data safe:          YES  597 of 597 files that no program changed have the same SHA-256 as at
+                           refresh. 3 files were changed by other programs after the refresh.
+                           This is normal.
+  Faster:             YES  340 files were slow before. 3 files are slow now. Read speed: 25 MB/s
+                           before, 480 MB/s now (19.2 times faster).
+  Time since refresh: 21 days.
+```
+
+| 項目 | YES 或 NO 的判斷 |
+|---|---|
+| Data safe（資料安全） | `YES`：沒被程式改過的檔案，SHA-256 都和刷新時一樣。`NO`：有檔案的 SHA-256 不同，但大小、時間戳記和 USN 都沒變，也就是沒有程式改過它。`verify` 會列出這些檔案，結束代碼是 3 |
+| Faster（變快） | 只算刷新前就慢的檔案。其中 80% 以上現在不慢，才是 `YES` |
+| Time since refresh（距離刷新） | 距離刷新多久。不到 12 小時會警告 |
+
+- 怎麼知道「沒有程式改過」：刷新記錄在讀取 SHA-256 之前，會記下每個檔案的大小、時間戳記和 USN（`meta_key` 欄）。現在 SHA-256 不同、這些值卻都相同，就代表沒有程式寫過它。刷新時有其他程式開著寫入的檔案，以及狀態是 `CHANGED` 的檔案，不用這個方法判斷。這些檔案的 SHA-256 不同，一律算正常修改。
+- 舊版的刷新記錄沒有 `meta_key`。這時如果有檔案的 SHA-256 不同，Data safe 會顯示 `UNKNOWN`。
+- 速度＝總位元組數÷總讀取時間，比較刷新前和現在。只算刷新前就慢的檔案。結果顯示成 `N.N times faster` 或 `N.N times slower`。
+- 有對照組時，每組各有一行 Faster，最後加一句結論。例如「Rewriting made the files 3.1 times faster than reading only」，或「Reading only was enough on this drive」。
+- 來源是掃描報告時，Data safe 顯示 `n/a`。掃描沒有搬移檔案。
+
+### 記錄檔
+
+每次執行，`verify` 會把摘要加到一個文字檔的最後面。摘要也包含執行時間和來源。這個檔案就是歷史記錄。每月跑一次，同一個檔案往下看就能看出變化。
+
+| 檔案 | 內容 |
+|---|---|
+| `<來源檔名>.verify.log`，放在來源檔旁邊（可用 `--log` 指定） | 每次執行的摘要。例如 `C-scan-refresh.csv` 對應 `C-scan-refresh.verify.log` |
+| `--out 檔名`（選用） | 每個檔案一列的 CSV。除錯或附在 issue 回報時使用 |
 
 ### 用 DiskSpd 獨立檢查單一檔案
 
@@ -382,6 +415,7 @@ Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-re
 腳本會在 `scratch\` 建立 VHDX，掛到一個空資料夾而不是磁碟代號，所以檔案總管和自動播放不會跳出視窗。接著執行測試，最後卸載並刪除 VHDX；測試失敗時也一樣。只有報告會留在 `output\vhdx-test-<時間>\`，`summary.md` 列出每一項檢查。
 
 - `-KeepVhdx`：保留 VHDX（已卸載）方便除錯。
+- 測試途中關掉視窗的話，VHDX 會留下來。下一次執行時，腳本會先卸載並刪除它。
 - `-Dir D:\某資料夾`：把 VHDX 放到其他磁碟。
 - 各步驟也能單獨執行：`vhdx-create.ps1`、`run-vhdx-test.ps1`、`vhdx-remount.ps1`、`vhdx-detach.ps1`。
 
@@ -392,10 +426,14 @@ Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-re
 3. 啟動修改程式，持續改寫約一成的檔案。方式包括開檔寫入再關閉、長期開著寫入、記憶體對應寫入、追加與截短。
 4. 刷新全部檔案並保留 30% 對照組（`--control-fraction 0.3`），在第 150 個檔案時停止，再用 `--resume` 續跑，途中暫停 6 秒。
 5. 停止修改程式，重新掛載後驗證：沒被修改的檔案必須完全一致，被修改的檔案必須是最新版本。
-6. 對刷新記錄執行 `verify`：分組要和記錄一致，每個沒被修改的檔案都要量到，對照組的檔案不能被搬移。
+6. 對刷新記錄執行 `verify`：分組要和記錄一致，Data safe 要是 YES，`.verify.log` 要多一段摘要，對照組的檔案不能被搬移。
 7. 確認資料確實搬移、搬移沒有改動時間戳記或 USN，最後執行 `chkdsk /scan` 與 `Repair-Volume -Scan`。
 
 因為磁碟區掛在資料夾上，測試也會確認 ssd-refresh 把資料夾掛載點當成獨立的 NTFS 磁碟區。
+
+### 加入 flush 與回歸測試後的測試結果（2026-10-15 16:44）
+
+28 項檢查全部通過。工具讀取檔案前，會先把該檔案的快取寫入磁碟（flush）。回歸測試用快取寫入 1 MB、關閉檔案，然後馬上刷新，共做 20 次。結果：OK 20、MISMATCH 0。flush 失敗 0 次，flush 改變檔案時間 0 次。最終狀態：OK 450、CHANGED 8、CONTROL 188、MISMATCH 0。`verify` 顯示 `Data safe: YES`（598 個檔案中 598 個相同），並在 `.verify.log` 加入一段摘要。`chkdsk /scan` 和 `Repair-Volume -Scan` 都沒有發現問題。
 
 ### 掛在資料夾的測試結果（2026-10-15 15:04）
 

@@ -48,14 +48,32 @@ pub fn local_clock_after(secs: u64) -> Option<String> {
     Some(format!("{:02}:{:02}", tm.tm_hour, tm.tm_min))
 }
 
-/// Local date and time now, as "YYYYMMDD-HHMM" (for default file names).
-pub fn local_stamp() -> Option<String> {
+/// Write the cached data of the file to the disk (fsync). A read that does not use the cache
+/// (O_DIRECT) must not see older data. On Linux, fsync also works on a read-only descriptor, so
+/// the tool does not open the file for writing.
+pub fn flush_file(p: &Path) -> io::Result<()> {
+    std::fs::File::open(p)?.sync_data()
+}
+
+fn local_now() -> Option<libc::tm> {
     let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
         return None;
     }
+    Some(tm)
+}
+
+/// Local date and time now, as "YYYYMMDD-HHMM" (for default file names).
+pub fn local_stamp() -> Option<String> {
+    let tm = local_now()?;
     Some(format!("{:04}{:02}{:02}-{:02}{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min))
+}
+
+/// Local date and time now, as "YYYY-MM-DD HH:MM" (for logs).
+pub fn local_time_text() -> Option<String> {
+    let tm = local_now()?;
+    Some(format!("{:04}-{:02}-{:02} {:02}:{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min))
 }
 
 pub fn is_elevated() -> bool {

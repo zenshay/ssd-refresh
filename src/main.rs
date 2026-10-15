@@ -8,275 +8,8 @@ use ssd_refresh::verify::{self, VerifyOptions};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-const USAGE: &str = "\
-ssd-refresh - find files whose old data reads slowly, and have the file system
-rewrite them
-
-Data that has sat unchanged on an SSD for a long time can read much slower than
-new data: charge leaks out of the flash cells, and the drive has to retry and
-correct errors. Rewriting the data restores the speed. ssd-refresh rewrites only
-the files that are actually slow, and it asks the file system to do the moving,
-so files that are in use stay safe.
-
-Usage:
-  ssd-refresh scan <folder or file> [options]        read-only: find slow files
-  ssd-refresh refresh --from <report.csv> [options]  move the slow files
-                                                     (administrator / root)
-  ssd-refresh verify --from <log or report.csv>      read-only: check later
-                                                     whether files stayed fast
-  ssd-refresh extents <file>                         where a file is on disk
-  ssd-refresh volume [<path>]                        volume information
-  ssd-refresh help scan                              scan in detail, with examples
-  ssd-refresh help refresh                           refresh in detail
-  ssd-refresh help verify                            verify in detail
-
-Typical use on Windows (run PowerShell as administrator):
-  1. ssd-refresh scan C:\\ --out C-scan.csv
-  2. ssd-refresh refresh --from C-scan.csv --dry-run
-  3. ssd-refresh refresh --from C-scan.csv --allow-system-volume
-  4. Optimize-Volume -DriveLetter C -ReTrim
-  5. a day or more later: ssd-refresh verify --from C-scan-refresh.csv
-
-Scanning works on Windows, Linux and macOS. Refreshing works on Windows NTFS
-and Linux ext4.
-";
-
-const HELP_SCAN: &str = "\
-ssd-refresh scan <folder or file> [options]
-
-Reads every file under the folder straight from the disk and writes one CSV row
-per file. Nothing on the disk is changed. Run it as administrator (Windows) or
-root (Linux) to also read files your user cannot open.
-
-Steps
-  1/3 Find files. Symbolic links, junctions, mount points and other volumes are
-      not followed.
-  2/3 Read every file once, bypassing the OS cache, and time every extent (a
-      contiguous piece of the file on disk). Several files are read at the same
-      time. A file that reads slower than the threshold becomes a SUSPECT.
-  3/3 Re-check the suspects: read each one again, alone and at normal priority,
-      twice, at least 30 s apart. For each extent the fastest of the three reads
-      counts. A file is SLOW only if it is still slow after that.
-
-Why suspects and slow are different
-  In step 2 the reads of several files compete with each other, with other
-  programs, and sometimes with the SSD's own housekeeping (a drive without DRAM
-  can slow down for 10-20 s after being idle). A healthy file can look slow for
-  a moment. Step 3 repeats the measurement without that competition, so only
-  files that are slow every time are reported as slow.
-
-Progress line in step 2 (wide terminal, then narrow terminal)
-  12.3%  35.2G of 290G  245 MB/s  suspects 17  errors 0  ETA 17m20s (done ~11:05)
-  12.3% 35.2G/290G 245MB/s sus 17 17m20s
-
-    12.3%           share of the bytes to read that has been read
-    35.2G of 290G   bytes read / bytes to read (1G = 10^9 bytes)
-    245 MB/s        average speed since step 2 started
-    suspects 17     files that read slowly in this pass; NOT the final result
-    errors 0        files that could not be opened or read
-    ETA             time left at the average speed so far, and the clock time
-
-  Folders full of tiny files move the percentage slowly: those files hold few
-  bytes but each one still has to be opened.
-
-Progress line in step 3
-  Re-check 1/2  120 of 3,020 files  1.2G of 3.4G  still slow 15  ETA 2m10s
-    still slow      suspects checked so far in this round that are still slow
-
-Options
-  --out FILE           report file (default: scan-<number>.csv in this folder)
-  --resume             continue an interrupted scan; files already in the
-                       report are skipped, files that ended in ERROR are
-                       tried again
-  --hash               also record each file's SHA-256 (uses more CPU)
-  --parallel 8         files read at the same time in step 2; 1 = one by one
-  --threshold 100      an extent slower than this (MB/s) is slow
-  --allowance-ms 2     extra time allowed per extent, so the fixed latency of
-                       tiny reads does not count as slowness
-  --chunk-kb 1024      size of each read request
-  --qd 4               read requests in flight per file
-  --priority verylow   I/O priority of step 2: verylow, low or normal
-  --measure-priority normal
-                       I/O priority of step 3
-
-While it runs
-  p + Enter   pause / resume
-  q + Enter   stop after the files in progress; continue later with --resume
-  Ctrl+C      same as q; press twice to quit at once
-  A file named <report>.pause pauses the scan until it is deleted.
-
-Report columns
-  path, size, kind, extents, disk_bytes, read_ms, mbps, min_extent_mbps, slow,
-  slow_bytes, confirmed, sha256, status, error
-  status    OK (measured), SKIP (not measured, see kind), DUP_LINK (another
-            hard link to a file already measured), ERROR (see error)
-  kind      normal, sparse, encrypted: measured, can be refreshed
-            unknown: measured, cannot be refreshed (macOS)
-            resident (data inside the MFT or inode), empty, compressed, wof
-            (Windows compressed system file), shared, reparse: not measured
-  slow      1 = slow after step 3
-  confirmed 1 = the file was re-checked in step 3
-
-Examples
-  ssd-refresh scan C:\\ --out C-scan.csv
-  ssd-refresh scan \"D:\\Photos\" --out photos.csv --hash
-  sudo ssd-refresh scan /home --out home.csv
-  ssd-refresh scan C:\\ --out C-scan.csv --resume
-
-Exit codes: 0 finished, 1 error, 4 stopped early.
-";
-
-const HELP_REFRESH: &str = "\
-ssd-refresh refresh --from <report.csv> [options]
-
-Moves the data of the slow files in a scan report to free clusters. Moving means
-rewriting, which restores the read speed. Needs administrator rights (Windows) or
-root (Linux). Supported: Windows NTFS, Linux ext4.
-
-Safety
-  - The tool never writes to the disk directly and never writes file data
-    itself. It asks the file system to move clusters (Windows: FSCTL_MOVE_FILE,
-    the defragmentation API; Linux: EXT4_IOC_MOVE_EXT, as used by e4defrag).
-  - Each move is atomic: a piece is either fully moved or not moved at all. The
-    file system keeps other programs' reads and writes consistent during the
-    move, so files that are open and being written are safe.
-  - Every file is hashed (SHA-256) before and after. A difference that cannot be
-    explained by another program writing the file stops the run (MISMATCH).
-  - Stopping at any moment, even by closing the window, leaves files intact.
-  - The system volume needs --allow-system-volume. You must type the drive
-    letter (or --confirm X:) before anything is moved.
-
-Steps
-  1/3 Choose files from the report (confirmed slow files, or all with
-      --select all) and check the volume, file system and permissions.
-  2/3 Explain what will happen, show warnings, and ask for confirmation.
-  3/3 For each file, one at a time:
-      a. read it (no OS cache) at normal priority; record SHA-256 and speed
-      b. skip it if it is no longer slow (unless --force)
-      c. ask the file system to move it, in pieces of up to 16 MB
-      d. read it again; compare SHA-256; record the new speed
-
-Progress line in step 3 (wide terminal, then narrow terminal)
-  Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  ETA 3m20s
-  12/340 1.2G/4.5G mv 10 chg 1 fail 0 3m20s
-    moved     files now stored at a new place (includes changed)
-    changed   moved, and another program wrote the file meanwhile (expected)
-    skipped   no longer slow, not movable, gone, or dry run
-    failed    could not be moved or read; the file itself is intact
-
-Statuses in the log (status column)
-  OK            moved; the hash is identical before and after
-  CHANGED       moved; the hash differs because another program wrote the file
-                during the move (its timestamps/USN changed or it was open for
-                writing). This is expected for files in use.
-  SKIP_FAST     no longer slow when re-measured; not moved (use --force to move)
-  SKIP_KIND     a kind that cannot be moved (see detail)
-  SKIP_MISSING  the file no longer exists
-  DRYRUN        --dry-run: measured only
-  MOVE_FAILED   the file system refused a move; the file is intact (see detail)
-  PARTIAL       stopped part way; --resume moves it again
-  MISMATCH      the hash changed and no other writer was detected; the run
-                stops. This should never happen; please report it.
-  CONTROL       control group (--control-fraction): still slow, read only and
-                deliberately not moved, for comparison by verify
-  ERROR         could not open or read the file (see detail)
-
-Log columns
-  before_mbps / before_slow  speed of the read before the move
-  after_mbps / after_slow    speed of the read right after the move. New data is
-                             always fast at first, so this proves little; use
-                             verify a day or more later.
-  time                       when the file was finished (seconds since 1970, UTC)
-
-Options
-  --from FILE            the scan report (required)
-  --out FILE             log file (default: <report>-refresh.csv)
-  --dry-run              re-measure only; nothing is moved; no admin needed
-  --select slow|all      files to take from the report (default: slow)
-  --control-fraction 0   share of the slow files (0 to 1, for example 0.5) that
-                         are only read and not moved (status CONTROL). The choice
-                         is fixed per path. verify then compares rewriting with
-                         reading alone.
-  --force                move even files that are no longer slow
-  --confirm X:           skip the typed confirmation (for scripts)
-  --allow-system-volume  allow refreshing the volume Windows/Linux runs from
-  --resume               continue an interrupted run
-  --max-chunk-mb 16      largest piece moved at once
-  --priority verylow     I/O priority of the moves
-  --measure-priority normal
-                         I/O priority of the before/after reads
-  plus --threshold, --allowance-ms, --chunk-kb, --qd as for scan
-
-Afterwards
-  Tell the SSD that the old places are free: Optimize-Volume -DriveLetter C
-  -ReTrim (Windows, as administrator) or sudo fstrim -v / (Linux).
-
-Examples
-  ssd-refresh refresh --from C-scan.csv --dry-run
-  ssd-refresh refresh --from C-scan.csv --allow-system-volume
-  ssd-refresh refresh --from photos.csv --resume
-
-Exit codes: 0 finished, 1 error or cancelled, 2 needs administrator/root or
-unsupported file system, 3 MISMATCH, 4 stopped early.
-";
-
-const HELP_VERIFY: &str = "\
-ssd-refresh verify --from <refresh log or scan report.csv> [options]
-
-Reads the files listed in a refresh log (or the slow files of a scan report)
-again, straight from the disk, and compares their speed now with the speed
-recorded then. Nothing on the disk is changed. No administrator rights needed
-for files your user can read.
-
-Why wait
-  Right after a refresh, moved files are always fast: new data may still sit in
-  the SSD's fast SLC cache. Whether a refresh lasts shows only days later. verify
-  warns when less than 12 hours have passed.
-
-Groups
-  rewritten   files the refresh moved (OK, CHANGED)
-  read_only   files that were read but not moved: CONTROL (see refresh
-              --control-fraction) and DRYRUN; or, for a scan report, the files
-              the scan found slow
-  Reading alone can also restore speed: an SSD may rewrite data by itself when
-  it needed heavy error correction to read it. Comparing the two groups shows
-  whether rewriting did more than reading.
-
-Steps
-  1/2 Take the files from the source and find out how long ago it was written
-      (the log's time column; for older logs and scan reports, the time the
-      file was last written).
-  2/2 Read each file once, alone, at normal priority, without the OS cache. If
-      it reads slowly, read it a second time and keep the faster time of each
-      extent. A file whose content changed since (other SHA-256, or other size
-      when no hash was recorded) is left out (MODIFIED).
-
-Summary
-  Slow then->now          slow files then (before the move) and now
-  Median MB/s then->now   median file speed then and now
-  'Then' is the read before the move (refresh log) or the scan's result.
-
-Options
-  --from FILE        refresh log or scan report (required)
-  --out FILE         result (default: <source>-verify-<date>-<time>.csv)
-  --sample N         read at most N files per group (fixed per path, so a
-                     later run reads the same files)
-  --select slow|all  scan report only: slow files (default) or all measured
-  plus --threshold, --allowance-ms, --chunk-kb, --qd, --measure-priority as
-  for scan. Use the same --threshold as for the scan.
-
-Result columns
-  path, group, size, before_mbps, before_slow, now_mbps, now_min_extent_mbps,
-  now_slow, reads, status, detail, time
-  status    MEASURED, MODIFIED (written since; left out), MISSING, SKIP_KIND
-            (cannot be measured), ERROR
-
-Examples
-  ssd-refresh verify --from C-scan-refresh.csv
-  ssd-refresh verify --from C-scan.csv --sample 500
-
-Exit codes: 0 finished, 1 error, 4 stopped early.
-";
+mod help;
+use help::{HELP_REFRESH, HELP_SCAN, HELP_VERIFY, USAGE};
 
 struct Args {
     list: Vec<String>,
@@ -308,7 +41,7 @@ impl Args {
     }
     fn num<T: std::str::FromStr>(&mut self, name: &str, default: T) -> Result<T, String> {
         match self.value(name)? {
-            Some(v) => v.parse().map_err(|_| format!("{name}: not a valid number: {v}")),
+            Some(v) => v.parse().map_err(|_| format!("{name}: {v} is not a number")),
             None => Ok(default),
         }
     }
@@ -332,7 +65,7 @@ impl Args {
     }
     fn finish(&self) -> Result<(), String> {
         match self.used.iter().position(|u| !u) {
-            Some(i) => Err(format!("unknown argument: {} (see ssd-refresh help)", self.list[i])),
+            Some(i) => Err(format!("unknown option: {} (see ssd-refresh help)", self.list[i])),
             None => Ok(()),
         }
     }
@@ -430,12 +163,12 @@ fn run() -> Result<i32, String> {
                 Some("all") => true,
                 Some(s) => return Err(format!("--select must be slow or all, not {s}")),
             };
-            let stamp = sys::local_stamp().unwrap_or_else(timestamp);
-            let default_out = from.with_file_name(format!("{}-verify-{stamp}.csv", from.file_stem().unwrap_or_default().to_string_lossy()));
-            let out = a.value("--out")?.map(|s| abs(&s)).unwrap_or(default_out);
-            let o = VerifyOptions { from, out: out.clone(), sample: a.num("--sample", 0)?, select_all, read: read_opts(&mut a)? };
+            // C-refresh.csv -> C-refresh.verify.log, next to the source
+            let log = a.value("--log")?.map(|s| abs(&s)).unwrap_or_else(|| from.with_extension("verify.log"));
+            let out = a.value("--out")?.map(|s| abs(&s));
+            let o = VerifyOptions { from, out, log: log.clone(), sample: a.num("--sample", 0)?, select_all, read: read_opts(&mut a)? };
             a.finish()?;
-            let ctl = Control::new(Some(pause_path(&out)));
+            let ctl = Control::new(Some(pause_path(&log)));
             ctl.install();
             verify::run(&o, ctl).map_err(|e| e.to_string())
         }
@@ -469,7 +202,7 @@ fn run() -> Result<i32, String> {
             println!("Cluster size:  {} bytes", v.block);
             println!("Size / free:   {} / {}", fmt_bytes(v.total_bytes), fmt_bytes(v.free_bytes));
             println!("System volume: {}", if v.is_system { "yes" } else { "no" });
-            println!("Running as administrator/root: {}", if sys::is_elevated() { "yes" } else { "no" });
+            println!("Administrator or root: {}", if sys::is_elevated() { "yes" } else { "no" });
             Ok(0)
         }
         "help" | "-h" => Ok(help(&a.positional(0).unwrap_or_default())),
