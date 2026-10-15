@@ -51,7 +51,7 @@ body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
-  padding: 24px;
+  padding: 0 24px 24px 24px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -99,7 +99,7 @@ body {
 /* Header */
 .app-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-subtle);
@@ -115,6 +115,7 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
+  padding-top: 14px;
 }
 
 .brand-logo {
@@ -151,31 +152,29 @@ body {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 14px;
+  margin-right: -24px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
-/* Custom Frameless Window Controls */
+/* Custom Frameless Window Controls: Pinned to Top-Right */
 .window-controls {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin-left: 4px;
+  gap: 0;
 }
 
 .win-btn {
-  width: 32px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  border: 1px solid transparent;
+  width: 46px;
+  height: 34px;
+  border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-dim);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.12s ease;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -183,14 +182,11 @@ body {
 .win-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-main);
-  border-color: var(--border-subtle);
 }
 
 .win-btn-close:hover {
   background: #e11d48 !important;
   color: #ffffff !important;
-  border-color: transparent !important;
-  box-shadow: 0 0 10px rgba(225, 29, 72, 0.4);
 }
 
 /* Badges & Chips */
@@ -396,8 +392,9 @@ body {
 }
 
 .drive-letter {
-  font-size: 1.15rem;
-  font-weight: 800;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text-main);
 }
 

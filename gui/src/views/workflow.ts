@@ -24,7 +24,6 @@ export function mountWorkflow(store: Store, actions: Actions): void {
   const scan = $("btn-scan");
   const refresh = $("btn-refresh");
   const chip = $("mode-chip");
-  const env = $("env-badge");
 
   scan.addEventListener("click", () => void actions.runScan());
   refresh.addEventListener("click", () => void actions.runRefresh());
@@ -46,14 +45,5 @@ export function mountWorkflow(store: Store, actions: Actions): void {
     }[s.mode];
     chip.textContent = chipText;
     chip.dataset.tone = s.mode;
-
-    if (s.elevated !== null) {
-      env.hidden = false;
-      env.dataset.tone = s.elevated ? "ok" : "plain";
-      env.textContent = s.elevated ? "Administrator" : "Standard user";
-      env.title = s.elevated
-        ? "The scan can read all files."
-        : "Some system files cannot be read. Run as administrator for a full scan.";
-    }
   });
 }
