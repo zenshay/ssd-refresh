@@ -97,6 +97,41 @@ pub fn write_and_open_log(app: AppHandle, content: String) -> Result<(), String>
 }
 
 #[tauri::command]
+pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("explorer")
+            .arg(&dir)
+            .spawn();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_log_as(content: String) -> Result<Option<String>, String> {
+    let file = rfd::FileDialog::new()
+        .set_title("Save Diagnostic Log")
+        .set_file_name("ssd-refresh-diagnostic.log")
+        .add_filter("Log file", &["log", "txt"])
+        .add_filter("All files", &["*"])
+        .save_file();
+
+    if let Some(path) = file {
+        std::fs::write(&path, content).map_err(|e| e.to_string())?;
+        Ok(Some(path.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+
+#[tauri::command]
 pub async fn start_scan(app: AppHandle, state: State<'_, AppState>, root: String) -> Result<ScanOutcome, String> {
     if !Path::new(&root).is_dir() {
         return Err(format!("{root} is not a folder."));

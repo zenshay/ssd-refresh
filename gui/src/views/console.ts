@@ -148,6 +148,7 @@ export function mountConsole(store: Store): void {
   const copyBtn = $<HTMLButtonElement>("btn-copy-log");
   const saveBtn = $<HTMLButtonElement>("btn-save-log");
   const openBtn = $<HTMLButtonElement>("btn-open-log");
+  const openFolderBtn = $<HTMLButtonElement>("btn-open-folder");
   const reportBtn = $<HTMLButtonElement>("btn-report-issue");
   const clearBtn = $<HTMLButtonElement>("btn-clear-log");
   const logView = $<HTMLElement>("console-log-view");
@@ -170,17 +171,17 @@ export function mountConsole(store: Store): void {
     }
   });
 
-  // 2. Save Log to Disk File
-  saveBtn.addEventListener("click", () => {
+  // 2. Save Log to Selected File Path via Native Save Dialog
+  saveBtn.addEventListener("click", async () => {
     const report = buildDiagnosticReport(store);
-    const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ssd-refresh-debug-${Date.now()}.log`;
-    a.click();
-    URL.revokeObjectURL(url);
-    logMessage("info", `Diagnostic log downloaded as ${a.download}`);
+    try {
+      const savedPath = await api.saveLogAs(report);
+      if (savedPath) {
+        logMessage("info", `Diagnostic report saved: ${savedPath}`);
+      }
+    } catch (err) {
+      logMessage("error", `Failed to save log file: ${err}`);
+    }
   });
 
   // 3. Open Diagnostic Report directly in system default text editor
@@ -194,6 +195,16 @@ export function mountConsole(store: Store): void {
       );
     } catch (err) {
       logMessage("error", `Failed to open log file: ${err}`);
+    }
+  });
+
+  // 4. Open Application Logs Directory in File Explorer
+  openFolderBtn.addEventListener("click", async () => {
+    try {
+      await api.openLogFolder();
+      logMessage("info", "Opened logs directory in File Explorer.");
+    } catch (err) {
+      logMessage("error", `Failed to open log folder: ${err}`);
     }
   });
 
