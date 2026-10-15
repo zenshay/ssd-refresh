@@ -40,6 +40,10 @@
   padding: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   background-color: var(--bg-page);
   color: var(--text-main);
@@ -431,6 +435,13 @@ body {
 .spin {
   animation: spin 1s linear infinite;
   transform-origin: center;
+}
+
+.progress-card.is-paused .spin,
+.progress-card.is-stopping .spin,
+.progress-card.is-paused .progress-track.indeterminate .progress-fill,
+.progress-card.is-stopping .progress-track.indeterminate .progress-fill {
+  animation-play-state: paused !important;
 }
 
 @keyframes spin {

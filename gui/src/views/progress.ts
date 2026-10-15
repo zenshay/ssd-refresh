@@ -59,14 +59,21 @@ export function mountProgress(store: Store, actions: Actions): void {
   store.subscribe((s) => {
     const isRunning = s.mode !== "idle";
     card.hidden = !isRunning;
-    if (!isRunning) return;
+    if (!isRunning) {
+      card.classList.remove("is-paused", "is-stopping");
+      return;
+    }
 
-    // Pause button state
+    // Pause and stopping state
     const isPaused = s.paused;
+    const isStopping = s.stopping;
+    card.classList.toggle("is-paused", isPaused);
+    card.classList.toggle("is-stopping", isStopping);
+
     btnPause.dataset.paused = String(isPaused);
-    btnPause.disabled = s.stopping;
-    btnStop.disabled = s.stopping;
-    btnStop.textContent = s.stopping ? "Stopping…" : "Stop";
+    btnPause.disabled = isStopping;
+    btnStop.disabled = isStopping;
+    btnStop.textContent = isStopping ? "Stopping…" : "Stop";
     setIcon(pauseIcon, isPaused ? "play" : "pause", 14);
     pauseLabel.textContent = isPaused ? "Resume" : "Pause";
     pausedBadge.hidden = !isPaused;

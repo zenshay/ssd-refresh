@@ -6,8 +6,7 @@ import path from 'path';
 
 const EXE_PATH = 'F:\\ai-lab\\repos\\ssd-refresh\\target\\debug\\ssd-refresh-gui.exe';
 const OUT_DIR = 'F:\\ai-lab\\repos\\ssd-refresh\\output';
-const SCREENSHOT_PATH = path.join(OUT_DIR, 'gui-cdp-test.png');
-const ARTIFACT_PATH = 'C:\\Users\\User\\.gemini\\antigravity\\brain\\4800c8aa-8174-4c27-b15b-ba372ff6001b\\gui-cdp-test.png';
+const ARTIFACT_DIR = 'C:\\Users\\User\\.gemini\\antigravity\\brain\\4800c8aa-8174-4c27-b15b-ba372ff6001b';
 
 function wait(ms) {
   return new Promise(res => setTimeout(res, ms));
@@ -19,6 +18,15 @@ function checkPort(port) {
       res(r.statusCode === 200);
     }).on('error', () => res(false));
   });
+}
+
+async function saveScreenshot(page, filename) {
+  const localPath = path.join(OUT_DIR, filename);
+  const artifactPath = path.join(ARTIFACT_DIR, filename);
+  await page.screenshot({ path: localPath });
+  try {
+    fs.copyFileSync(localPath, artifactPath);
+  } catch {}
 }
 
 async function run() {
@@ -67,75 +75,101 @@ async function run() {
 
     await wait(1500);
 
-    const drives = await page.evaluate(() => {
-      const cards = Array.from(document.querySelectorAll('#drives .drive'));
-      return cards.map(c => c.innerText.replace(/\s+/g, ' '));
+    // 1. Initial State Check: Progress card MUST be hidden before user clicks scan!
+    const initialState = await page.evaluate(() => {
+      const card = document.getElementById('progress-card');
+      const style = card ? window.getComputedStyle(card) : null;
+      return {
+        cardExists: Boolean(card),
+        cardHiddenAttr: card?.hidden,
+        cardComputedDisplay: style?.display,
+        isSpinning: Boolean(card?.querySelector('.spin')),
+      };
     });
+    console.log('[CDP Test] Initial Ready state:', JSON.stringify(initialState, null, 2));
+    if (initialState.cardComputedDisplay !== 'none') {
+      throw new Error(`Progress card is NOT hidden on initial load! display=${initialState.cardComputedDisplay}`);
+    }
+    console.log('[CDP Test] PASS: Progress card is completely hidden before clicking scan ✓');
 
-    console.log('[CDP Test] Found drives count:', drives.length);
-    drives.forEach((d, i) => console.log(`  Drive #${i + 1}: ${d}`));
+    await saveScreenshot(page, 'gui-01-ready.png');
 
-    // Check SMART
-    const hasSmart = drives.some(d => d.includes('SMART'));
-    console.log('[CDP Test] Has SMART status indicator:', hasSmart ? 'YES ✓' : 'NO ✗');
-
-    // Trigger Safe Scan
-    console.log('[CDP Test] Triggering Start Safe Scan (Step 1)...');
+    // 2. Trigger Safe Scan (Step 1)
+    console.log('[CDP Test] Clicking Start Safe Scan (Step 1)...');
     await page.click('#btn-scan');
     await wait(800);
 
-    const scanState = await page.evaluate(() => ({
-      mode: document.getElementById('app')?.dataset.mode,
-      title: document.getElementById('progress-title')?.innerText,
-      subtitle: document.getElementById('progress-subtitle')?.innerText,
-      statFiles: document.getElementById('stat-files')?.innerText,
-      hasIndeterminate: document.getElementById('progress-track')?.classList.contains('indeterminate'),
-      cardHidden: document.getElementById('progress-card')?.hidden,
-    }));
+    const scanState = await page.evaluate(() => {
+      const card = document.getElementById('progress-card');
+      const style = card ? window.getComputedStyle(card) : null;
+      return {
+        mode: document.getElementById('app')?.dataset.mode,
+        title: document.getElementById('progress-title')?.innerText,
+        subtitle: document.getElementById('progress-subtitle')?.innerText,
+        statFiles: document.getElementById('stat-files')?.innerText,
+        hasIndeterminate: document.getElementById('progress-track')?.classList.contains('indeterminate'),
+        cardComputedDisplay: style?.display,
+      };
+    });
     console.log('[CDP Test] Scan active state (Step 1):', JSON.stringify(scanState, null, 2));
+    if (scanState.cardComputedDisplay === 'none') {
+      throw new Error('Progress card failed to become visible after clicking scan!');
+    }
 
-    // Test Pause
-    console.log('[CDP Test] Triggering Pause during Step 1...');
+    // 3. Test Pause: Verify animation-play-state becomes "paused"
+    console.log('[CDP Test] Clicking Pause...');
     await page.click('#btn-pause');
     await wait(600);
 
-    const pauseState = await page.evaluate(() => ({
-      pausedBadgeHidden: document.getElementById('badge-paused')?.hidden,
-      pauseBtnText: document.getElementById('btn-pause-label')?.innerText,
-      statEta: document.getElementById('stat-eta')?.innerText,
-    }));
-    console.log('[CDP Test] Pause state:', JSON.stringify(pauseState, null, 2));
+    const pauseCheck = await page.evaluate(() => {
+      const card = document.getElementById('progress-card');
+      const spin = card?.querySelector('.spin');
+      const fill = card?.querySelector('.progress-fill');
+      const spinStyle = spin ? window.getComputedStyle(spin) : null;
+      const fillStyle = fill ? window.getComputedStyle(fill) : null;
 
-    // Capture screenshot while paused to see badge and UI
-    console.log('[CDP Test] Capturing screenshot while paused...');
-    await page.screenshot({ path: SCREENSHOT_PATH });
-    try {
-      fs.copyFileSync(SCREENSHOT_PATH, ARTIFACT_PATH);
-    } catch (e) {
-      console.warn('Failed to copy to artifact dir:', e);
+      return {
+        cardHasIsPaused: card?.classList.contains('is-paused'),
+        pausedBadgeVisible: !document.getElementById('badge-paused')?.hidden,
+        pauseBtnText: document.getElementById('btn-pause-label')?.innerText,
+        spinAnimationPlayState: spinStyle?.animationPlayState,
+        fillAnimationPlayState: fillStyle?.animationPlayState,
+      };
+    });
+    console.log('[CDP Test] Pause state inspection:', JSON.stringify(pauseCheck, null, 2));
+
+    if (pauseCheck.spinAnimationPlayState !== 'paused' || pauseCheck.fillAnimationPlayState !== 'paused') {
+      throw new Error(`Animations are NOT paused! spin=${pauseCheck.spinAnimationPlayState}, fill=${pauseCheck.fillAnimationPlayState}`);
     }
+    console.log('[CDP Test] PASS: Both spinner and progress track animations are FROZEN during pause ✓');
 
-    // Test Stop
-    console.log('[CDP Test] Triggering Stop...');
+    await saveScreenshot(page, 'gui-02-paused.png');
+
+    // 4. Test Stop: Verify card completely disappears and notice shows up
+    console.log('[CDP Test] Clicking Stop...');
     await page.click('#btn-stop');
-    await wait(1500);
+    await wait(1800);
 
-    const stopState = await page.evaluate(() => ({
-      mode: document.getElementById('app')?.dataset.mode,
-      cardHidden: document.getElementById('progress-card')?.hidden,
-      noticeVisible: !document.getElementById('notice-card')?.hidden,
-      noticeTitle: document.getElementById('notice-title')?.innerText,
-      noticeBody: document.getElementById('notice-body')?.innerText,
-    }));
-    console.log('[CDP Test] Post-stop state:', JSON.stringify(stopState, null, 2));
+    const postStop = await page.evaluate(() => {
+      const card = document.getElementById('progress-card');
+      const style = card ? window.getComputedStyle(card) : null;
+      return {
+        mode: document.getElementById('app')?.dataset.mode,
+        cardComputedDisplay: style?.display,
+        noticeVisible: !document.getElementById('notice-card')?.hidden,
+        noticeTitle: document.getElementById('notice-title')?.innerText,
+      };
+    });
+    console.log('[CDP Test] Post-stop inspection:', JSON.stringify(postStop, null, 2));
 
-    console.log('[CDP Test] Capturing final state screenshot...');
-    await page.screenshot({ path: SCREENSHOT_PATH });
-    try {
-      fs.copyFileSync(SCREENSHOT_PATH, ARTIFACT_PATH);
-    } catch {}
+    if (postStop.cardComputedDisplay !== 'none') {
+      throw new Error(`Progress card is NOT hidden after stop! display=${postStop.cardComputedDisplay}`);
+    }
+    console.log('[CDP Test] PASS: Progress card completely disappeared after stop ✓');
 
-    console.log('[CDP Test] All CDP checks verified successfully!');
+    await saveScreenshot(page, 'gui-03-stopped.png');
+
+    console.log('[CDP Test] All CDP tests passed with 100% precision!');
   } finally {
     if (browser) {
       try { await browser.disconnect(); } catch {}
