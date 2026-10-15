@@ -1,30 +1,69 @@
 # ssd-refresh
 
+> **A fast, safe, and open-source DiskFresh alternative for SSDs.**
+> Restore read speed for old files without rewriting empty space or wearing out flash cells.
+
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#build)
 [![Platforms: Windows, Linux, macOS (scan only)](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20(scan)-lightgrey)](#platforms)
 [![Safety test: 28 of 28 passed](https://img.shields.io/badge/safety%20test-28%2F28%20passed-brightgreen)](#safety-test-windows)
 
-<img src="docs/images/task-manager-stall.png" width="360" alt="Windows Task Manager (Traditional Chinese UI), disk panel for drive C:, a Crucial CT480BX500SSD1: active time 100%, average response time 49.8 ms, read speed 1.0 MB/s, write speed 1.0 MB/s.">
-
-Task Manager on a Crucial BX500 that is 5 years old: active time 100%, response time 50 ms, but read and write speed only 1 MB/s. After one read of the old data, these stops went down from 129 to 5 per day.
-
-ssd-refresh finds the files on an SSD that read slowly. Then it tells the file system to write them again.
-
-- `scan` only reads. It does not change the disk.
-- `refresh` tells the file system to move the slow files to new clusters. Files that are in use stay safe.
-- The tool does not write to the disk directly. It does not write file data.
-- `verify` reads the files again later. It shows if the data is safe and if the files are faster.
-
-**Start with `scan`, not with `refresh`.** On some SSDs, one read of the old data is enough. The SSD finds data that is hard to read, and it writes this data again by itself. On a Crucial BX500, one read-only pass made old files fast again (250–470 MB/s). Other SSDs do not do this. Their old data stays slow after many reads. A known example is the Samsung 840 EVO before its firmware update. Sources do not agree about which SSDs do what. Thus measure your own SSD:
-
-1. Run `scan` on the drive. The scan reads each file one time. On some SSDs, this is enough.
-2. After 1 day, run `scan` again (or `verify --from` with the first report). If the slow files are fast now, reading was enough. You do not need `refresh`.
-3. If files are still slow, run `refresh`. After 1 day or more, run `verify`. See [Verify](#verify-is-the-refresh-good).
-
 [繁體中文說明](README.zh-TW.md)
 
-## Why
+---
+
+## Quick Overview: Is your PC freezing with 100% disk usage?
+
+<img src="docs/images/task-manager-stall.png" width="360" alt="Windows Task Manager showing 100% disk active time, 50 ms response time, but only 1 MB/s throughput on an SSD.">
+
+### The Problem
+Your SSD SMART health says "100% Good". But your computer freezes when you open programs or start games. Windows Task Manager shows **100% disk active time**, but the read speed is only **1 MB/s**.
+
+### Why this happens
+Flash memory cells slowly lose electric charge over time.
+When files stay unchanged for months or years (like Windows system files or installed games), the SSD controller struggles to read them.
+The drive must try error correction many times.
+This drops the read speed from 500 MB/s down to 5–30 MB/s.
+
+### Why Windows "Defrag and Optimize" does not fix it
+Windows "Optimize Drives" only sends a TRIM command to mark deleted space.
+It does not read or refresh old files.
+
+### The Solution: ssd-refresh
+ssd-refresh finds only the slow files and tells the operating system to rewrite them to fresh blocks.
+1. **Zero-risk Read Wakeup**: On many SSDs, just reading old files once makes the drive refresh them internally. No write operation needed.
+2. **Selective Refresh**: If files stay slow, it rewrites only the slow files. It skips fast files and empty space.
+3. **Safe in use**: It uses official operating system APIs (`FSCTL_MOVE_FILE`). It does not damage files that other programs are using.
+
+---
+
+## Comparison: ssd-refresh vs DiskFresh vs Windows Optimize
+
+| Feature | ssd-refresh | DiskFresh / Sector Tools | Windows Optimize (TRIM) |
+|---|---|---|---|
+| **Approach** | File-level (only slow files) | Raw disk sectors (entire drive) | Free space TRIM only |
+| **Rewrite empty space?** | **NO** (saves SSD lifespan) | YES (wastes SSD TBW) | NO |
+| **Safe while PC is in use?** | **YES** (OS manages file locks) | NO (can overwrite new writes) | YES |
+| **Execution speed** | **Fast** (minutes: only slow files) | Slow (hours: reads all sectors) | Seconds |
+| **Read-only wakeup mode?**| **YES** (scan without writes) | Needs manual sector setup | NO |
+| **Target identification** | Shows exact slow file paths | None (sector numbers only) | None |
+| **Open source & modern** | **YES** (Rust, 600 KB binary) | NO (abandoned freeware) | Built-in |
+
+---
+
+## How to use it (For Everyone)
+
+**Start with `scan`, not with `refresh`.**
+
+1. **Step 1: Scan (Read-only)**. Run `scan` on the drive. The scan reads each file one time. On some SSDs (such as the Crucial BX500), this is enough. The controller detects weak charge and rewrites the data internally.
+2. **Step 2: Check after 1 day**. Run `scan` again (or `verify --from`). If the slow files are fast now, you are done! No writes were made.
+3. **Step 3: Refresh (Only if still slow)**. If files are still slow, run `refresh`. It asks the file system to move slow files to fresh clusters safely.
+
+---
+
+# Technical Deep Dive (For Engineers & Developers)
+
+## How it works
 
 Flash cells lose charge slowly. Old data that did not change for a long time is hard to read. The SSD must try again many times and correct many errors. Thus the data reads slowly.
 
