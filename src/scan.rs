@@ -186,7 +186,11 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
         drop(tx);
         for (row, first) in rx {
             match first {
-                Some(res) => pending.push((row, res)),
+                Some(res) => {
+                    // 可疑的檔案已經讀過一次，位元組先算進進度；確認為慢之後再加到「慢」的計數
+                    prog.add_file(row.size, false, false);
+                    pending.push((row, res));
+                }
                 None => {
                     if let Err(e) = w.row(row.values()) {
                         write_err.get_or_insert(e);
@@ -232,7 +236,9 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
     if !stopped {
         for (row, _) in &pending {
             w.row(row.values())?;
-            prog.add_file(row.size, row.slow, row.status == "ERROR");
+            if row.slow {
+                prog.add_slow();
+            }
         }
     }
     prog.finish();

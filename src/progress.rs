@@ -69,6 +69,11 @@ impl Progress {
         }
     }
 
+    /// 事後確認為慢的檔案（位元組已經在 add_file 時計入）
+    pub fn add_slow(&self) {
+        self.inner.slow.fetch_add(1, Ordering::Relaxed);
+    }
+
     pub fn log(&self, msg: &str) {
         self.inner.log(msg);
     }
