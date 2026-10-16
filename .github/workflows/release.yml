@@ -14,6 +14,9 @@ on:
 permissions:
   contents: write
 
+env:
+  RELEASE_TAG: ${{ github.event.inputs.tag_name || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0') }}
+
 jobs:
   build-windows:
     name: Windows (${{ matrix.target }})
@@ -70,17 +73,17 @@ jobs:
           
           # GUI Archive
           $guiExe = "target/${{ matrix.target }}/release/ssd-refresh-gui.exe"
-          Compress-Archive -Path $guiExe, "README.md", "README.zh-TW.md" -DestinationPath "dist-out/ssd-refresh-gui-${{ matrix.arch }}.zip" -Force
-          Copy-Item $guiExe -Destination "dist-out/ssd-refresh-gui-${{ matrix.arch }}.exe"
+          Compress-Archive -Path $guiExe, "README.md", "README.zh-TW.md" -DestinationPath "dist-out/ssd-refresh-gui-$env:RELEASE_TAG-windows-${{ matrix.arch }}.zip" -Force
+          Copy-Item $guiExe -Destination "dist-out/ssd-refresh-gui-$env:RELEASE_TAG-windows-${{ matrix.arch }}.exe"
           
           # CLI Archive
           $cliExe = "target/${{ matrix.target }}/release/ssd-refresh.exe"
-          Compress-Archive -Path $cliExe, "README.md", "README.zh-TW.md" -DestinationPath "dist-out/ssd-refresh-cli-${{ matrix.arch }}.zip" -Force
+          Compress-Archive -Path $cliExe, "README.md", "README.zh-TW.md" -DestinationPath "dist-out/ssd-refresh-cli-$env:RELEASE_TAG-windows-${{ matrix.arch }}.zip" -Force
 
       - name: Upload Windows Assets to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0') }}
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist-out/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -105,12 +108,12 @@ jobs:
         run: |
           mkdir -p dist-out
           cp README.md README.zh-TW.md target/release/
-          tar -czf dist-out/ssd-refresh-cli-linux-x64.tar.gz -C target/release ssd-refresh README.md README.zh-TW.md
+          tar -czf dist-out/ssd-refresh-cli-$RELEASE_TAG-linux-x64.tar.gz -C target/release ssd-refresh README.md README.zh-TW.md
 
       - name: Upload Linux Assets to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0') }}
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist-out/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -139,12 +142,12 @@ jobs:
 
       - name: Package macOS CLI Artifacts
         run: |
-          tar -czf dist-out/ssd-refresh-cli-macos-universal.tar.gz -C dist-out/universal ssd-refresh README.md README.zh-TW.md
+          tar -czf dist-out/ssd-refresh-cli-$RELEASE_TAG-macos-universal.tar.gz -C dist-out/universal ssd-refresh README.md README.zh-TW.md
 
       - name: Upload macOS Assets to Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.tag_name || (startsWith(github.ref, 'refs/tags/') && github.ref_name || 'v1.0.0') }}
-          files: dist-out/ssd-refresh-cli-macos-universal.tar.gz
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: dist-out/ssd-refresh-cli-$RELEASE_TAG-macos-universal.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
