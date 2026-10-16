@@ -3,9 +3,11 @@
 > **A fast, safe, and open-source DiskFresh alternative for SSDs.**
 > Restore read speed for old files without rewriting empty space or wearing out flash cells.
 
+[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#build)
-[![Platforms: Windows, Linux, macOS (scan only)](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20(scan)-lightgrey)](#platforms)
+[![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#platforms)
+[![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#platforms)
 [![Safety test: 28 of 28 passed](https://img.shields.io/badge/safety%20test-28%2F28%20passed-brightgreen)](#safety-test-windows)
 
 [繁體中文說明](README.zh-TW.md)
@@ -119,24 +121,39 @@ Results: *read-only pass enough* (one read made the files fast), *rewrite needed
 
 Please report your drive with the [drive report](../../issues/new?template=drive-report.yml) issue template. The best report has a `verify` summary with a control group.
 
-## Platforms
+## Download
 
-| Platform | File system | Scan | Refresh |
-|---|---|---|---|
-| Windows 10/11 | NTFS | yes | yes, `FSCTL_MOVE_FILE`; passed the VHDX test |
-| Linux | ext4 | yes | yes, `EXT4_IOC_MOVE_EXT`; not tested on a real system |
-| Linux | btrfs, XFS, others | yes | no |
-| macOS | APFS | yes (the full file is one measurement) | no: APFS has no API that moves a file in use safely |
+Get pre-compiled binaries from [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases).
+
+| Package | Platform & Architecture | Description |
+|---|---|---|
+| **`ssd-refresh-gui-x64.zip`** | Windows 10/11 (`x86_64`) | Portable desktop GUI. Unzip and run. |
+| **`ssd-refresh-gui-arm64.zip`** | Windows 11 on ARM (`aarch64`) | Native for Copilot+ PC and Snapdragon X. |
+| **`ssd-refresh-cli-x64.zip`** | Windows 10/11 (`x86_64`) | Command-line tool. |
+| **`ssd-refresh-cli-arm64.zip`** | Windows on ARM (`aarch64`) | Command-line tool for ARM64 Windows. |
+| **`ssd-refresh-cli-linux-x64.tar.gz`** | Linux (`x86_64`) | Command-line tool for Linux and Steam Deck. |
+| **`ssd-refresh-cli-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | Universal CLI (scan mode only). |
+
+## Platforms & Architectures
+
+| Platform | Architectures | File system | Scan | Refresh |
+|---|---|---|---|---|
+| Windows 10/11 | `x86_64`, `aarch64` (ARM64) | NTFS | yes | yes (`FSCTL_MOVE_FILE`) |
+| Linux | `x86_64`, `aarch64` (ARM64) | ext4 | yes | yes (`EXT4_IOC_MOVE_EXT`) |
+| Linux | `x86_64`, `aarch64` (ARM64) | btrfs, XFS | yes | no |
+| macOS | `Apple Silicon`, `Intel` | APFS | yes | no (APFS has no block move API) |
 
 ## Build
 
 You need Rust 1.83 or newer.
 
 ```bash
-cargo build --release
-```
+# Build CLI
+cargo build --release --bin ssd-refresh
 
-The program is `target/release/ssd-refresh` (`ssd-refresh.exe` on Windows). It is approximately 600 KB. It needs no runtime. `refresh-test` is a tool for the safety test.
+# Build Desktop GUI
+cargo build --release -p ssd-refresh-gui
+```
 
 ## Quick start (Windows)
 

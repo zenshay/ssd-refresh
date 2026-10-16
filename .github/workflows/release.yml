@@ -1,0 +1,147 @@
+name: Release Build & Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Windows (${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Node & pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: gui/pnpm-lock.yaml
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd gui
+          pnpm install --frozen-lockfile
+
+      - name: Build Frontend
+        run: |
+          cd gui
+          pnpm run build
+
+      - name: Build GUI Binary (${{ matrix.target }})
+        run: |
+          cargo build --release --target ${{ matrix.target }} -p ssd-refresh-gui
+
+      - name: Build CLI Binary (${{ matrix.target }})
+        run: |
+          cargo build --release --target ${{ matrix.target }} --bin ssd-refresh
+
+      - name: Package Windows Artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist-out | Out-Null
+          
+          # GUI Archive
+          $guiExe = "target/${{ matrix.target }}/release/ssd-refresh-gui.exe"
+          Compress-Archive -Path $guiExe, "README.md", "README.zh-TW.md" -DestinationPath "dist-out/ssd-refresh-gui-${{ matrix.arch }}.zip" -Force
+          Copy-Item $guiExe -Destination "dist-out/ssd-refresh-gui-${{ matrix.arch }}.exe"
+          
+          # CLI Archive
+          $cliExe = "target/${{ matrix.target }}/release/ssd-refresh.exe"
+          Compress-Archive -Path $cliExe, "README.md", "README.zh-TW.md" -DestinationPath "dist-out/ssd-refresh-cli-${{ matrix.arch }}.zip" -Force
+
+      - name: Upload Windows Assets to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: dist-out/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    name: Linux (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Build CLI Binary
+        run: |
+          cargo build --release --bin ssd-refresh
+
+      - name: Package Linux CLI Artifacts
+        run: |
+          mkdir -p dist-out
+          cp README.md README.zh-TW.md target/release/
+          tar -czf dist-out/ssd-refresh-cli-linux-x64.tar.gz -C target/release ssd-refresh README.md README.zh-TW.md
+
+      - name: Upload Linux Assets to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: dist-out/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    name: macOS (Universal CLI)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin, aarch64-apple-darwin
+
+      - name: Build CLI for both architectures
+        run: |
+          cargo build --release --target x86_64-apple-darwin --bin ssd-refresh
+          cargo build --release --target aarch64-apple-darwin --bin ssd-refresh
+          mkdir -p dist-out/universal
+          lipo -create -output dist-out/universal/ssd-refresh \
+            target/x86_64-apple-darwin/release/ssd-refresh \
+            target/aarch64-apple-darwin/release/ssd-refresh
+          cp README.md README.zh-TW.md dist-out/universal/
+
+      - name: Package macOS CLI Artifacts
+        run: |
+          tar -czf dist-out/ssd-refresh-cli-macos-universal.tar.gz -C dist-out/universal ssd-refresh README.md README.zh-TW.md
+
+      - name: Upload macOS Assets to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: dist-out/ssd-refresh-cli-macos-universal.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

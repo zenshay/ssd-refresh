@@ -75,6 +75,14 @@ pub fn open_url(url: String) {
             .args(["/C", "start", "", &url])
             .spawn();
     }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&url).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    }
 }
 
 #[tauri::command]
@@ -93,6 +101,14 @@ pub fn write_and_open_log(app: AppHandle, content: String) -> Result<(), String>
             .args(["/C", "start", "", &path.to_string_lossy()])
             .spawn();
     }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&path).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+    }
     Ok(())
 }
 
@@ -109,6 +125,14 @@ pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
         let _ = std::process::Command::new("explorer")
             .arg(&dir)
             .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&dir).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
     }
     Ok(())
 }

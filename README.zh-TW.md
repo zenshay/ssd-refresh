@@ -3,9 +3,11 @@
 > **更快、更安全的開源 DiskFresh 替代工具（DiskFresh Alternative）。**
 > 專為 SSD 設計：恢復舊檔案的讀取速度，不重寫空白磁區，不浪費快閃記憶體壽命。
 
+[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#授權)
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#建置)
-[![Platforms: Windows, Linux, macOS (scan only)](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20(scan)-lightgrey)](#支援的平台)
+[![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#支援的平台與架構)
+[![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#支援的平台與架構)
 [![Safety test: 28 of 28 passed](https://img.shields.io/badge/safety%20test-28%2F28%20passed-brightgreen)](#安全測試windows)
 
 [English](README.md)
@@ -119,24 +121,39 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 
 歡迎用 [drive report](../../issues/new?template=drive-report.yml) 範本回報你的磁碟。附上含對照組的 `verify` 摘要最有幫助。
 
-## 支援的平台
+## 下載
 
-| 平台 | 檔案系統 | 掃描 | 刷新 |
-|---|---|---|---|
-| Windows 10/11 | NTFS | 支援 | 支援（`FSCTL_MOVE_FILE`），已通過 VHDX 測試 |
-| Linux | ext4 | 支援 | 支援（`EXT4_IOC_MOVE_EXT`），尚未實機驗證 |
-| Linux | btrfs、XFS、其他 | 支援 | 不支援 |
-| macOS | APFS | 支援（整個檔案當成一段測速） | 不支援：APFS 沒有能安全搬移使用中檔案的 API |
+至 [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases) 下載預先編譯好的安裝包：
+
+| 套件檔名 | 適用平台與架構 | 說明 |
+|---|---|---|
+| **`ssd-refresh-gui-x64.zip`** | Windows 10/11 (`x86_64`) | 綠色免安裝 GUI 桌面版。解壓縮即可使用。 |
+| **`ssd-refresh-gui-arm64.zip`** | Windows 11 on ARM (`aarch64`) | 原生支援 Copilot+ PC 與 Snapdragon X Elite 筆電。 |
+| **`ssd-refresh-cli-x64.zip`** | Windows 10/11 (`x86_64`) | 純命令列工具。 |
+| **`ssd-refresh-cli-arm64.zip`** | Windows on ARM (`aarch64`) | ARM64 Windows 命令列工具。 |
+| **`ssd-refresh-cli-linux-x64.tar.gz`** | Linux (`x86_64`) | Linux 與 Steam Deck 專用 CLI 工具。 |
+| **`ssd-refresh-cli-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | 通用版 CLI 工具（僅支援唯讀掃描喚醒）。 |
+
+## 支援的平台與架構
+
+| 平台 | 硬體架構 | 檔案系統 | 掃描 | 刷新 |
+|---|---|---|---|---|
+| Windows 10/11 | `x86_64`, `aarch64` (ARM64) | NTFS | 支援 | 支援（`FSCTL_MOVE_FILE`），已通過 VHDX 測試 |
+| Linux | `x86_64`, `aarch64` (ARM64) | ext4 | 支援 | 支援（`EXT4_IOC_MOVE_EXT`） |
+| Linux | `x86_64`, `aarch64` (ARM64) | btrfs、XFS | 支援 | 不支援 |
+| macOS | `Apple Silicon`, `Intel` | APFS | 支援（整檔測速） | 不支援：APFS 沒有能安全搬移使用中檔案的 API |
 
 ## 建置
 
 需要 Rust 1.83 以上。
 
 ```bash
-cargo build --release
-```
+# 編譯 CLI 工具
+cargo build --release --bin ssd-refresh
 
-執行檔在 `target/release/ssd-refresh`（Windows 是 `.exe`），約 600 KB，不需要另外安裝執行階段。`refresh-test` 是安全測試用的輔助程式。
+# 編譯桌面 GUI 應用程式
+cargo build --release -p ssd-refresh-gui
+```
 
 程式的畫面與說明都是英文。`ssd-refresh help scan`、`ssd-refresh help refresh` 有每個選項、進度欄位與狀態的完整說明。
 
