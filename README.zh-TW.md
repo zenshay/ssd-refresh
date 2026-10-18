@@ -2,7 +2,7 @@
 
 <h1>ssd-refresh（繁體中文說明）</h1>
 
-[![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
+[![Release: v1.0.1](https://img.shields.io/badge/release-v1.0.1-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#授權)
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#建置)
 [![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#支援的平台與架構)
