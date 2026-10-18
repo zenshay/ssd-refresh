@@ -10,6 +10,7 @@ function Invoke-Check([string]$Name, [scriptblock]$Command) {
     if ($LASTEXITCODE -ne 0) { throw "Check failed: $Name (exit $LASTEXITCODE)" }
 }
 
+& (Join-Path $root 'scripts/test-paths.ps1')
 & (Join-Path $root 'scripts/check-architecture.ps1')
 & (Join-Path $root 'scripts/test-architecture.ps1')
 $cargoOptions = @('--manifest-path', $manifest)

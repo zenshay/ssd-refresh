@@ -1,5 +1,6 @@
 param([string]$Root = (Split-Path $PSScriptRoot -Parent))
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'paths.ps1')
 
 function Get-AstNodes([string]$Kind, [string[]]$Paths) {
     $json = & ast-grep run --kind $Kind --json=compact @Paths
@@ -32,7 +33,7 @@ foreach ($kind in @('scoped_identifier', 'scoped_type_identifier')) {
     foreach ($node in (Get-AstNodes $kind $corePaths)) {
         if ($node.text -match '^crate::([a-z_]+)') {
             $dependency = $Matches[1]
-            $relative = [IO.Path]::GetRelativePath((Join-Path $Root 'src'), $node.file).Replace('\', '/')
+            $relative = Get-ChildRelativePath (Join-Path $Root 'src') $node.file
             $module = $relative.Split('/')[0].Replace('.rs', '')
             if ($dependency -ne $module -and $dependency -notin $allowed[$module]) {
                 throw "Dependency is not allowed: $module -> $dependency"
@@ -64,14 +65,14 @@ foreach ($node in (Get-AstNodes 'function_item' $corePaths)) {
 $guiRoot = Join-Path $Root 'gui/src'
 $graph = @{}
 foreach ($node in (Get-AstNodes 'import_statement' @($guiRoot))) {
-    $module = [IO.Path]::GetRelativePath($guiRoot, $node.file).Replace('\', '/')
+    $module = Get-ChildRelativePath $guiRoot $node.file
     if (-not $graph.ContainsKey($module)) { $graph[$module] = @() }
     if ($node.text -match 'from\s+["'']([^"'']+)["'']') {
         $target = $Matches[1]
         if ($target.StartsWith('.')) {
             $fullPath = [IO.Path]::GetFullPath((Join-Path (Split-Path $node.file -Parent) "$target.ts"))
             if (-not (Test-Path -LiteralPath $fullPath)) { throw "Missing import target: $target" }
-            $dependency = [IO.Path]::GetRelativePath($guiRoot, $fullPath).Replace('\', '/')
+            $dependency = Get-ChildRelativePath $guiRoot $fullPath
             if ($module -in @('actions.ts', 'store.ts', 'diagnostics.ts') -and $dependency.StartsWith('views/')) {
                 throw "Model imports a view: $module -> $dependency"
             }
