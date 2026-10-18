@@ -582,6 +582,14 @@ Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-re
 - 修改程式一次都沒有遇到共用衝突。
 - 有一次搬移的目標位置剛好被用掉，程式重讀點陣圖後成功。
 
+### 開發檢查
+
+Windows 執行 `node check.mjs`。Linux 與 macOS 執行 `node check.mjs --core-only`。
+共用檢查需要 Node、Rust、pnpm、fd 與 ast-grep，不需要 PowerShell。
+Windows 原有的 `check.ps1` 入口仍可使用。
+預設檢查使用合成資料，不會掃描或刷新真實磁碟。
+完整步驟與 WSL2 ext4 實測結果見 [架構文件](docs/architecture.md)。
+
 ### 授權
 
 採用雙重授權，使用者可任選其一：

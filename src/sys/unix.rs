@@ -45,7 +45,7 @@ pub fn local_clock_after(secs: u64) -> Option<String> {
         .ok()?
         .as_secs()
         + secs;
-    let t = now as libc::time_t;
+    let t = now.try_into().ok()?;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
         return None;
@@ -64,7 +64,9 @@ fn local_now() -> Option<libc::tm> {
     let t = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?
-        .as_secs() as libc::time_t;
+        .as_secs()
+        .try_into()
+        .ok()?;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
         return None;

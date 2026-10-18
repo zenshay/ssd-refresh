@@ -100,4 +100,26 @@ The same 12 mutations then failed their tests.
 - Frontend types, lint, and build: passed.
 - Original lifetime probe: Control released, worker stopped, updates after drop: 0.
 
-Linux and macOS checks need CI results. No VHDX or physical volume test ran in this architecture pass.
+No VHDX or physical volume test ran in this architecture pass.
+
+## WSL2 check result: 2026-10-18
+
+The local WSL2 distribution was Docker Desktop with Linux 6.18.54.1.
+It had no Rust or Node installation.
+Windows cross-compiled the core and CLI tests for `x86_64-unknown-linux-musl` with the Rust linker.
+WSL2 executed those Linux programs. No Windows executable replaced a Linux test.
+
+- Linux core tests: 26 passed. CLI tests: 3 passed.
+- Linux musl Clippy warnings: 0.
+- An isolated ext4 loop image passed scan, refresh, verify, stop, and resume checks.
+- All 8 files moved. Their SHA-256, inode, size, permissions, owner, group, and modification time stayed the same.
+- The test checked modification time with nanosecond precision.
+- The refresh log had 8 unique successful rows and no move failures.
+- Offline `e2fsck -f -n` passed. The test unmounted and deleted its image.
+
+Run `sh test/run-ext4-test.sh <absolute CLI path> <new absolute report folder>` as root on Linux.
+The script creates its own 256 MiB image with 4 KiB ext4 blocks.
+It does not accept an existing device. The report folder must not exist.
+This test does not check concurrent writers, power loss, or physical SSD speed.
+The shared Node checks and native Tauri tests did not run inside this WSL distribution.
+macOS needs its own native check results.

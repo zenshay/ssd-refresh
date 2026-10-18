@@ -592,6 +592,9 @@ All 15 checks passed (the test before `verify`).
 ### Development checks
 
 See [Architecture](docs/architecture.md) for module boundaries and the one-command check.
+Run `node check.mjs` on Windows, or `node check.mjs --core-only` on Linux and macOS.
+Shared checks need Node, Rust, pnpm, fd, and ast-grep. They do not need PowerShell.
+The Windows `check.ps1` entry point is still available.
 The default checks use synthetic data. They do not scan or refresh a real drive.
 
 ### License

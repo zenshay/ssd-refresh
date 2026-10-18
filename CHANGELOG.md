@@ -4,6 +4,8 @@
 
 - Move shared checks and AST queries to Node. Keep the Windows PowerShell entry points.
 - Remove the PowerShell requirement from Linux and macOS shared checks.
+- Add an isolated Linux ext4 test for moves, stop, resume, hashes, metadata, and filesystem checks.
+- Remove deprecated musl time type casts. Check the integer range before local time conversion.
 
 ## 1.0.1
 
