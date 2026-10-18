@@ -1,8 +1,5 @@
 # ssd-refresh（繁體中文說明）
 
-> **更快、更安全的開源 DiskFresh 替代工具（DiskFresh Alternative）。**
-> 專為 SSD 設計：恢復舊檔案的讀取速度，不重寫空白磁區，不浪費快閃記憶體壽命。
-
 [![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#授權)
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#建置)
@@ -12,34 +9,66 @@
 
 [English](README.md)
 
+**舊檔案讀取變慢？先做唯讀掃描。**
+
+![四格漫畫：電腦卡住，SSD 精靈疲倦；儲存的電荷流失；ssd-refresh 讀取檔案；掃描有效時，SSD 恢復笑容。](docs/images/refresh-comic.zh-TW.svg)
+
+## 電腦常常卡住嗎？
+
+Windows 可能顯示**磁碟使用率 100%**，讀取卻只有 **1 MB/s**。
+SSD 內儲存的電荷會慢慢流失。舊檔案可能因此變慢。
+ssd-refresh 找出慢檔案，並讀取檔案。
+部分 SSD 會因此恢復讀取速度。
+效果取決於磁碟。漫畫呈現的是一種可能結果。
+
+## 下載與開始
+
+從 [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases) 下載 Windows 桌面版。
+Windows 10/11 選 `ssd-refresh-gui-x64.zip`。
+Windows on ARM 選 `ssd-refresh-gui-arm64.zip`。
+解壓縮 ZIP 檔案，再執行程式。程式介面使用英文。
+其他系統與命令列工具，請看[完整下載清單](#下載)。
+
+1. 先備份重要檔案。
+2. 先執行 `scan`。掃描會讀取檔案並測量速度。
+3. 隔 1 天再掃描。若檔案讀取已恢復，就到這裡停止。
+4. 若檔案仍然慢，先讀[刷新說明](#刷新)與[風險](#風險)，再使用 `refresh`。
+
+**scan 會重寫檔案嗎？NO。** 工具只讀取檔案，並儲存報告。
+SSD 可能在讀取後自行重寫內部資料。
+**refresh 會寫入資料嗎？YES。** 它會搬移慢檔案，並跳過空白空間。
+這個工具不能修好故障的磁碟。
+
 ---
 
-## 快速導覽：明明 SSD 沒壞，為什麼電腦老是卡頓？
+## 給開發者
+
+### 症狀與掃描細節
 
 <img src="docs/images/task-manager-stall.png" width="360" alt="Windows 工作管理員的 C 槽磁碟面板，型號 Crucial CT480BX500SSD1：啟用時間 100%、平均回應時間 49.8 毫秒、讀取 1.0 MB/秒、寫入 1.0 MB/秒。">
 
-### 碰到的問題
+#### 碰到的問題
 SSD 的 SMART 健康度顯示 100% 良好。但是開程式或開遊戲時，電腦會突然凍結卡住。打開 Windows 工作管理員，看到**磁碟使用率（啟用時間）100%**，但讀取速度卻只有 **1 MB/s**。
 
-### 為什麼會這樣
+#### 為什麼會這樣
 快閃記憶體單元的電荷會隨著時間自然流失。
 當檔案存了幾個月或幾年沒有更動（例如 Windows 系統檔案或安裝好的遊戲），SSD 控制器很難讀出資料。
 控制器必須反覆嘗試並啟動重度錯誤校正（ECC）。
 讀取速度就會從原本的 500 MB/s 暴跌到 5–30 MB/s。
 
-### 為什麼 Windows 內建的「重組並最佳化磁碟」沒用
+#### 為什麼 Windows 內建的「重組並最佳化磁碟」沒用
 Windows 內建的 SSD 最佳化只會送出 TRIM 指令來標記已刪除的空白空間。
 它完全不會讀取或刷新已經寫入的舊檔案。
 
-### 解決方案：ssd-refresh
+#### 解決方案：ssd-refresh
 ssd-refresh 找出真正變慢的檔案，請作業系統將它們搬移重寫到新的健康區塊。
-1. **零風險讀取喚醒（Read Wakeup）**：在許多 SSD 上，只要將舊檔案讀取一遍，SSD 控制器就會自行在背景重寫修復，完全不需要寫入操作。
+1. **唯讀掃描（Read Wakeup）**：在許多 SSD 上，只要將舊檔案讀取一遍，SSD 控制器就會自行在背景重寫修復，工具不寫入檔案資料，但 SSD 可能自行寫入內部資料。
 2. **精準重寫**：如果讀完依然慢，只重寫真正變慢的檔案。跳過健康的檔案與空白磁區。
 3. **在線安全**：使用作業系統官方重組 API（`FSCTL_MOVE_FILE`）。其他程式正在使用中的檔案也能安全處理，絕不損壞。
 
 ---
 
-## 工具比一比：ssd-refresh vs DiskFresh vs Windows 磁碟最佳化
+### 工具比一比：ssd-refresh vs DiskFresh vs Windows 磁碟最佳化
 
 | 功能特色 | ssd-refresh | DiskFresh 等全碟磁區工具 | Windows 最佳化 (TRIM) |
 |---|---|---|---|
@@ -53,19 +82,17 @@ ssd-refresh 找出真正變慢的檔案，請作業系統將它們搬移重寫�
 
 ---
 
-## 一般使用者操作步驟
+### 一般使用者操作步驟
 
 **請先從 `scan` 開始，不要直接 `refresh`。**
 
 1. **第一步：唯讀掃描（Scan）**。對磁碟執行 `scan`。這會把每個檔案讀過一遍。在部分 SSD 上（例如 Crucial BX500），這樣就足夠喚醒控制器自癒。
-2. **第二步：隔天檢查**。隔天再跑一次 `scan`（或 `verify --from`）。如果慢檔已經恢復高速，就已經完成修復！完全沒有產生額外寫入磨損。
+2. **第二步：隔天檢查**。隔天再跑一次 `scan`（或 `verify --from`）。如果慢檔已經恢復高速，就已經完成修復！工具沒有重寫檔案資料，但 SSD 可能自行寫入內部資料。
 3. **第三步：精準刷新（Refresh，僅在仍變慢時執行）**。如果檔案讀取依然緩慢，再執行 `refresh` 請檔案系統安全搬移重寫。
 
 ---
 
-# 技術深度解析（給開發者與工程師）
-
-## 運作原理
+### 運作原理
 
 快閃記憶體的電荷會慢慢流失。很久以前寫入、之後一直沒改過的資料，SSD 要反覆重試、加強錯誤校正才讀得出來，速度就掉下來。
 
@@ -84,7 +111,7 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 - Sysinternals Contig 用的是同一個搬移 API，但它會跳過沒有碎片的檔案，所以不能用來刷新。
 - 依修改日期挑檔案的工具看不出哪些檔案真的慢。舊檔不一定慢，慢檔也不一定舊。
 
-## 什麼時候用
+### 什麼時候用
 
 適合：
 
@@ -98,7 +125,7 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 - 傳統硬碟（HDD）。它們不會因為這個原因變慢。
 - 最近才寫入的資料。它變慢不是因為放太久。
 
-### 哪些磁碟
+#### 哪些磁碟
 
 下表的風險是**根據公開資訊推測，不是本專案實測**。請用 `scan` 和 `verify` 量自己的磁碟，實測結果見[實測過的磁碟](#實測過的磁碟)。
 
@@ -111,7 +138,7 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 | 有 DRAM 的主流 TLC | 低 |
 | microSD 卡、隨身碟 | 很高（而且通常是 exFAT/FAT32，只能掃描） |
 
-## 實測過的磁碟
+### 實測過的磁碟
 
 | 磁碟 | 介面 | NAND／DRAM | 結果 | 日期 |
 |---|---|---|---|---|
@@ -121,7 +148,7 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 
 歡迎用 [drive report](../../issues/new?template=drive-report.yml) 範本回報你的磁碟。附上含對照組的 `verify` 摘要最有幫助。
 
-## 下載
+### 下載
 
 至 [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases) 下載預先編譯好的安裝包：
 
@@ -134,7 +161,7 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 | **`ssd-refresh-cli-linux-x64.tar.gz`** | Linux (`x86_64`) | Linux 與 Steam Deck 專用 CLI 工具。 |
 | **`ssd-refresh-cli-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | 通用版 CLI 工具（僅支援唯讀掃描喚醒）。 |
 
-## 支援的平台與架構
+### 支援的平台與架構
 
 | 平台 | 硬體架構 | 檔案系統 | 掃描 | 刷新 |
 |---|---|---|---|---|
@@ -143,7 +170,7 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 | Linux | `x86_64`, `aarch64` (ARM64) | btrfs、XFS | 支援 | 不支援 |
 | macOS | `Apple Silicon`, `Intel` | APFS | 支援（整檔測速） | 不支援：APFS 沒有能安全搬移使用中檔案的 API |
 
-## 建置
+### 建置
 
 需要 Rust 1.83 以上。
 
@@ -157,7 +184,7 @@ cargo build --release -p ssd-refresh-gui
 
 程式的畫面與說明都是英文。`ssd-refresh help scan`、`ssd-refresh help refresh` 有每個選項、進度欄位與狀態的完整說明。
 
-## 快速開始（Windows）
+### 快速開始（Windows）
 
 用「以系統管理員身分執行」開 PowerShell：
 
@@ -181,7 +208,7 @@ Linux 用 `sudo` 執行，第 4 步改成 `sudo fstrim -v /`。
 ssd-refresh verify --from C-scan-refresh.csv
 ```
 
-## 掃描
+### 掃描
 
 ```
 ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--parallel 8]
@@ -193,7 +220,7 @@ ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--
 2. **Read each file one time（每個檔案讀一次）**：掃描不經系統快取，直接從磁碟讀每個檔案。它量每個 extent 的時間。extent 是檔案在磁碟上的一段連續資料。只要有一個 extent 低於 `--threshold`（100 MB/s），這個檔案就列入**待確認清單（check list）**。
 3. **Check the files on the check list again（再確認一次）**：掃描用一般 I/O 優先權，一次只讀一個檔案。它讀兩輪，第二輪在第一輪開始 30 秒以上之後才開始。每個 extent 取三次讀取中最快的一次。這樣還是慢，檔案才算**慢（slow）**。
 
-### 待確認清單不是結果
+#### 待確認清單不是結果
 
 第 2 步追求速度，它的測速單獨看並不可靠：
 
@@ -203,7 +230,7 @@ ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--
 
 所以第 2 步只產生待確認清單。它的進度列計算的是清單上的檔案數，不是慢檔數。第 3 步在沒有這些干擾的情況下，於兩個不同時間點重新測量。做完第 3 步，才知道慢檔有幾個。
 
-### 進度列
+#### 進度列
 
 進度列原地更新，寬度配合視窗。寬的視窗顯示完整欄位名稱，窄的視窗顯示簡寫。
 
@@ -233,7 +260,7 @@ Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
 
 `slow` 是這一輪目前仍然慢的檔案數。
 
-### 報告欄位
+#### 報告欄位
 
 | 欄位 | 意思 |
 |---|---|
@@ -247,7 +274,7 @@ Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
 | `sha256` | 加 `--hash` 時才有 |
 | `status` | `OK`（有測速）、`SKIP`（不測速，見 `kind`）、`DUP_LINK`（硬連結，同一個檔案已測過）、`ERROR`（見 `error`） |
 
-## 刷新
+### 刷新
 
 ```
 ssd-refresh refresh --from 報告.csv [--dry-run] [--allow-system-volume] [--resume]
@@ -271,7 +298,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 `moved` 包含 `changed`。`skipped` 是已經不慢、不能搬、已不存在或試跑的檔案。`failed` 是沒能搬移或讀取的檔案，但檔案本身完整。
 
-### 記錄檔的狀態
+#### 記錄檔的狀態
 
 | 狀態 | 意思 |
 |---|---|
@@ -287,7 +314,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `CONTROL` | 對照組（`--control-fraction`）：仍然慢，只讀取，刻意不搬 |
 | `ERROR` | 開不了或讀不了（見 `detail`） |
 
-### 雜湊不同時怎麼判斷
+#### 雜湊不同時怎麼判斷
 
 雜湊不同時，程式檢查兩件事：
 
@@ -297,7 +324,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 搬移前讀取之前，工具會先把這個檔案在快取裡的資料寫進磁碟（flush）。原因是程式可能透過快取寫入後就關檔，新資料會在快取裡留幾秒。本工具的讀取不經快取，不先 flush 的話，可能讀到磁碟上的舊資料。Windows 上，工具用允許所有共用的寫入權限開檔（不會擋住其他程式），呼叫 `FlushFileBuffers`。它不寫入任何資料，檔案時間也不會變。Linux 上呼叫 `fsync`。flush 失敗時（例如沒有寫入權限），工具會記在 `detail` 欄。這時 SHA-256 不同，照樣判成 `MISMATCH`。
 
-## 驗證：刷新的效果能不能維持
+### 驗證：刷新的效果能不能維持
 
 `verify` 是給刷新過的人用的。刷新後隔一段時間（至少隔天，之後可以每月一次），它會重讀刷新記錄裡的檔案，回答三個問題：刷新有沒有效、效果維持多久、什麼時候該再掃描。
 
@@ -336,7 +363,7 @@ Summary
 - `--sample N`：每組最多讀 N 個檔案。抽樣由路徑決定，之後重跑會讀同一批。
 - `verify --from C-scan.csv`：檢查掃描報告裡的慢檔，看只讀一遍是否已經讓它們恢復。
 
-### 結論：資料安不安全、快了幾倍
+#### 結論：資料安不安全、快了幾倍
 
 表格之後，`verify` 直接回答三個問題（數字只是示意）：
 
@@ -373,7 +400,7 @@ Result
 - 有對照組時，每組各有一行 Faster，最後加一句結論。例如「Rewriting made the files 3.1 times faster than reading only」，或「Reading only was enough on this drive」。
 - 來源是掃描報告時，Data safe 顯示 `n/a`。掃描沒有搬移檔案。
 
-### 記錄檔
+#### 記錄檔
 
 每次執行，`verify` 會把摘要加到一個文字檔的最後面。摘要也包含執行時間和來源。這個檔案就是歷史記錄。每月跑一次，同一個檔案往下看就能看出變化。
 
@@ -382,7 +409,7 @@ Result
 | `<來源檔名>.verify.log`，放在來源檔旁邊（可用 `--log` 指定） | 每次執行的摘要。例如 `C-scan-refresh.csv` 對應 `C-scan-refresh.verify.log` |
 | `--out 檔名`（選用） | 每個檔案一列的 CSV。除錯或附在 issue 回報時使用 |
 
-### 用 DiskSpd 獨立檢查單一檔案
+#### 用 DiskSpd 獨立檢查單一檔案
 
 [DiskSpd](https://github.com/microsoft/diskspd) 是微軟的儲存裝置測速工具，可以不靠本工具量一個檔案：
 
@@ -405,7 +432,7 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 - 不要加 `-c`（會建立或覆寫目標檔案）。對要保留的檔案不要用大於 0 的 `-w`：寫入測試會直接破壞資料，不會警告。
 - 結果是所有輪次的平均。慢檔的第一輪最慢，所以 `-d` 短一點差異最明顯。
 
-## 幫忙測試你的 SSD
+### 幫忙測試你的 SSD
 
 這一節是選用的，一般使用不需要。它要回答某一款 SSD 的一個問題：**舊資料只讀一遍就夠，還是要重寫？** 不同的 SSD 答案不同，這也決定了那一款值不值得跑 `refresh`。
 
@@ -421,14 +448,14 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 3. 隔一天以上，執行 `verify --from C-scan-refresh.csv`。摘要會比較重寫組和只讀組，並給一行結論。
 4. 用 [drive report](../../issues/new?template=drive-report.yml) 範本回報：型號與韌體、使用年數、`scan` 摘要和 `verify` 摘要。結果會加進[實測過的磁碟](#實測過的磁碟)表。
 
-## 暫停、停止與續跑
+### 暫停、停止與續跑
 
 - 輸入 `p` 按 Enter：暫停或繼續。已送出的請求會先做完。
 - 輸入 `q` 按 Enter，或按 Ctrl+C：做完手上的檔案後停止。再按一次 Ctrl+C 立刻結束。任何時候結束都不會損壞檔案。
 - 建立 `<輸出檔名>.pause` 檔案會暫停，刪掉就繼續。
 - 用同樣的指令加 `--resume` 續跑。報告與記錄檔每寫一列就存檔，本身就是檢查點。掃描續跑時，先前記成 `ERROR` 的檔案會重試（例如改用系統管理員執行後），以新的那一列為準。
 
-## 參數
+### 參數
 
 | 參數 | 預設 | 說明 |
 |---|---|---|
@@ -443,13 +470,13 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 | `--control-fraction` | 0 | refresh：慢檔中只讀不搬的比例（0 到 1），狀態記成 `CONTROL` |
 | `--sample` | 全部 | verify：每組最多讀 N 個檔案 |
 
-## 搬移的原理
+### 搬移的原理
 
 **Windows NTFS**：讀磁碟區的叢集點陣圖（`FSCTL_GET_VOLUME_BITMAP`），避開 MFT 保留區，用 `FSCTL_MOVE_FILE` 把檔案一段一段搬到空的叢集。目標位置剛好被別人用掉時，重讀點陣圖改搬到別處。這是 Windows 磁碟重組工具用的 API。
 
 **Linux ext4**：在同一個檔案系統建立沒有檔名的暫存「捐贈檔」（`O_TMPFILE`），先預先配置空間，再用 `EXT4_IOC_MOVE_EXT` 交換資料區塊。這是 `e4defrag` 用的 API，核心在交換期間會鎖住檔案的頁面。關閉捐贈檔時，舊的區塊就被釋放。
 
-## 限制
+### 限制
 
 - 刷新只支援 Windows NTFS 與 Linux ext4。
 - exFAT 與 FAT32（microSD 卡、隨身碟常用）只能掃描，不能刷新：它們沒有能安全搬移檔案資料的 API。
@@ -457,7 +484,7 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 - 被系統獨占的檔案（`pagefile.sys`、`hiberfil.sys`）打不開，會記成 `ERROR`。
 - 速度是量測結果，會受其他程式的磁碟活動影響。第 3 步能降低影響，但無法完全排除。
 
-## 風險
+### 風險
 
 使用前請先備份重要資料。
 
@@ -467,7 +494,7 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 - **背景負載**：刷新期間磁碟會比較忙。搬移用最低的 I/O 優先權，讓其他程式先用。
 - **未驗證的平台**：Linux ext4 的刷新能編譯，但還沒在實機上測試。
 
-## 安全測試（Windows）
+### 安全測試（Windows）
 
 一般使用者不需要跑這個測試。它是給開發者，以及想自己確認安全性的人用的。
 
@@ -507,21 +534,21 @@ Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-re
 
 因為磁碟區掛在資料夾上，測試也會確認 ssd-refresh 把資料夾掛載點當成獨立的 NTFS 磁碟區。
 
-### 加入 flush 與回歸測試後的測試結果（2026-10-15 16:44）
+#### 加入 flush 與回歸測試後的測試結果（2026-10-15 16:44）
 
 28 項檢查全部通過。工具讀取檔案前，會先把該檔案的快取寫入磁碟（flush）。回歸測試用快取寫入 1 MB、關閉檔案，然後馬上刷新，共做 20 次。結果：OK 20、MISMATCH 0。flush 失敗 0 次，flush 改變檔案時間 0 次。最終狀態：OK 450、CHANGED 8、CONTROL 188、MISMATCH 0。`verify` 顯示 `Data safe: YES`（598 個檔案中 598 個相同），並在 `.verify.log` 加入一段摘要。`chkdsk /scan` 和 `Repair-Volume -Scan` 都沒有發現問題。
 
-### 掛在資料夾的測試結果（2026-10-15 15:04）
+#### 掛在資料夾的測試結果（2026-10-15 15:04）
 
 用一鍵腳本執行，23 項檢查全部通過。VHDX 掛在資料夾上，沒有磁碟代號，也沒有跳出檔案總管視窗。ssd-refresh 把掛載點認成獨立的 NTFS 磁碟區。`chkdsk /scan`（傳入磁碟區名稱 `\\?\Volume{...}`）和 `Repair-Volume -Scan` 都沒有發現問題。測完後 VHDX 已刪除。最終狀態：OK 467、CHANGED 5、CONTROL 174、MISMATCH 0；另一個程式在 38 秒內修改 10,659 次。
 
-### 加入 verify 與對照組後的測試結果（2026-10-15 14:36）
+#### 加入 verify 與對照組後的測試結果（2026-10-15 14:36）
 
 21 項檢查全部通過。共 711 個檔案，其中 51 個在刷新期間被修改（38 秒內 10,437 次）。最終狀態：OK 467、CHANGED 6、CONTROL 173、MISMATCH 0。`verify` 把 473 個檔案分到重寫組、173 個分到只讀組，和記錄完全一致。173 個對照組檔案都沒有被搬移。刷新後又被修改的 49 個檔案記成 `MODIFIED`，不列入比較。`chkdsk /scan` 沒有發現問題。
 
 位置檢查顯示 489 個檔案換了位置，其中 16 個「仍與舊位置重疊」。473 個是刷新搬移的檔案。另外 16 個是對照組裡被修改程式追加或截短的檔案：它們的 extent 對照表變了，但仍包含原本的叢集；刷新從來沒有搬過它們。
 
-### 測試結果（2026-10-15，Windows 10 22H2，VHDX 放在 NVMe SSD 上）
+#### 測試結果（2026-10-15，Windows 10 22H2，VHDX 放在 NVMe SSD 上）
 
 15 項檢查全部通過（加入 verify 之前的版本）。
 
@@ -540,7 +567,7 @@ Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-re
 - 修改程式一次都沒有遇到共用衝突。
 - 有一次搬移的目標位置剛好被用掉，程式重讀點陣圖後成功。
 
-## 授權
+### 授權
 
 採用雙重授權，使用者可任選其一：
 
