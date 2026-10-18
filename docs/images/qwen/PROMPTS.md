@@ -51,6 +51,14 @@ Prompt = style text for steps 2 to 4, then:
 
 > a PC monitor with a fast speed gauge pointing to high and a green check mark, handwritten caption: "Fast again"
 
+## App icon (seed 12)
+
+Same settings as above, but the size is 1024 x 1024. Prompt:
+
+> app icon, a single rounded-square tile centered on a plain white background, inside the tile a simple SSD drive with a circular refresh arrow around it, hand-drawn illustration with thin dark navy ink outlines, soft anime-poster color palette: warm orange, soft violet-blue gradients, silver white and pastel pink accents, small sparkle stars, light watercolor glow, no text, no people, no faces
+
+The white outside the tile was made transparent. The result is saved as `gui/src-tauri/icons/icon.png` (512 px), `128x128.png`, `128x128@2x.png`, `32x32.png` and `icon.ico`. Seeds 3, 7 and 21 gave similar icons.
+
 ## Speed on the test PC
 
 RTX 4070 Laptop GPU with 8 GB VRAM. One image takes about 25 to 33 seconds when the models are loaded. Peak VRAM use is 6.8 GB.
@@ -67,3 +75,4 @@ RTX 4070 Laptop GPU with 8 GB VRAM. One image takes about 25 to 33 seconds when 
 
 - 2026-10-18: first version of the four images.
 - 2026-10-18: all backgrounds pure white, step number badges, round corners and no border line.
+- 2026-10-18: new app icon in the same style.
