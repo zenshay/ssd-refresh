@@ -1,0 +1,38 @@
+name: Check
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: gui/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install frontend packages
+        run: pnpm --dir gui install --frozen-lockfile
+      - name: Install architecture query tool
+        run: npm install --global @ast-grep/cli@0.45.3
+      - name: Install file search tool
+        uses: taiki-e/install-action@v2
+        with:
+          tool: fd-find
+      - name: Check
+        shell: pwsh
+        run: |
+          if ($IsWindows) { & ./check.ps1 }
+          else { & ./check.ps1 -CoreOnly }

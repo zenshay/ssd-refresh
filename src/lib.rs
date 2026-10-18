@@ -19,7 +19,6 @@ pub mod verify;
 pub use common::{DiskHealth, SmartStatus, VolumeInfo};
 pub use sys::list_volumes;
 
-pub mod cli;
 pub mod outcome;
 pub mod report;
 pub mod text;

@@ -65,11 +65,11 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     ctl.message(&format!("ssd-refresh refresh ({title})"));
     ctl.message(&format!("  Report:  {}", o.from.display()));
     ctl.message(&format!("  Log:     {}", o.out.display()));
-    ctl.message(&format!("           The tool saves each row immediately. If the run stops, --resume can continue it."));
+    ctl.message("           The tool saves each row immediately. If the run stops, --resume can continue it.");
 
     // ---------- Step 1: choose files ----------
     ctl.message("");
-    ctl.message(&format!("Step 1/3  Choose the files and check the volume"));
+    ctl.message("Step 1/3  Choose the files and check the volume");
     let picked: Vec<(String, u64)> = crate::report::read_scan(&o.from)?
         .into_iter()
         .filter(|r| r.status == "OK" && (o.select_all || r.slow))
@@ -86,7 +86,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
         }
     ));
     if picked.is_empty() {
-        ctl.message(&format!("  There is nothing to do."));
+        ctl.message("  There is nothing to do.");
         return Ok(RefreshOutcome::default());
     }
     let vol = sys::volume(Path::new(&picked[0].0))?;
@@ -96,9 +96,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
                 "  The report has files on more than one volume. {p} is not on {}.",
                 vol.root.display()
             ));
-            ctl.message(&format!(
-                "  Refresh one volume at a time. Make one scan report for each volume."
-            ));
+            ctl.message("  Refresh one volume at a time. Make one scan report for each volume.");
             return Ok(RefreshOutcome {
                 status: RunStatus::InvalidInput,
                 ..Default::default()
@@ -146,7 +144,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     if o.resume && o.out.exists() {
         if csv::header(&o.out)? != HEADER {
             ctl.message(&format!("  A different version of ssd-refresh wrote this log. The columns are different: {}", o.out.display()));
-            ctl.message(&format!("  Use a new log file with --out."));
+            ctl.message("  Use a new log file with --out.");
             return Ok(RefreshOutcome {
                 status: RunStatus::InvalidInput,
                 ..Default::default()
@@ -163,9 +161,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
         ));
     } else if o.out.exists() {
         ctl.message(&format!("  The log exists already: {}", o.out.display()));
-        ctl.message(&format!(
-            "  Use --resume to continue it, or use a different file name with --out."
-        ));
+        ctl.message("  Use --resume to continue it, or use a different file name with --out.");
         return Ok(RefreshOutcome {
             status: RunStatus::InvalidInput,
             ..Default::default()
@@ -184,10 +180,8 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
 
     // ---------- Step 2: explain and confirm ----------
     ctl.message("");
-    ctl.message(&format!("Step 2/3  What will happen"));
-    ctl.message(&format!(
-        "  The tool does these steps for each file, one file at a time:"
-    ));
+    ctl.message("Step 2/3  What will happen");
+    ctl.message("  The tool does these steps for each file, one file at a time:");
     ctl.paragraph(
         4,
         &format!(
@@ -258,7 +252,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             None => ctl.confirm(&label)?,
         };
         if !confirm_matches(&label, &typed) {
-            ctl.message(&format!("Cancelled. The tool did not change anything."));
+            ctl.message("Cancelled. The tool did not change anything.");
             return Ok(RefreshOutcome {
                 status: RunStatus::InvalidInput,
                 ..Default::default()
@@ -346,7 +340,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     prog.finish();
 
     ctl.message("");
-    ctl.message(&format!("Summary"));
+    ctl.message("Summary");
     ctl.message(&format!(
         "  Files per status: {}",
         outcome
@@ -359,13 +353,9 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     if !o.dry_run {
         ctl.message(&format!("  Data moved: {}", fmt_bytes(outcome.moved_bytes)));
     }
-    ctl.message(&format!(
-        "  The statuses: see the README or `ssd-refresh help refresh`."
-    ));
+    ctl.message("  The statuses: see the README or `ssd-refresh help refresh`.");
     if outcome.status == RunStatus::Stopped {
-        ctl.message(&format!(
-            "  The run stopped early. To continue, run the same command with --resume."
-        ));
+        ctl.message("  The run stopped early. To continue, run the same command with --resume.");
     }
     if !o.dry_run && outcome.moved_bytes > 0 {
         let hint = sys::retrim_hint(&vol);

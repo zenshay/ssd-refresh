@@ -75,6 +75,30 @@ fn stopped_operation_releases_control() {
 }
 
 #[test]
+fn panic_stops_the_worker_and_releases_control() {
+    let control = Control::new(None);
+    let weak = Arc::downgrade(&control);
+    let events = Arc::new(AtomicUsize::new(0));
+    let received = events.clone();
+    control.set_progress_reporter(Arc::new(move |_| {
+        received.fetch_add(1, Ordering::SeqCst);
+    }));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _priority = crate::sys::ThreadIoPriorityGuard::new(crate::common::Priority::VeryLow);
+        let _progress = Progress::new(Phase::Verify, 1, 1, control.clone());
+        panic!("Synthetic panic");
+    }));
+    assert!(result.is_err());
+    let count = events.load(Ordering::SeqCst);
+    std::thread::sleep(Duration::from_millis(350));
+    assert_eq!(events.load(Ordering::SeqCst), count);
+    drop(control);
+    assert!(weak.upgrade().is_none());
+    #[cfg(windows)]
+    assert!(crate::sys::priority_tests::can_enter_background());
+}
+
+#[test]
 fn observers_can_change_their_own_registration() {
     let control = Control::new(None);
     let weak = Arc::downgrade(&control);

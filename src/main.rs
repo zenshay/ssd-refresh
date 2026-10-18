@@ -1,4 +1,5 @@
 use ssd_refresh::common::{fmt_bytes, Kind, Priority};
+mod cli;
 use ssd_refresh::control::Control;
 use ssd_refresh::reader::ReadOptions;
 use ssd_refresh::refresh::{self, RefreshOptions};
@@ -149,9 +150,9 @@ fn run() -> Result<i32, String> {
             };
             a.finish()?;
             let ctl = Control::new(Some(pause_path(&out)));
-            ssd_refresh::cli::install(&ctl);
+            cli::install(&ctl);
             scan::run(&o, ctl)
-                .map(|result| ssd_refresh::cli::exit_code(result.status))
+                .map(|result| cli::exit_code(result.status))
                 .map_err(|e| e.to_string())
         }
         "refresh" => {
@@ -187,9 +188,9 @@ fn run() -> Result<i32, String> {
                 return Err("--control-fraction must be between 0 and 1".into());
             }
             let ctl = Control::new(Some(pause_path(&out)));
-            ssd_refresh::cli::install(&ctl);
+            cli::install(&ctl);
             refresh::run(&o, ctl)
-                .map(|result| ssd_refresh::cli::exit_code(result.status))
+                .map(|result| cli::exit_code(result.status))
                 .map_err(|e| e.to_string())
         }
         "verify" => {
@@ -217,9 +218,9 @@ fn run() -> Result<i32, String> {
             };
             a.finish()?;
             let ctl = Control::new(Some(pause_path(&log)));
-            ssd_refresh::cli::install(&ctl);
+            cli::install(&ctl);
             verify::run(&o, ctl)
-                .map(|result| ssd_refresh::cli::exit_code(result.status))
+                .map(|result| cli::exit_code(result.status))
                 .map_err(|e| e.to_string())
         }
         "extents" => {
@@ -279,8 +280,8 @@ fn run() -> Result<i32, String> {
                 println!("No local storage volumes found.");
             } else {
                 println!(
-                    "{:<6} {:<8} {:<14} {:<26} {}",
-                    "DRIVE", "FS", "FREE/TOTAL", "MODEL", "SMART"
+                    "{:<6} {:<8} {:<14} {:<26} SMART",
+                    "DRIVE", "FS", "FREE/TOTAL", "MODEL"
                 );
                 println!("{}", "-".repeat(70));
                 for v in vols {

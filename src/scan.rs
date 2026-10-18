@@ -127,18 +127,14 @@ fn priority_words(p: crate::common::Priority) -> &'static str {
 pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     if o.out.exists() && !o.resume {
         ctl.message(&format!("The report exists already: {}", o.out.display()));
-        ctl.message(&format!(
-            "Use --resume to continue it, or use a different file name with --out."
-        ));
+        ctl.message("Use --resume to continue it, or use a different file name with --out.");
         return Ok(ScanOutcome {
             status: RunStatus::InvalidInput,
             ..Default::default()
         });
     }
     let vol = sys::volume(&o.root)?;
-    ctl.message(&format!(
-        "ssd-refresh scan (read-only: this command does not change the disk)"
-    ));
+    ctl.message("ssd-refresh scan (read-only: this command does not change the disk)");
     ctl.message(&format!("  Folder:  {}", o.root.display()));
     ctl.message(&format!(
         "  Volume:  {}  {}, {}-byte clusters{}",
@@ -192,13 +188,11 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
 
     // ---------- Step 1 ----------
     ctl.message("");
-    ctl.message(&format!("Step 1/3  Find the files"));
+    ctl.message("Step 1/3  Find the files");
     ctl.paragraph(2, "The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.");
     let found = enumerate_with_progress(&o.root, &ctl);
     if ctl.stopped() {
-        ctl.message(&format!(
-            "The scan stopped. No file was read. To start again, run the same command."
-        ));
+        ctl.message("The scan stopped. No file was read. To start again, run the same command.");
         return Ok(ScanOutcome {
             status: RunStatus::Stopped,
             ..Default::default()
@@ -224,7 +218,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
         allowance_ms: o.read.allowance_ms * parallel as f64,
         ..o.read.clone()
     };
-    ctl.message(&format!("Step 2/3  Read each file one time"));
+    ctl.message("Step 2/3  Read each file one time");
     ctl.paragraph(2, "The scan reads each file directly from the disk, not from the OS cache. It measures the time for each extent. An extent is one continuous part of the file on the disk.");
     if parallel > 1 {
         ctl.paragraph(
@@ -341,13 +335,9 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     // ---------- Step 3 ----------
     if !stopped {
         ctl.message("");
-        ctl.message(&format!(
-            "Step 3/3  Check the files on the check list again"
-        ));
+        ctl.message("Step 3/3  Check the files on the check list again");
         if to_check.is_empty() {
-            ctl.message(&format!(
-                "  The check list is empty. There is nothing to check."
-            ));
+            ctl.message("  The check list is empty. There is nothing to check.");
         } else {
             ctl.paragraph(
                 2,
@@ -441,9 +431,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
 
     ctl.message("");
     if stopped {
-        ctl.message(&format!(
-            "The scan stopped. To continue, run the same command with --resume."
-        ));
+        ctl.message("The scan stopped. To continue, run the same command with --resume.");
     }
     outcome.status = if stopped {
         RunStatus::Stopped

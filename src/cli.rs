@@ -1,9 +1,9 @@
 //! Terminal input, output and exit codes.
-use crate::common::fmt_bytes;
-use crate::control::{Control, ProgressUpdate, Stage};
-use crate::outcome::RunStatus;
-use crate::progress::Phase;
-use crate::sys;
+use ssd_refresh::common::fmt_bytes;
+use ssd_refresh::control::{Control, ProgressUpdate, Stage};
+use ssd_refresh::outcome::RunStatus;
+use ssd_refresh::progress::Phase;
+use ssd_refresh::sys;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -32,15 +32,7 @@ pub fn install(control: &Arc<Control>) {
         if io::stdout().is_terminal() && display.1 {
             let _ = write!(out, "\r{}\r", " ".repeat(width() - 1));
         }
-        let indent = message.len() - message.trim_start_matches(' ').len();
-        let _ = write!(
-            out,
-            "{}",
-            para_string(indent, indent, message.trim_start_matches(' '))
-        );
-        if message.is_empty() {
-            let _ = writeln!(out);
-        }
+        let _ = write!(out, "{}", message_text(message));
         display.1 = false;
         let _ = out.flush();
     }));
@@ -102,6 +94,22 @@ pub fn install(control: &Arc<Control>) {
         }
         let _ = out.flush();
     }));
+}
+
+fn message_text(message: &str) -> String {
+    if message.is_empty() {
+        return "\n".into();
+    }
+    let mut result = String::new();
+    for line in message.lines() {
+        let indent = line.len() - line.trim_start_matches(' ').len();
+        if line.trim().is_empty() {
+            result.push('\n');
+        } else {
+            result += &para_string(indent, indent, line.trim_start_matches(' '));
+        }
+    }
+    result
 }
 
 /// Current terminal width in columns, if stdout is a terminal.
@@ -296,6 +304,14 @@ pub fn fit(s: &str, w: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn multiline_summary_keeps_line_breaks_and_indents() {
+        assert_eq!(
+            message_text("Summary\n  Data: YES\n\nNext\n"),
+            "Summary\n  Data: YES\n\nNext\n"
+        );
+    }
 
     #[test]
     fn progress_fits_a_narrow_terminal() {

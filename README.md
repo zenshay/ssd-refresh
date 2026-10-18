@@ -589,6 +589,11 @@ All 15 checks passed (the test before `verify`).
 - The program that changed files did not get a sharing error.
 - One time, another write took the target of a move first. The tool read the bitmap again and the move then worked.
 
+### Development checks
+
+See [Architecture](docs/architecture.md) for module boundaries and the one-command check.
+The default checks use synthetic data. They do not scan or refresh a real drive.
+
 ### License
 
 Licensed under either of
