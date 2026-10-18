@@ -1,8 +1,6 @@
-<p align="center">
-  <img src="gui/src-tauri/icons/128x128@2x.png" width="128" alt="ssd-refresh 軟體圖示：SSD 與重新整理箭頭">
-</p>
+<div align="center">
 
-# ssd-refresh（繁體中文說明）
+<h1>ssd-refresh（繁體中文說明）</h1>
 
 [![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#授權)
@@ -11,7 +9,13 @@
 [![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#支援的平台與架構)
 [![Safety test: 28 of 28 passed](https://img.shields.io/badge/safety%20test-28%2F28%20passed-brightgreen)](#安全測試windows)
 
+<p align="center">
+  <img src="gui/src-tauri/icons/128x128@2x.png" width="128" alt="ssd-refresh 軟體圖示：SSD 與重新整理箭頭">
+</p>
+
 [English](README.md)
+
+</div>
 
 **舊檔案讀取變慢？先做唯讀掃描。**
 
