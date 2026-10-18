@@ -15,7 +15,7 @@ These four images were made with Qwen-Image-2.1-Turbo on a local PC. Use this fi
 | Sampler | euler |
 | Size | 1152 x 768 pixels |
 | Negative prompt | empty |
-| After making | PNG reduced to 256 colors with Pillow (`optimize=True`) |
+| After making | Run `finish_image.py` (white background, step number badge, round border, 256 colors) |
 
 ## Style words
 
@@ -60,8 +60,10 @@ RTX 4070 Laptop GPU with 8 GB VRAM. One image takes about 25 to 33 seconds when 
 1. Start ComfyUI with the Qwen-Image-2.1-Turbo workflow above.
 2. Change the words in the prompt. Keep the same style text.
 3. Try 4 seeds. Pick the image with correct spelling in all words.
-4. Save the new PNG over the old file. Add a line below to say what changed.
+4. Run `uv run --with pillow --with numpy python finish_image.py RAW.png STEP_NUMBER stepN.png` on the raw PNG.
+5. Add a line below to say what changed.
 
 ## Change log
 
 - 2026-10-18: first version of the four images.
+- 2026-10-18: all backgrounds pure white, step number badges, round gray border for the dark theme.
