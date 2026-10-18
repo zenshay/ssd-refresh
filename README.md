@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="gui/src-tauri/icons/128x128@2x.png" width="128" alt="ssd-refresh app icon: an SSD drive with a refresh arrow">
+</p>
+
 # ssd-refresh
 
 [![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)

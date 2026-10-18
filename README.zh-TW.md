@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="gui/src-tauri/icons/128x128@2x.png" width="128" alt="ssd-refresh 軟體圖示：SSD 與重新整理箭頭">
+</p>
+
 # ssd-refresh（繁體中文說明）
 
 [![Release: v1.0.0](https://img.shields.io/badge/release-v1.0.0-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
