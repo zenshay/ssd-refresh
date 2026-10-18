@@ -200,13 +200,17 @@ body {
 .header-right {
   display: flex;
   align-items: center;
-  margin-right: -24px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
-/* Custom Frameless Window Controls: Pinned to Top-Right */
+/* Custom Frameless Window Controls: Pinned to the window's top-right corner,
+   not to the centered container, so they follow the edge when maximized. */
 .window-controls {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
   gap: 0;
