@@ -23,7 +23,12 @@ static SHARING_RETRIES: AtomicU64 = AtomicU64::new(0);
 
 fn main() -> ExitCode {
     let a: Vec<String> = std::env::args().skip(1).collect();
-    let p = |i: usize| PathBuf::from(a.get(i).expect("missing argument; see the comment at the top of refresh-test.rs"));
+    let p = |i: usize| {
+        PathBuf::from(
+            a.get(i)
+                .expect("missing argument; see the comment at the top of refresh-test.rs"),
+        )
+    };
     let r = match a.first().map(String::as_str) {
         Some("gen") => gen(&p(1), &p(2)),
         Some("mutate") => mutate(&p(1), &p(2), &p(3), &p(4)),
@@ -100,7 +105,10 @@ fn sha_bytes(b: &[u8]) -> String {
 }
 
 fn rel(root: &Path, p: &Path) -> String {
-    p.strip_prefix(root).unwrap_or(p).to_string_lossy().replace('\\', "/")
+    p.strip_prefix(root)
+        .unwrap_or(p)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 fn write_file(p: &Path, size: u64, seed: u64, buf: &mut [u8]) -> io::Result<()> {
@@ -137,7 +145,12 @@ fn gen(root: &Path, manifest: &Path) -> io::Result<u8> {
         for i in 0..count {
             let name = format!("{g}/{g}-{i:03}.bin");
             seed += 7919;
-            write_file(&root.join(&name), rng.range(lo, hi.max(lo + 1)), seed, &mut buf)?;
+            write_file(
+                &root.join(&name),
+                rng.range(lo, hi.max(lo + 1)),
+                seed,
+                &mut buf,
+            )?;
             files.push((name, i % every == 0));
         }
     }
@@ -145,7 +158,12 @@ fn gen(root: &Path, manifest: &Path) -> io::Result<u8> {
     // then grow large files in small appends so they fill the holes.
     std::fs::create_dir_all(root.join("filler"))?;
     for i in 0..400u64 {
-        write_file(&root.join(format!("filler/filler-{i:03}.bin")), 256 << 10, 100_000 + i, &mut buf)?;
+        write_file(
+            &root.join(format!("filler/filler-{i:03}.bin")),
+            256 << 10,
+            100_000 + i,
+            &mut buf,
+        )?;
     }
     for i in (0..400).step_by(2) {
         std::fs::remove_file(root.join(format!("filler/filler-{i:03}.bin")))?;
@@ -154,7 +172,14 @@ fn gen(root: &Path, manifest: &Path) -> io::Result<u8> {
         files.push((format!("filler/filler-{i:03}.bin"), false));
     }
     std::fs::create_dir_all(root.join("frag"))?;
-    let mut frag: Vec<File> = (0..6).map(|k| OpenOptions::new().write(true).create_new(true).open(root.join(format!("frag/frag-{k}.bin")))).collect::<io::Result<_>>()?;
+    let mut frag: Vec<File> = (0..6)
+        .map(|k| {
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(root.join(format!("frag/frag-{k}.bin")))
+        })
+        .collect::<io::Result<_>>()?;
     for step in 0..96u64 {
         for (k, f) in frag.iter_mut().enumerate() {
             fill(&mut buf[..256 << 10], 200_000 + k as u64 * 1000 + step);
@@ -173,7 +198,12 @@ fn gen(root: &Path, manifest: &Path) -> io::Result<u8> {
         let p = root.join(name);
         let size = std::fs::metadata(&p)?.len();
         total += size;
-        w.row([name.clone(), size.to_string(), sha_file(&p)?, (*m as u8).to_string()])?;
+        w.row([
+            name.clone(),
+            size.to_string(),
+            sha_file(&p)?,
+            (*m as u8).to_string(),
+        ])?;
     }
     println!(
         "Created {} files, {:.0} MB in total; {} of them will be modified during the refresh. Took {:.1} s.",
@@ -207,7 +237,14 @@ fn open_rw(p: &Path) -> io::Result<File> {
     retry(|| OpenOptions::new().read(true).write(true).open(p))
 }
 
-fn write_at(held: &mut HashMap<String, File>, root: &Path, name: &str, off: u64, data: &[u8], flush: bool) -> io::Result<()> {
+fn write_at(
+    held: &mut HashMap<String, File>,
+    root: &Path,
+    name: &str,
+    off: u64,
+    data: &[u8],
+    flush: bool,
+) -> io::Result<()> {
     let mut tmp;
     let f = match held.get_mut(name) {
         Some(f) => f,
@@ -225,7 +262,11 @@ fn write_at(held: &mut HashMap<String, File>, root: &Path, name: &str, off: u64,
 }
 
 fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io::Result<u8> {
-    let targets: Vec<String> = csv::read_all(manifest)?.into_iter().filter(|r| r["mutate"] == "1").map(|r| r["path"].clone()).collect();
+    let targets: Vec<String> = csv::read_all(manifest)?
+        .into_iter()
+        .filter(|r| r["mutate"] == "1")
+        .map(|r| r["path"].clone())
+        .collect();
     let mut data: HashMap<String, Vec<u8>> = HashMap::new();
     for t in &targets {
         data.insert(t.clone(), std::fs::read(root.join(t))?);
@@ -234,12 +275,24 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
     let mut rng = Rng(4242);
 
     // 3 files stay open for writing (like a database or a log); 1 is written through a memory map
-    let candidates: Vec<&String> = targets.iter().filter(|t| data[*t].len() >= 256 << 10).collect();
+    let candidates: Vec<&String> = targets
+        .iter()
+        .filter(|t| data[*t].len() >= 256 << 10)
+        .collect();
     let mut held: HashMap<String, File> = HashMap::new();
-    for t in candidates.iter().enumerate().filter(|(i, _)| i % 5 == 1).map(|(_, t)| *t).take(3) {
+    for t in candidates
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| i % 5 == 1)
+        .map(|(_, t)| *t)
+        .take(3)
+    {
         held.insert(t.clone(), open_rw(&root.join(t))?);
     }
-    let mm_name = candidates.iter().find(|t| !held.contains_key(**t)).map(|t| (*t).clone());
+    let mm_name = candidates
+        .iter()
+        .find(|t| !held.contains_key(**t))
+        .map(|t| (*t).clone());
     let mut mm = match &mm_name {
         Some(n) => Some(mmap::Map::new(&root.join(n), data[n].len())?),
         None => None,
@@ -308,7 +361,12 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
             bad += 1;
             println!("  error in the own check: {t}");
         }
-        w.row([t.clone(), data[t].len().to_string(), want, ops[t].to_string()])?;
+        w.row([
+            t.clone(),
+            data[t].len().to_string(),
+            want,
+            ops[t].to_string(),
+        ])?;
     }
     println!(
         "The program that changes files finished: {total} changes in {:.0} s, {} tries again after a sharing error, {bad} errors in the own check.",
@@ -322,7 +380,10 @@ fn mutate(root: &Path, manifest: &Path, stop: &Path, expected_out: &Path) -> io:
 
 fn verify(root: &Path, manifest: &Path, expected: &Path) -> io::Result<u8> {
     let exp: HashMap<String, csv::Row> = if expected.exists() {
-        csv::read_all(expected)?.into_iter().map(|r| (r["path"].clone(), r)).collect()
+        csv::read_all(expected)?
+            .into_iter()
+            .map(|r| (r["path"].clone(), r))
+            .collect()
     } else {
         HashMap::new()
     };
@@ -345,7 +406,15 @@ fn verify(root: &Path, manifest: &Path, expected: &Path) -> io::Result<u8> {
             }
         } else {
             bad += 1;
-            println!("MISMATCH: {} ({})", r["path"], if is_mut { "changed file; it must have its last version" } else { "file without changes; it must be the same as the original" });
+            println!(
+                "MISMATCH: {} ({})",
+                r["path"],
+                if is_mut {
+                    "changed file; it must have its last version"
+                } else {
+                    "file without changes; it must be the same as the original"
+                }
+            );
         }
     }
     println!("Compare: {same} files without changes are the same, {mutated} changed files have their last version, {bad} errors, {missing} not found.");
@@ -363,8 +432,16 @@ fn lcnmap(root: &Path, out: &Path) -> io::Result<u8> {
         let f = sys::open_meta(&p)?;
         let m = sys::meta(&f)?;
         let l = sys::layout(&f, &m, vol.block)?;
-        let map: Vec<String> = l.on_disk().map(|e| format!("{}:{}:{}", e.logical, e.physical.unwrap(), e.len)).collect();
-        w.row([rel(root, &p), size.to_string(), map.len().to_string(), map.join(";")])?;
+        let map: Vec<String> = l
+            .on_disk()
+            .map(|e| format!("{}:{}:{}", e.logical, e.physical.unwrap(), e.len))
+            .collect();
+        w.row([
+            rel(root, &p),
+            size.to_string(),
+            map.len().to_string(),
+            map.join(";"),
+        ])?;
     }
     Ok(0)
 }
@@ -380,7 +457,10 @@ fn ranges(map: &str) -> Vec<(u64, u64)> {
 }
 
 fn lcndiff(before: &Path, after: &Path) -> io::Result<u8> {
-    let a: HashMap<String, csv::Row> = csv::read_all(before)?.into_iter().map(|r| (r["path"].clone(), r)).collect();
+    let a: HashMap<String, csv::Row> = csv::read_all(before)?
+        .into_iter()
+        .map(|r| (r["path"].clone(), r))
+        .collect();
     let (mut non_resident, mut moved, mut same, mut overlap) = (0, 0, 0, 0);
     for r in csv::read_all(after)? {
         let Some(b) = a.get(&r["path"]) else { continue };
@@ -394,7 +474,10 @@ fn lcndiff(before: &Path, after: &Path) -> io::Result<u8> {
         }
         moved += 1;
         let old = ranges(&b["map"]);
-        if ranges(&r["map"]).iter().any(|n| old.iter().any(|o| n.0 < o.1 && o.0 < n.1)) {
+        if ranges(&r["map"])
+            .iter()
+            .any(|n| old.iter().any(|o| n.0 < o.1 && o.0 < n.1))
+        {
             overlap += 1;
         }
     }
@@ -414,7 +497,14 @@ mod mmap {
 
     #[link(name = "kernel32")]
     extern "system" {
-        fn CreateFileMappingW(h: isize, sa: *mut c_void, prot: u32, hi: u32, lo: u32, name: *const u16) -> isize;
+        fn CreateFileMappingW(
+            h: isize,
+            sa: *mut c_void,
+            prot: u32,
+            hi: u32,
+            lo: u32,
+            name: *const u16,
+        ) -> isize;
         fn MapViewOfFile(m: isize, access: u32, hi: u32, lo: u32, n: usize) -> *mut u8;
         fn FlushViewOfFile(p: *const u8, n: usize) -> i32;
         fn UnmapViewOfFile(p: *const u8) -> i32;
@@ -431,7 +521,16 @@ mod mmap {
     impl Map {
         pub fn new(p: &Path, len: usize) -> io::Result<Map> {
             let f = super::open_rw(p)?;
-            let mapping = unsafe { CreateFileMappingW(f.as_raw_handle() as isize, std::ptr::null_mut(), 0x04, 0, 0, std::ptr::null()) };
+            let mapping = unsafe {
+                CreateFileMappingW(
+                    f.as_raw_handle() as isize,
+                    std::ptr::null_mut(),
+                    0x04,
+                    0,
+                    0,
+                    std::ptr::null(),
+                )
+            };
             if mapping == 0 {
                 return Err(io::Error::last_os_error());
             }
@@ -439,7 +538,12 @@ mod mmap {
             if ptr.is_null() {
                 return Err(io::Error::last_os_error());
             }
-            Ok(Map { _f: f, mapping, ptr, len })
+            Ok(Map {
+                _f: f,
+                mapping,
+                ptr,
+                len,
+            })
         }
         pub fn slice(&mut self) -> &mut [u8] {
             unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
@@ -479,11 +583,24 @@ mod mmap {
     impl Map {
         pub fn new(p: &Path, len: usize) -> io::Result<Map> {
             let f = super::open_rw(p)?;
-            let ptr = unsafe { libc::mmap(std::ptr::null_mut(), len, libc::PROT_READ | libc::PROT_WRITE, libc::MAP_SHARED, f.as_raw_fd(), 0) };
+            let ptr = unsafe {
+                libc::mmap(
+                    std::ptr::null_mut(),
+                    len,
+                    libc::PROT_READ | libc::PROT_WRITE,
+                    libc::MAP_SHARED,
+                    f.as_raw_fd(),
+                    0,
+                )
+            };
             if ptr == libc::MAP_FAILED {
                 return Err(io::Error::last_os_error());
             }
-            Ok(Map { _f: f, ptr: ptr.cast(), len })
+            Ok(Map {
+                _f: f,
+                ptr: ptr.cast(),
+                len,
+            })
         }
         pub fn slice(&mut self) -> &mut [u8] {
             unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }

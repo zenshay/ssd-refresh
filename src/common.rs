@@ -47,7 +47,10 @@ pub struct Meta {
 impl Meta {
     /// Whether anything suggests the file was modified between the two snapshots.
     pub fn changed_since(&self, before: &Meta) -> bool {
-        self.size != before.size || self.mtime != before.mtime || self.ctime != before.ctime || self.seq != before.seq
+        self.size != before.size
+            || self.mtime != before.mtime
+            || self.ctime != before.ctime
+            || self.seq != before.seq
     }
 
     /// The fields `changed_since` compares, as text ("size:mtime:ctime:seq"), for logs. Two
@@ -77,8 +80,16 @@ pub enum Kind {
 
 impl Kind {
     pub const ALL: [Kind; 10] = [
-        Kind::Normal, Kind::Empty, Kind::Resident, Kind::Sparse, Kind::Compressed,
-        Kind::Encrypted, Kind::Shared, Kind::Wof, Kind::Reparse, Kind::Unknown,
+        Kind::Normal,
+        Kind::Empty,
+        Kind::Resident,
+        Kind::Sparse,
+        Kind::Compressed,
+        Kind::Encrypted,
+        Kind::Shared,
+        Kind::Wof,
+        Kind::Reparse,
+        Kind::Unknown,
     ];
 
     pub fn name(self) -> &'static str {
@@ -133,7 +144,10 @@ impl Kind {
 
     /// Can be timed by `scan`.
     pub fn measurable(self) -> bool {
-        matches!(self, Kind::Normal | Kind::Sparse | Kind::Encrypted | Kind::Unknown)
+        matches!(
+            self,
+            Kind::Normal | Kind::Sparse | Kind::Encrypted | Kind::Unknown
+        )
     }
 
     /// Can be moved by `refresh`.
@@ -214,7 +228,10 @@ pub fn path_rank(path: &str) -> f64 {
 
 /// Seconds since 1970 (UTC).
 pub fn unix_now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// 9000 s → "2h 30m"; 90000 s → "1d 1h"

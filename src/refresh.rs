@@ -9,11 +9,12 @@
 use crate::common::{fmt_bytes, fmt_count, hex, path_rank, unix_now, Kind, Priority};
 use crate::control::Control;
 use crate::csv::{self, CsvWriter};
-use crate::progress::{para, Phase, Progress};
+use crate::outcome::{RefreshOutcome, RunStatus};
+use crate::progress::{Phase, Progress};
 use crate::reader::{read_file, ReadOptions};
 use crate::sys::{self, MoveStats, RelocOptions, Relocator};
-use std::collections::{BTreeMap, HashSet};
-use std::io::{self, BufRead, Write};
+use std::collections::HashSet;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -35,69 +36,96 @@ pub struct RefreshOptions {
     pub read: ReadOptions,
 }
 
-pub const HEADER: [&str; 19] = [
-    "path", "size", "status", "before_mbps", "after_mbps", "before_slow", "after_slow", "moved_bytes", "moves",
-    "move_failures", "extents_before", "extents_after", "writers", "meta_changed", "sha_before", "sha_after", "detail",
-    "time", "meta_key",
-];
+pub use crate::report::REFRESH_HEADER as HEADER;
 
 /// Statuses that mean "finished". --resume does not process these files again.
-const FINAL: [&str; 9] = ["OK", "CHANGED", "SKIP_FAST", "SKIP_KIND", "SKIP_MISSING", "ERROR", "MOVE_FAILED", "DRYRUN", "CONTROL"];
+const FINAL: [&str; 9] = [
+    "OK",
+    "CHANGED",
+    "SKIP_FAST",
+    "SKIP_KIND",
+    "SKIP_MISSING",
+    "ERROR",
+    "MOVE_FAILED",
+    "DRYRUN",
+    "CONTROL",
+];
 
 /// Is the file in the control group? The same path always gets the same answer, also with --resume.
 pub fn in_control_group(path: &str, fraction: f64) -> bool {
     fraction > 0.0 && path_rank(path) < fraction
 }
 
-pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
-    let title = if o.dry_run { "dry run: measures only and does not move files" } else { "MOVES FILE DATA" };
-    println!("ssd-refresh refresh ({title})");
-    println!("  Report:  {}", o.from.display());
-    println!("  Log:     {}", o.out.display());
-    println!("           The tool saves each row immediately. If the run stops, --resume can continue it.");
+pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> {
+    let title = if o.dry_run {
+        "dry run: measures only and does not move files"
+    } else {
+        "MOVES FILE DATA"
+    };
+    ctl.message(&format!("ssd-refresh refresh ({title})"));
+    ctl.message(&format!("  Report:  {}", o.from.display()));
+    ctl.message(&format!("  Log:     {}", o.out.display()));
+    ctl.message(&format!("           The tool saves each row immediately. If the run stops, --resume can continue it."));
 
     // ---------- Step 1: choose files ----------
-    println!();
-    println!("Step 1/3  Choose the files and check the volume");
-    let picked: Vec<(String, u64)> = csv::latest_by(csv::read_all(&o.from)?, "path")
+    ctl.message("");
+    ctl.message(&format!("Step 1/3  Choose the files and check the volume"));
+    let picked: Vec<(String, u64)> = crate::report::read_scan(&o.from)?
         .into_iter()
-        .filter(|r| r.get("status").map(String::as_str) == Some("OK"))
-        .filter(|r| o.select_all || r.get("slow").map(String::as_str) == Some("1"))
-        .filter(|r| r.get("kind").and_then(|k| Kind::parse(k)).is_some_and(Kind::movable))
-        .map(|r| (r["path"].clone(), r["size"].parse().unwrap_or(0)))
+        .filter(|r| r.status == "OK" && (o.select_all || r.slow))
+        .filter(|r| Kind::parse(&r.kind).is_some_and(Kind::movable))
+        .map(|r| (r.path, r.size))
         .collect();
-    println!(
+    ctl.message(&format!(
         "  Files from the report: {} ({}).",
         fmt_count(picked.len() as u64),
-        if o.select_all { "all measured files, --select all" } else { "the slow files" }
-    );
+        if o.select_all {
+            "all measured files, --select all"
+        } else {
+            "the slow files"
+        }
+    ));
     if picked.is_empty() {
-        println!("  There is nothing to do.");
-        return Ok(0);
+        ctl.message(&format!("  There is nothing to do."));
+        return Ok(RefreshOutcome::default());
     }
     let vol = sys::volume(Path::new(&picked[0].0))?;
     for (p, _) in &picked {
         if Path::new(p).exists() && sys::volume(Path::new(p)).map(|v| v.id).ok() != Some(vol.id) {
-            eprintln!("  The report has files on more than one volume. {p} is not on {}.", vol.root.display());
-            eprintln!("  Refresh one volume at a time. Make one scan report for each volume.");
-            return Ok(1);
+            ctl.message(&format!(
+                "  The report has files on more than one volume. {p} is not on {}.",
+                vol.root.display()
+            ));
+            ctl.message(&format!(
+                "  Refresh one volume at a time. Make one scan report for each volume."
+            ));
+            return Ok(RefreshOutcome {
+                status: RunStatus::InvalidInput,
+                ..Default::default()
+            });
         }
     }
-    println!(
+    ctl.message(&format!(
         "  Volume: {}  {}, {}-byte clusters, {} free{}",
         vol.root.display(),
         vol.fs,
         vol.block,
         fmt_bytes(vol.free_bytes),
         if vol.is_system { ", system volume" } else { "" }
-    );
+    ));
     if let Some(ref model) = vol.health.model {
-        println!("  Drive:  {} (SMART: {})", model, vol.health.status);
+        ctl.message(&format!(
+            "  Drive:  {} (SMART: {})",
+            model, vol.health.status
+        ));
     }
     if !o.dry_run {
         if let Err(msg) = sys::refresh_check(&vol) {
-            eprintln!("  {msg}");
-            return Ok(2);
+            ctl.message(&format!("  {msg}"));
+            return Ok(RefreshOutcome {
+                status: RunStatus::Unsupported,
+                ..Default::default()
+            });
         }
     }
     if sys::is_elevated() {
@@ -105,37 +133,62 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
     }
     let label = sys::volume_label(&vol);
     if vol.is_system && !o.dry_run && !o.allow_system_volume {
-        eprintln!("  {label} is the system volume. To refresh it, give --allow-system-volume.");
-        return Ok(1);
+        ctl.message(&format!(
+            "  {label} is the system volume. To refresh it, give --allow-system-volume."
+        ));
+        return Ok(RefreshOutcome {
+            status: RunStatus::InvalidInput,
+            ..Default::default()
+        });
     }
 
     let mut done = HashSet::new();
     if o.resume && o.out.exists() {
         if csv::header(&o.out)? != HEADER {
-            eprintln!("  A different version of ssd-refresh wrote this log. The columns are different: {}", o.out.display());
-            eprintln!("  Use a new log file with --out.");
-            return Ok(1);
+            ctl.message(&format!("  A different version of ssd-refresh wrote this log. The columns are different: {}", o.out.display()));
+            ctl.message(&format!("  Use a new log file with --out."));
+            return Ok(RefreshOutcome {
+                status: RunStatus::InvalidInput,
+                ..Default::default()
+            });
         }
-        for r in csv::read_all(&o.out)? {
+        for r in crate::report::read_refresh(&o.out)? {
             if FINAL.contains(&r["status"].as_str()) {
                 done.insert(r["path"].clone());
             }
         }
-        println!("  Resume: {} files are finished in the log. The tool does not process them again.", fmt_count(done.len() as u64));
+        ctl.message(&format!(
+            "  Resume: {} files are finished in the log. The tool does not process them again.",
+            fmt_count(done.len() as u64)
+        ));
     } else if o.out.exists() {
-        eprintln!("  The log exists already: {}", o.out.display());
-        eprintln!("  Use --resume to continue it, or use a different file name with --out.");
-        return Ok(1);
+        ctl.message(&format!("  The log exists already: {}", o.out.display()));
+        ctl.message(&format!(
+            "  Use --resume to continue it, or use a different file name with --out."
+        ));
+        return Ok(RefreshOutcome {
+            status: RunStatus::InvalidInput,
+            ..Default::default()
+        });
     }
-    let todo: Vec<_> = picked.into_iter().filter(|(p, _)| !done.contains(p)).collect();
+    let todo: Vec<_> = picked
+        .into_iter()
+        .filter(|(p, _)| !done.contains(p))
+        .collect();
     let todo_bytes: u64 = todo.iter().map(|t| t.1).sum();
-    println!("  Files to process: {}, {}.", fmt_count(todo.len() as u64), fmt_bytes(todo_bytes));
+    ctl.message(&format!(
+        "  Files to process: {}, {}.",
+        fmt_count(todo.len() as u64),
+        fmt_bytes(todo_bytes)
+    ));
 
     // ---------- Step 2: explain and confirm ----------
-    println!();
-    println!("Step 2/3  What will happen");
-    println!("  The tool does these steps for each file, one file at a time:");
-    para(
+    ctl.message("");
+    ctl.message(&format!("Step 2/3  What will happen"));
+    ctl.message(&format!(
+        "  The tool does these steps for each file, one file at a time:"
+    ));
+    ctl.paragraph(
         4,
         &format!(
             "1. Read the file from the disk (not from the OS cache) at {} I/O priority. Write its SHA-256 and speed to the log.",
@@ -143,13 +196,19 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
         ),
     );
     if o.force {
-        para(4, "2. (--force) Continue also if the file is not slow now.");
+        ctl.paragraph(4, "2. (--force) Continue also if the file is not slow now.");
     } else {
-        para(4, "2. If the file is not slow now, do not move it (status SKIP_FAST).");
+        ctl.paragraph(
+            4,
+            "2. If the file is not slow now, do not move it (status SKIP_FAST).",
+        );
     }
     if o.control_fraction > 0.0 {
-        let n = todo.iter().filter(|(p, _)| in_control_group(p, o.control_fraction)).count();
-        para(
+        let n = todo
+            .iter()
+            .filter(|(p, _)| in_control_group(p, o.control_fraction))
+            .count();
+        ctl.paragraph(
             4,
             &format!(
                 "   Control group: the tool reads about {:.0}% of the files ({} of {}) but does not move them (status CONTROL). The same path always gets the same choice. Later, `ssd-refresh verify` compares these files with the moved files. Then you can see if writing again does more than reading only.",
@@ -160,9 +219,12 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
         );
     }
     if o.dry_run {
-        para(4, "3. Dry run: stop here. The tool does not move the file (status DRYRUN).");
+        ctl.paragraph(
+            4,
+            "3. Dry run: stop here. The tool does not move the file (status DRYRUN).",
+        );
     } else {
-        para(
+        ctl.paragraph(
             4,
             &format!(
                 "3. Tell the file system to move the data to free clusters, in pieces of {} MiB or less. The tool uses {}. The file system moves each piece fully or not at all. It keeps the reads and writes of other programs correct.",
@@ -170,60 +232,90 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
                 sys::MOVE_METHOD
             ),
         );
-        para(4, "4. Read the file again. Compare the SHA-256 and write the new speed to the log. The same SHA-256: OK. A different SHA-256, and another program wrote the file: CHANGED (this is normal). A different SHA-256, and no other program wrote the file: MISMATCH. Then the tool stops immediately.");
-        para(2, &format!("The moves use {} I/O priority. Thus other programs get the disk first.", priority_words(o.read.io_priority)));
-        let control_bytes: u64 = todo.iter().filter(|(p, _)| in_control_group(p, o.control_fraction)).map(|t| t.1).sum();
-        para(2, &format!("Data to write: {} or less. The file system writes each moved file one time, at its new place.", fmt_bytes(todo_bytes - control_bytes)));
+        ctl.paragraph(4, "4. Read the file again. Compare the SHA-256 and write the new speed to the log. The same SHA-256: OK. A different SHA-256, and another program wrote the file: CHANGED (this is normal). A different SHA-256, and no other program wrote the file: MISMATCH. Then the tool stops immediately.");
+        ctl.paragraph(
+            2,
+            &format!(
+                "The moves use {} I/O priority. Thus other programs get the disk first.",
+                priority_words(o.read.io_priority)
+            ),
+        );
+        let control_bytes: u64 = todo
+            .iter()
+            .filter(|(p, _)| in_control_group(p, o.control_fraction))
+            .map(|t| t.1)
+            .sum();
+        ctl.paragraph(2, &format!("Data to write: {} or less. The file system writes each moved file one time, at its new place.", fmt_bytes(todo_bytes - control_bytes)));
         for w in sys::refresh_warnings(&vol) {
-            para(2, &format!("Warning: {w}"));
+            ctl.paragraph(2, &format!("Warning: {w}"));
         }
     }
-    para(2, "Keys: p + Enter = pause or continue. q + Enter = stop after this file (use --resume later). You can stop at any time. This does not damage files.");
+    ctl.paragraph(2, "Keys: p + Enter = pause or continue. q + Enter = stop after this file (use --resume later). You can stop at any time. This does not damage files.");
 
     if !o.dry_run {
         let typed = match &o.confirm {
             Some(c) => c.clone(),
-            None => {
-                println!();
-                print!("To start, type {} and push Enter. Other text cancels: ", label.trim_end_matches(':'));
-                io::stdout().flush()?;
-                let mut line = String::new();
-                io::stdin().lock().read_line(&mut line)?;
-                line
-            }
+            None => ctl.confirm(&label)?,
         };
         if !confirm_matches(&label, &typed) {
-            println!("Cancelled. The tool did not change anything.");
-            return Ok(1);
+            ctl.message(&format!("Cancelled. The tool did not change anything."));
+            return Ok(RefreshOutcome {
+                status: RunStatus::InvalidInput,
+                ..Default::default()
+            });
         }
     }
 
     // ---------- Step 3: process ----------
-    println!();
-    println!("Step 3/3  {}", if o.dry_run { "Measure again" } else { "Refresh" });
+    ctl.message("");
+    ctl.message(&format!(
+        "Step 3/3  {}",
+        if o.dry_run {
+            "Measure again"
+        } else {
+            "Refresh"
+        }
+    ));
     // This thread gives the move commands. Thus its I/O priority is the priority of the moves.
-    let reloc = if o.dry_run { None } else { Some(Relocator::new(&vol, &RelocOptions { max_chunk: o.max_chunk_mb.max(1) << 20 })?) };
-    sys::set_thread_io_priority(o.read.io_priority);
-    let mut r = Run { o, vol_block: vol.block, ctl: ctl.clone(), reloc, q: sys::IoQueue::new(o.read.qd, o.read.chunk) };
+    let reloc = if o.dry_run {
+        None
+    } else {
+        Some(Relocator::new(
+            &vol,
+            &RelocOptions {
+                max_chunk: o.max_chunk_mb.max(1) << 20,
+            },
+        )?)
+    };
+    let _priority = sys::ThreadIoPriorityGuard::new(o.read.io_priority);
+    let mut r = Run {
+        o,
+        vol_block: vol.block,
+        ctl: ctl.clone(),
+        reloc,
+        q: sys::IoQueue::new(o.read.qd, o.read.chunk),
+    };
     let mut w = CsvWriter::create(&o.out, &HEADER, o.resume)?;
-    let prog = Progress::new(Phase::Refresh { dry_run: o.dry_run }, todo.len() as u64, todo_bytes, ctl.clone());
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut moved_bytes = 0u64;
-    let mut code = 0;
+    let prog = Progress::new(
+        Phase::Refresh { dry_run: o.dry_run },
+        todo.len() as u64,
+        todo_bytes,
+        ctl.clone(),
+    );
+    let mut outcome = RefreshOutcome::default();
     for (i, (path, size)) in todo.iter().enumerate() {
         if ctl.stopped() {
-            code = 4;
+            outcome.status = RunStatus::Stopped;
             break;
         }
         ctl.wait_while_paused();
         if ctl.stopped() {
-            code = 4;
+            outcome.status = RunStatus::Stopped;
             break;
         }
         let row = r.process(Path::new(path), &|m: &str| prog.log(m));
         w.row(row.values())?;
-        *counts.entry(row.status.clone()).or_default() += 1;
-        moved_bytes += row.st.moved_bytes;
+        outcome.record(&row.status, row.st.moved_bytes);
         prog.add_file(*size);
         match row.status.as_str() {
             "OK" => prog.add_moved(),
@@ -235,52 +327,77 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<i32> {
             _ => prog.add_failed(),
         }
         if row.status == "MISMATCH" {
-            prog.log(&format!("STOPPED: the SHA-256 changed, and no other program wrote the file: {path}"));
+            prog.log(&format!(
+                "STOPPED: the SHA-256 changed, and no other program wrote the file: {path}"
+            ));
             prog.log("Keep the log and report this problem. The file system moves each piece fully or not at all, so this must not occur.");
-            code = 3;
+            outcome.status = RunStatus::DataMismatch;
             break;
         }
         if o.stop_after > 0 && i + 1 >= o.stop_after {
-            prog.log(&format!("The tool processed {} files (--stop-after). It stops now.", i + 1));
-            code = 4;
+            prog.log(&format!(
+                "The tool processed {} files (--stop-after). It stops now.",
+                i + 1
+            ));
+            outcome.status = RunStatus::Stopped;
             break;
         }
     }
     prog.finish();
-    sys::set_thread_io_priority(Priority::Normal);
 
-    println!();
-    println!("Summary");
-    println!("  Files per status: {}", counts.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "));
+    ctl.message("");
+    ctl.message(&format!("Summary"));
+    ctl.message(&format!(
+        "  Files per status: {}",
+        outcome
+            .counts
+            .iter()
+            .map(|(k, v)| format!("{k} {v}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
     if !o.dry_run {
-        println!("  Data moved: {}", fmt_bytes(moved_bytes));
+        ctl.message(&format!("  Data moved: {}", fmt_bytes(outcome.moved_bytes)));
     }
-    println!("  The statuses: see the README or `ssd-refresh help refresh`.");
-    if code == 4 {
-        println!("  The run stopped early. To continue, run the same command with --resume.");
+    ctl.message(&format!(
+        "  The statuses: see the README or `ssd-refresh help refresh`."
+    ));
+    if outcome.status == RunStatus::Stopped {
+        ctl.message(&format!(
+            "  The run stopped early. To continue, run the same command with --resume."
+        ));
     }
-    if !o.dry_run && moved_bytes > 0 {
+    if !o.dry_run && outcome.moved_bytes > 0 {
         let hint = sys::retrim_hint(&vol);
         if !hint.is_empty() {
-            println!("  Next: {hint}");
+            ctl.message(&format!("  Next: {hint}"));
         }
     }
     if !o.dry_run {
-        println!();
-        para(
+        ctl.message("");
+        ctl.paragraph(
             0,
             "The tool measured the 'after' speed in the log right after the move. New data is always fast at first (it can be in the fast cache of the SSD). Thus this speed does not show the real result. After 1 day or more, check again:",
         );
-        println!("  ssd-refresh verify --from \"{}\"", o.out.display());
+        ctl.message(&format!(
+            "  ssd-refresh verify --from \"{}\"",
+            o.out.display()
+        ));
     }
-    Ok(code)
+    Ok(outcome)
 }
 
 /// Is the text that the user typed (or gave with --confirm) the name of the volume `label`?
 /// "C:" matches "c", "C:" and "C:\". A folder mount point "D:\mnt\vol\" matches with or without
 /// the last backslash, in upper or lower case, with or without quotes.
 pub fn confirm_matches(label: &str, typed: &str) -> bool {
-    let norm = |s: &str| s.trim().trim_matches('"').trim_end_matches(['\\', '/']).trim_end_matches(':').to_uppercase();
+    let norm = |s: &str| {
+        s.trim()
+            .trim_matches('"')
+            .trim_end_matches(['\\', '/'])
+            .trim_end_matches(':')
+            .to_uppercase()
+    };
     let want = norm(label);
     if want.is_empty() {
         // The Unix root "/" becomes an empty text. The user must type "/".
@@ -345,7 +462,9 @@ impl Row {
             self.st.failures.to_string(),
             self.ext_before.to_string(),
             self.ext_after.to_string(),
-            self.writers.map(|w| (w as u8).to_string()).unwrap_or_else(|| "?".into()),
+            self.writers
+                .map(|w| (w as u8).to_string())
+                .unwrap_or_else(|| "?".into()),
             (self.meta_changed as u8).to_string(),
             self.sha_before.clone(),
             self.sha_after.clone(),
@@ -358,7 +477,10 @@ impl Row {
 
 impl Run<'_> {
     fn process(&mut self, path: &Path, log: &dyn Fn(&str)) -> Row {
-        let mut row = Row { path: path.to_string_lossy().into_owned(), ..Default::default() };
+        let mut row = Row {
+            path: path.to_string_lossy().into_owned(),
+            ..Default::default()
+        };
         if let Err(e) = self.process_inner(path, &mut row, log) {
             row.status = "ERROR".into();
             row.detail = e.to_string();
@@ -397,12 +519,25 @@ impl Run<'_> {
 
         let data = sys::open_direct(path)?;
         sys::set_read_priority(&mut self.q, &data, self.o.read.measure_priority);
-        let pre = read_file(&mut self.q, &data, m1.size, &l1, true, true, &self.o.read, &self.ctl)?;
+        let pre = read_file(
+            &mut self.q,
+            &data,
+            m1.size,
+            &l1,
+            true,
+            true,
+            &self.o.read,
+            &self.ctl,
+        )?;
         row.before_mbps = pre.mbps();
         row.before_slow = pre.is_slow();
         row.sha_before = pre.sha256.map(|h| hex(&h)).unwrap_or_default();
         // Without a flush, the SHA-256 can be of older data. Then verify must not use the metadata.
-        row.meta_key = if flushed.is_ok() { m1.key() } else { String::new() };
+        row.meta_key = if flushed.is_ok() {
+            m1.key()
+        } else {
+            String::new()
+        };
         if !self.o.force && !pre.is_slow() {
             row.status = "SKIP_FAST".into();
             return Ok(());
@@ -434,7 +569,16 @@ impl Run<'_> {
         }
         let l2 = sys::layout(&mf, &m2, self.vol_block)?;
         row.ext_after = l2.on_disk().count();
-        let post = read_file(&mut self.q, &data, m2.size, &l2, true, true, &self.o.read, &self.ctl)?;
+        let post = read_file(
+            &mut self.q,
+            &data,
+            m2.size,
+            &l2,
+            true,
+            true,
+            &self.o.read,
+            &self.ctl,
+        )?;
         row.after_mbps = post.mbps();
         row.after_slow = post.is_slow();
         row.sha_after = post.sha256.map(|h| hex(&h)).unwrap_or_default();
@@ -445,7 +589,8 @@ impl Run<'_> {
             _ => None,
         };
         row.meta_changed = m2.changed_since(&m1);
-        let explained = row.writers == Some(true) || row.meta_changed || pre.short_read || post.short_read;
+        let explained =
+            row.writers == Some(true) || row.meta_changed || pre.short_read || post.short_read;
 
         if row.sha_before != row.sha_after && !explained {
             row.status = "MISMATCH".into();
@@ -487,7 +632,12 @@ mod tests {
     #[test]
     fn folder_mount_point() {
         let label = r"F:\ai-lab\scratch\vhdx-mnt-1\";
-        for typed in [label, r"F:\ai-lab\scratch\vhdx-mnt-1", r"f:\AI-LAB\scratch\vhdx-mnt-1\", "\"F:\\ai-lab\\scratch\\vhdx-mnt-1\\\"\n"] {
+        for typed in [
+            label,
+            r"F:\ai-lab\scratch\vhdx-mnt-1",
+            r"f:\AI-LAB\scratch\vhdx-mnt-1\",
+            "\"F:\\ai-lab\\scratch\\vhdx-mnt-1\\\"\n",
+        ] {
             assert!(confirm_matches(label, typed), "{typed:?}");
         }
         // The drive that holds the mount folder is a different volume.

@@ -32,7 +32,10 @@ impl AppState {
         }
         let ctl = Control::new(None);
         *g = Some(ctl.clone());
-        Ok(RunGuard { slot: self.slot.clone(), ctl })
+        Ok(RunGuard {
+            slot: self.slot.clone(),
+            ctl,
+        })
     }
 
     /// The control of the running operation, if there is one.

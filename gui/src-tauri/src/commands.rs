@@ -3,49 +3,56 @@
 //! Each long command runs on a worker thread (`spawn_blocking`), so the window and the
 //! pause and stop commands stay fast.
 
-use crate::dto::{
-    Environment, ProgressDto, RefreshOutcome, ScanOutcome, SlowFileDto, VolumeDto,
-};
+use crate::dto::{Environment, ProgressDto, RefreshOutcome, ScanOutcome, VolumeDto};
 use crate::state::AppState;
 use ssd_refresh::control::Control;
+use ssd_refresh::outcome::RunStatus;
 use ssd_refresh::reader::ReadOptions;
 use ssd_refresh::refresh::{self, RefreshOptions};
 use ssd_refresh::scan::{self, ScanOptions};
-use ssd_refresh::{csv, sys};
+use ssd_refresh::sys;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 /// The same defaults as the command line tool.
 const PARALLEL_READS: usize = 8;
 const MAX_CHUNK_MB: u64 = 16;
-/// The window shows at most this many slow files. `ScanOutcome::slow_total` has the real number.
-const MAX_SLOW_LISTED: usize = 500;
 /// The event name that carries progress to the window.
 const PROGRESS_EVENT: &str = "progress";
 
-// Exit codes of `scan::run` and `refresh::run`.
-const CODE_STOPPED: i32 = 4;
-const CODE_MISMATCH: i32 = 3;
-
 #[tauri::command]
 pub fn environment() -> Environment {
-    Environment { elevated: sys::is_elevated() }
+    Environment {
+        elevated: sys::is_elevated(),
+    }
 }
 
 #[tauri::command]
 pub async fn list_volumes() -> Result<Vec<VolumeDto>, String> {
-    run_blocking(|| Ok(ssd_refresh::list_volumes().into_iter().map(VolumeDto::from).collect())).await
+    run_blocking(|| {
+        Ok(ssd_refresh::list_volumes()
+            .into_iter()
+            .map(VolumeDto::from)
+            .collect())
+    })
+    .await
 }
 
 /// Pause or continue. It returns the new state: `true` means paused.
 #[tauri::command]
 pub fn toggle_pause(state: State<'_, AppState>) -> Result<bool, String> {
-    state.current().map(|c| c.toggle_pause()).ok_or_else(|| "Nothing is running.".to_string())
+    state
+        .current()
+        .map(|c| c.toggle_pause())
+        .ok_or_else(|| "Nothing is running.".to_string())
 }
 
 #[tauri::command]
 pub fn stop_operation(state: State<'_, AppState>) -> Result<(), String> {
-    state.current().map(|c| c.request_stop()).ok_or_else(|| "Nothing is running.".to_string())
+    state
+        .current()
+        .map(|c| c.request_stop())
+        .ok_or_else(|| "Nothing is running.".to_string())
 }
 
 #[tauri::command]
@@ -122,9 +129,7 @@ pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("explorer")
-            .arg(&dir)
-            .spawn();
+        let _ = std::process::Command::new("explorer").arg(&dir).spawn();
     }
     #[cfg(target_os = "macos")]
     {
@@ -154,9 +159,12 @@ pub fn save_log_as(content: String) -> Result<Option<String>, String> {
     }
 }
 
-
 #[tauri::command]
-pub async fn start_scan(app: AppHandle, state: State<'_, AppState>, root: String) -> Result<ScanOutcome, String> {
+pub async fn start_scan(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    root: String,
+) -> Result<ScanOutcome, String> {
     if !Path::new(&root).is_dir() {
         return Err(format!("{root} is not a folder."));
     }
@@ -174,12 +182,13 @@ pub async fn start_scan(app: AppHandle, state: State<'_, AppState>, root: String
             parallel: PARALLEL_READS,
             read: ReadOptions::default(),
         };
-        let code = scan::run(&opts, ctl.clone()).map_err(|e| format!("The scan failed: {e}"))?;
-        let stopped = code == CODE_STOPPED || ctl.stopped();
-        if code != 0 && !stopped {
-            return Err(format!("The scan could not run (code {code})."));
+        let result = scan::run(&opts, ctl).map_err(|e| format!("The scan failed: {e}"))?;
+        match result.status {
+            RunStatus::Completed | RunStatus::Stopped => {
+                Ok(ScanOutcome::from_core(&report, result))
+            }
+            status => Err(format!("The scan could not run: {status:?}")),
         }
-        read_outcome(&report, stopped)
     })
     .await
 }
@@ -218,19 +227,17 @@ pub async fn start_refresh(
             control_fraction: 0.0,
             read: ReadOptions::default(),
         };
-        let code = refresh::run(&opts, ctl.clone()).map_err(|e| format!("The refresh failed: {e}"))?;
-        if code == CODE_MISMATCH {
-            return Err("The refresh stopped: the data of a file changed during the move. \
-                        Keep the log file and report this problem."
-                .into());
+        let result = refresh::run(&opts, ctl).map_err(|e| format!("The refresh failed: {e}"))?;
+        match result.status {
+            RunStatus::DataMismatch => Err(
+                "The data of a file changed without a writer. Keep the log and report this error."
+                    .into(),
+            ),
+            RunStatus::Completed | RunStatus::Stopped => {
+                Ok(RefreshOutcome::from_core(&log, result))
+            }
+            status => Err(format!("The refresh could not run: {status:?}")),
         }
-        let stopped = code == CODE_STOPPED || ctl.stopped();
-        if code != 0 && !stopped {
-            return Err(format!("The refresh could not run (code {code})."));
-        }
-        let rows = csv::read_all(&log).unwrap_or_default();
-        let moved_files = rows.iter().filter(|r| r.get("status").map(String::as_str) == Some("OK")).count();
-        Ok(RefreshOutcome { log_path: log.to_string_lossy().into_owned(), moved_files, stopped })
     })
     .await
 }
@@ -241,11 +248,17 @@ where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(work).await.map_err(|e| format!("The worker stopped: {e}"))?
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("The worker stopped: {e}"))?
 }
 
 /// Send every progress update of `ctl` to the window.
 fn forward_progress(ctl: &Control, app: &AppHandle) {
+    let messages = app.clone();
+    ctl.set_logger(std::sync::Arc::new(move |message| {
+        let _ = messages.emit("operation-message", message);
+    }));
     let app = app.clone();
     ctl.set_progress_reporter(std::sync::Arc::new(move |update| {
         let _ = app.emit(PROGRESS_EVENT, ProgressDto::from(update));
@@ -254,13 +267,21 @@ fn forward_progress(ctl: &Control, app: &AppHandle) {
 
 /// Where the reports go: the data folder of the app, not a fixed path.
 fn reports_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("reports");
+    let dir = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("reports");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot make the report folder: {e}"))?;
     Ok(dir)
 }
 
 fn report_name(root: &str) -> String {
-    let letter = root.chars().next().filter(char::is_ascii_alphabetic).map_or('x', |c| c.to_ascii_lowercase());
+    let letter = root
+        .chars()
+        .next()
+        .filter(char::is_ascii_alphabetic)
+        .map_or('x', |c| c.to_ascii_lowercase());
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis());
@@ -269,38 +290,17 @@ fn report_name(root: &str) -> String {
 
 /// The window may only name a report that is inside the report folder.
 fn trusted_report(app: &AppHandle, path: &str) -> Result<PathBuf, String> {
-    let dir = reports_dir(app)?.canonicalize().map_err(|e| e.to_string())?;
-    let report = Path::new(path).canonicalize().map_err(|_| "The report file is not found.".to_string())?;
+    let dir = reports_dir(app)?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let report = Path::new(path)
+        .canonicalize()
+        .map_err(|_| "The report file is not found.".to_string())?;
     if report.starts_with(&dir) {
         Ok(report)
     } else {
         Err("The report file is not in the report folder.".into())
     }
-}
-
-fn read_outcome(report: &Path, stopped: bool) -> Result<ScanOutcome, String> {
-    // A scan that stopped in step 1 has no report file.
-    let rows = if report.exists() { csv::read_all(report).map_err(|e| e.to_string())? } else { Vec::new() };
-    let number = |row: &csv::Row, key: &str| row.get(key).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
-    let mut slow: Vec<SlowFileDto> = rows
-        .iter()
-        .filter(|r| r.get("slow").map(String::as_str) == Some("1"))
-        .map(|r| SlowFileDto {
-            path: r.get("path").cloned().unwrap_or_default(),
-            size: number(r, "size") as u64,
-            mbps: number(r, "mbps"),
-        })
-        .collect();
-    slow.sort_by(|a, b| a.mbps.total_cmp(&b.mbps));
-    let slow_total = slow.len();
-    slow.truncate(MAX_SLOW_LISTED);
-    Ok(ScanOutcome {
-        report_path: report.to_string_lossy().into_owned(),
-        total_files: rows.len(),
-        slow_total,
-        slow_files: slow,
-        stopped,
-    })
 }
 
 #[cfg(test)]

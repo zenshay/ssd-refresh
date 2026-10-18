@@ -61,7 +61,10 @@ impl AlignedBuf {
         let layout = AllocLayout::from_size_align(len.max(4096), 4096).unwrap();
         let ptr = unsafe { alloc_zeroed(layout) };
         assert!(!ptr.is_null(), "out of memory");
-        AlignedBuf { ptr, len: len.max(4096) }
+        AlignedBuf {
+            ptr,
+            len: len.max(4096),
+        }
     }
     pub fn as_slice(&self) -> &[u8] {
         unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
@@ -79,6 +82,11 @@ impl AlignedBuf {
 
 impl Drop for AlignedBuf {
     fn drop(&mut self) {
-        unsafe { dealloc(self.ptr, AllocLayout::from_size_align(self.len, 4096).unwrap()) }
+        unsafe {
+            dealloc(
+                self.ptr,
+                AllocLayout::from_size_align(self.len, 4096).unwrap(),
+            )
+        }
     }
 }

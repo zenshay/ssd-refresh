@@ -74,4 +74,6 @@ export const api = {
     invoke<string | null>("save_log_as", { content }),
   onProgress: (handler: (p: Progress) => void): Promise<UnlistenFn> =>
     listen<Progress>("progress", (event) => handler(event.payload)),
+  onMessage: (handler: (message: string) => void): Promise<UnlistenFn> =>
+    listen<string>("operation-message", (event) => handler(event.payload)),
 };

@@ -16,12 +16,22 @@ struct Args {
     used: Vec<bool>,
 }
 
-const FLAGS: [&str; 6] = ["--hash", "--resume", "--force", "--allow-system-volume", "--dry-run", "--help"];
+const FLAGS: [&str; 6] = [
+    "--hash",
+    "--resume",
+    "--force",
+    "--allow-system-volume",
+    "--dry-run",
+    "--help",
+];
 
 impl Args {
     fn new(list: Vec<String>) -> Args {
         let n = list.len();
-        Args { list, used: vec![false; n] }
+        Args {
+            list,
+            used: vec![false; n],
+        }
     }
     fn flag(&mut self, name: &str) -> bool {
         match self.list.iter().position(|a| a == name) {
@@ -33,15 +43,23 @@ impl Args {
         }
     }
     fn value(&mut self, name: &str) -> Result<Option<String>, String> {
-        let Some(i) = self.list.iter().position(|a| a == name) else { return Ok(None) };
-        let v = self.list.get(i + 1).ok_or(format!("{name} needs a value"))?.clone();
+        let Some(i) = self.list.iter().position(|a| a == name) else {
+            return Ok(None);
+        };
+        let v = self
+            .list
+            .get(i + 1)
+            .ok_or(format!("{name} needs a value"))?
+            .clone();
         self.used[i] = true;
         self.used[i + 1] = true;
         Ok(Some(v))
     }
     fn num<T: std::str::FromStr>(&mut self, name: &str, default: T) -> Result<T, String> {
         match self.value(name)? {
-            Some(v) => v.parse().map_err(|_| format!("{name}: {v} is not a number")),
+            Some(v) => v
+                .parse()
+                .map_err(|_| format!("{name}: {v} is not a number")),
             None => Ok(default),
         }
     }
@@ -65,7 +83,10 @@ impl Args {
     }
     fn finish(&self) -> Result<(), String> {
         match self.used.iter().position(|u| !u) {
-            Some(i) => Err(format!("unknown option: {} (see ssd-refresh help)", self.list[i])),
+            Some(i) => Err(format!(
+                "unknown option: {} (see ssd-refresh help)",
+                self.list[i]
+            )),
             None => Ok(()),
         }
     }
@@ -73,7 +94,9 @@ impl Args {
 
 fn priority(a: &mut Args, name: &str, default: Priority) -> Result<Priority, String> {
     match a.value(name)? {
-        Some(v) => Priority::parse(&v).ok_or(format!("{name} must be verylow, low or normal, not {v}")),
+        Some(v) => {
+            Priority::parse(&v).ok_or(format!("{name} must be verylow, low or normal, not {v}"))
+        }
         None => Ok(default),
     }
 }
@@ -110,8 +133,12 @@ fn run() -> Result<i32, String> {
     }
     match cmd.as_str() {
         "scan" => {
-            let root = abs(&a.positional(0).ok_or("scan needs a folder or file (see ssd-refresh help scan)")?);
-            let out = abs(&a.value("--out")?.unwrap_or_else(|| format!("scan-{}.csv", timestamp())));
+            let root = abs(&a
+                .positional(0)
+                .ok_or("scan needs a folder or file (see ssd-refresh help scan)")?);
+            let out = abs(&a
+                .value("--out")?
+                .unwrap_or_else(|| format!("scan-{}.csv", timestamp())));
             let o = ScanOptions {
                 root,
                 hash: a.flag("--hash"),
@@ -122,17 +149,24 @@ fn run() -> Result<i32, String> {
             };
             a.finish()?;
             let ctl = Control::new(Some(pause_path(&out)));
-            ctl.install();
-            scan::run(&o, ctl).map_err(|e| e.to_string())
+            ssd_refresh::cli::install(&ctl);
+            scan::run(&o, ctl)
+                .map(|result| ssd_refresh::cli::exit_code(result.status))
+                .map_err(|e| e.to_string())
         }
         "refresh" => {
-            let from = abs(&a.value("--from")?.ok_or("refresh needs --from <report.csv> (see ssd-refresh help refresh)")?);
+            let from = abs(&a
+                .value("--from")?
+                .ok_or("refresh needs --from <report.csv> (see ssd-refresh help refresh)")?);
             let select_all = match a.value("--select")?.as_deref() {
                 None | Some("slow") => false,
                 Some("all") => true,
                 Some(s) => return Err(format!("--select must be slow or all, not {s}")),
             };
-            let default_out = from.with_file_name(format!("{}-refresh.csv", from.file_stem().unwrap_or_default().to_string_lossy()));
+            let default_out = from.with_file_name(format!(
+                "{}-refresh.csv",
+                from.file_stem().unwrap_or_default().to_string_lossy()
+            ));
             let out = a.value("--out")?.map(|s| abs(&s)).unwrap_or(default_out);
             let o = RefreshOptions {
                 from,
@@ -153,24 +187,40 @@ fn run() -> Result<i32, String> {
                 return Err("--control-fraction must be between 0 and 1".into());
             }
             let ctl = Control::new(Some(pause_path(&out)));
-            ctl.install();
-            refresh::run(&o, ctl).map_err(|e| e.to_string())
+            ssd_refresh::cli::install(&ctl);
+            refresh::run(&o, ctl)
+                .map(|result| ssd_refresh::cli::exit_code(result.status))
+                .map_err(|e| e.to_string())
         }
         "verify" => {
-            let from = abs(&a.value("--from")?.ok_or("verify needs --from <log or report.csv> (see ssd-refresh help verify)")?);
+            let from = abs(&a
+                .value("--from")?
+                .ok_or("verify needs --from <log or report.csv> (see ssd-refresh help verify)")?);
             let select_all = match a.value("--select")?.as_deref() {
                 None | Some("slow") => false,
                 Some("all") => true,
                 Some(s) => return Err(format!("--select must be slow or all, not {s}")),
             };
             // C-refresh.csv -> C-refresh.verify.log, next to the source
-            let log = a.value("--log")?.map(|s| abs(&s)).unwrap_or_else(|| from.with_extension("verify.log"));
+            let log = a
+                .value("--log")?
+                .map(|s| abs(&s))
+                .unwrap_or_else(|| from.with_extension("verify.log"));
             let out = a.value("--out")?.map(|s| abs(&s));
-            let o = VerifyOptions { from, out, log: log.clone(), sample: a.num("--sample", 0)?, select_all, read: read_opts(&mut a)? };
+            let o = VerifyOptions {
+                from,
+                out,
+                log: log.clone(),
+                sample: a.num("--sample", 0)?,
+                select_all,
+                read: read_opts(&mut a)?,
+            };
             a.finish()?;
             let ctl = Control::new(Some(pause_path(&log)));
-            ctl.install();
-            verify::run(&o, ctl).map_err(|e| e.to_string())
+            ssd_refresh::cli::install(&ctl);
+            verify::run(&o, ctl)
+                .map(|result| ssd_refresh::cli::exit_code(result.status))
+                .map_err(|e| e.to_string())
         }
         "extents" => {
             let p = abs(&a.positional(0).ok_or("extents needs a file")?);
@@ -187,8 +237,14 @@ fn run() -> Result<i32, String> {
                 l.extents.len()
             );
             for e in &l.extents {
-                let phys = e.physical.map(|x| x.to_string()).unwrap_or_else(|| "(no location on disk)".into());
-                println!("  file offset {:>14}  length {:>12}  disk offset {phys}", e.logical, e.len);
+                let phys = e
+                    .physical
+                    .map(|x| x.to_string())
+                    .unwrap_or_else(|| "(no location on disk)".into());
+                println!(
+                    "  file offset {:>14}  length {:>12}  disk offset {phys}",
+                    e.logical, e.len
+                );
             }
             Ok(0)
         }
@@ -204,9 +260,16 @@ fn run() -> Result<i32, String> {
             println!("SMART health:  {}", v.health.status);
             println!("File system:   {}", v.fs);
             println!("Cluster size:  {} bytes", v.block);
-            println!("Size / free:   {} / {}", fmt_bytes(v.total_bytes), fmt_bytes(v.free_bytes));
+            println!(
+                "Size / free:   {} / {}",
+                fmt_bytes(v.total_bytes),
+                fmt_bytes(v.free_bytes)
+            );
             println!("System volume: {}", if v.is_system { "yes" } else { "no" });
-            println!("Administrator or root: {}", if sys::is_elevated() { "yes" } else { "no" });
+            println!(
+                "Administrator or root: {}",
+                if sys::is_elevated() { "yes" } else { "no" }
+            );
             Ok(0)
         }
         "disks" => {
@@ -215,13 +278,19 @@ fn run() -> Result<i32, String> {
             if vols.is_empty() {
                 println!("No local storage volumes found.");
             } else {
-                println!("{:<6} {:<8} {:<14} {:<26} {}", "DRIVE", "FS", "FREE/TOTAL", "MODEL", "SMART");
+                println!(
+                    "{:<6} {:<8} {:<14} {:<26} {}",
+                    "DRIVE", "FS", "FREE/TOTAL", "MODEL", "SMART"
+                );
                 println!("{}", "-".repeat(70));
                 for v in vols {
                     let label = sys::volume_label(&v);
                     let space = format!("{}/{}", fmt_bytes(v.free_bytes), fmt_bytes(v.total_bytes));
                     let model = v.health.model.as_deref().unwrap_or("-");
-                    println!("{:<6} {:<8} {:<14} {:<26} {}", label, v.fs, space, model, v.health.status);
+                    println!(
+                        "{:<6} {:<8} {:<14} {:<26} {}",
+                        label, v.fs, space, model, v.health.status
+                    );
                 }
             }
             Ok(0)
@@ -257,7 +326,10 @@ fn pause_path(out: &Path) -> PathBuf {
 }
 
 fn timestamp() -> String {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     secs.to_string()
 }
 

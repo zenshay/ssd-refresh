@@ -10,14 +10,15 @@
 
 use crate::common::{fmt_bytes, fmt_count, hex, Kind, VolumeInfo};
 use crate::control::{Control, ProgressUpdate, Stage};
-use crate::csv::{self, CsvWriter};
-use crate::progress::{fit, para, width, Phase, Progress};
+use crate::csv::CsvWriter;
+use crate::outcome::{RunStatus, ScanOutcome};
+use crate::progress::{Phase, Progress};
 use crate::reader::{read_file, ReadOptions, ReadResult};
 use crate::sys;
 use std::collections::HashSet;
-use std::io::{self, IsTerminal, Write};
+use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -31,10 +32,7 @@ pub struct ScanOptions {
     pub read: ReadOptions,
 }
 
-pub const HEADER: [&str; 14] = [
-    "path", "size", "kind", "extents", "disk_bytes", "read_ms", "mbps", "min_extent_mbps",
-    "slow", "slow_bytes", "confirmed", "sha256", "status", "error",
-];
+pub use crate::report::SCAN_HEADER as HEADER;
 
 /// The minimum time between the two rounds of step 3.
 const RECHECK_GAP: Duration = Duration::from_secs(30);
@@ -43,13 +41,25 @@ const RECHECK_GAP: Duration = Duration::from_secs(30);
 const LARGE_FILE: u64 = 4 << 20;
 
 pub fn enumerate(root: &Path) -> Vec<(PathBuf, u64)> {
-    enumerate_counted(root, &AtomicU64::new(0), &AtomicU64::new(0), &Control::new(None))
+    enumerate_counted(
+        root,
+        &AtomicU64::new(0),
+        &AtomicU64::new(0),
+        &Control::new(None),
+    )
 }
 
 /// The same as `enumerate`. It also updates `count` and `bytes` for a progress line, and honors pause/stop.
-pub fn enumerate_counted(root: &Path, count: &AtomicU64, bytes: &AtomicU64, ctl: &Control) -> Vec<(PathBuf, u64)> {
+pub fn enumerate_counted(
+    root: &Path,
+    count: &AtomicU64,
+    bytes: &AtomicU64,
+    ctl: &Control,
+) -> Vec<(PathBuf, u64)> {
     let mut out = Vec::new();
-    let Ok(md) = std::fs::symlink_metadata(root) else { return out };
+    let Ok(md) = std::fs::symlink_metadata(root) else {
+        return out;
+    };
     if md.is_file() {
         out.push((root.to_path_buf(), md.len()));
         return out;
@@ -64,7 +74,9 @@ pub fn enumerate_counted(root: &Path, count: &AtomicU64, bytes: &AtomicU64, ctl:
         if ctl.stopped() {
             break;
         }
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         let mut subdirs = Vec::new();
         for ent in rd.flatten() {
             if ctl.stopped() {
@@ -90,62 +102,17 @@ pub fn enumerate_counted(root: &Path, count: &AtomicU64, bytes: &AtomicU64, ctl:
 
 /// Step 1, with a counter of the files that it found.
 fn enumerate_with_progress(root: &Path, ctl: &Arc<Control>) -> Vec<(PathBuf, u64)> {
-    let count = Arc::new(AtomicU64::new(0));
-    let bytes = Arc::new(AtomicU64::new(0));
-    let done = Arc::new(AtomicBool::new(false));
     let start = Instant::now();
-    let interactive = std::io::stdout().is_terminal();
-    let line = {
-        let (count, bytes) = (count.clone(), bytes.clone());
-        move || {
-            format!(
-                "  Found {} files, {} ({} s)",
-                fmt_count(count.load(Ordering::Relaxed)),
-                fmt_bytes(bytes.load(Ordering::Relaxed)),
-                start.elapsed().as_secs()
-            )
-        }
-    };
-    let report = {
-        let (count, bytes, ctl) = (count.clone(), bytes.clone(), ctl.clone());
-        move || {
-            ctl.report_progress(ProgressUpdate {
-                stage: Stage::Find,
-                files_done: count.load(Ordering::Relaxed),
-                total_files: 0,
-                bytes_done: bytes.load(Ordering::Relaxed),
-                total_bytes: 0,
-                mbps: 0.0,
-                eta_secs: None,
-                paused: ctl.is_paused(),
-            })
-        }
-    };
-    let t = {
-        let (done, line, report) = (done.clone(), line.clone(), report.clone());
-        std::thread::spawn(move || {
-            let mut last_log = Instant::now();
-            while !done.load(Ordering::Relaxed) {
-                if interactive {
-                    print!("\r{}", fit(&line(), width() - 1));
-                    let _ = std::io::stdout().flush();
-                } else if last_log.elapsed() >= Duration::from_secs(10) {
-                    println!("{}", line());
-                    last_log = Instant::now();
-                }
-                report();
-                std::thread::sleep(Duration::from_millis(250));
-            }
-        })
-    };
-    let files = enumerate_counted(root, &count, &bytes, ctl);
-    done.store(true, Ordering::Relaxed);
-    let _ = t.join();
-    report();
-    if interactive {
-        print!("\r{}\r", " ".repeat(width() - 1));
-    }
-    println!("{}", line());
+    let progress = Progress::new(Phase::Find, 0, 0, ctl.clone());
+    let files = enumerate_counted(root, progress.file_counter(), progress.byte_counter(), ctl);
+    let bytes = progress.byte_counter().load(Ordering::Relaxed);
+    progress.finish();
+    ctl.message(&format!(
+        "  Found {} files, {} ({} s)",
+        files.len(),
+        fmt_bytes(bytes),
+        start.elapsed().as_secs()
+    ));
     files
 }
 
@@ -157,74 +124,110 @@ fn priority_words(p: crate::common::Priority) -> &'static str {
     }
 }
 
-pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
+pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     if o.out.exists() && !o.resume {
-        eprintln!("The report exists already: {}", o.out.display());
-        eprintln!("Use --resume to continue it, or use a different file name with --out.");
-        return Ok(1);
+        ctl.message(&format!("The report exists already: {}", o.out.display()));
+        ctl.message(&format!(
+            "Use --resume to continue it, or use a different file name with --out."
+        ));
+        return Ok(ScanOutcome {
+            status: RunStatus::InvalidInput,
+            ..Default::default()
+        });
     }
     let vol = sys::volume(&o.root)?;
-    println!("ssd-refresh scan (read-only: this command does not change the disk)");
-    println!("  Folder:  {}", o.root.display());
-    println!(
+    ctl.message(&format!(
+        "ssd-refresh scan (read-only: this command does not change the disk)"
+    ));
+    ctl.message(&format!("  Folder:  {}", o.root.display()));
+    ctl.message(&format!(
         "  Volume:  {}  {}, {}-byte clusters{}",
         vol.root.display(),
         vol.fs,
         vol.block,
         if vol.is_system { ", system volume" } else { "" }
-    );
+    ));
     if let Some(ref model) = vol.health.model {
-        println!("  Drive:   {} (SMART: {})", model, vol.health.status);
+        ctl.message(&format!(
+            "  Drive:   {} (SMART: {})",
+            model, vol.health.status
+        ));
     }
-    println!("  Report:  {}", o.out.display());
-    para(11, "The scan saves each row immediately. If the scan stops, --resume can continue it.");
+    ctl.message(&format!("  Report:  {}", o.out.display()));
+    ctl.paragraph(
+        11,
+        "The scan saves each row immediately. If the scan stops, --resume can continue it.",
+    );
     if sys::is_elevated() {
         sys::enable_privileges();
     } else {
-        para(2, "Note: the scan does not run as administrator or root. Files that your user cannot open get the status ERROR.");
+        ctl.paragraph(2, "Note: the scan does not run as administrator or root. Files that your user cannot open get the status ERROR.");
     }
 
+    let mut outcome = ScanOutcome::default();
     let mut done = HashSet::new();
     if o.resume && o.out.exists() {
         // The scan reads files with status ERROR again (for example, now as administrator).
         // The new row replaces the old row.
         let mut retry = 0u64;
-        for r in csv::latest_by(csv::read_all(&o.out)?, "path") {
-            if r["status"] == "ERROR" {
+        for r in crate::report::read_scan(&o.out)? {
+            if r.status == "ERROR" {
                 retry += 1;
             } else {
-                done.insert(r["path"].clone());
+                done.insert(r.path.clone());
+                outcome.record(&r);
             }
         }
         if retry > 0 {
-            println!("  Again:   the scan reads {} files with status ERROR again.", fmt_count(retry));
+            ctl.message(&format!(
+                "  Again:   the scan reads {} files with status ERROR again.",
+                fmt_count(retry)
+            ));
         }
-        println!("  Resume:  {} files are in the report. The scan does not read them again.", fmt_count(done.len() as u64));
+        ctl.message(&format!(
+            "  Resume:  {} files are in the report. The scan does not read them again.",
+            fmt_count(done.len() as u64)
+        ));
     }
 
     // ---------- Step 1 ----------
-    println!();
-    println!("Step 1/3  Find the files");
-    para(2, "The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.");
+    ctl.message("");
+    ctl.message(&format!("Step 1/3  Find the files"));
+    ctl.paragraph(2, "The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.");
     let found = enumerate_with_progress(&o.root, &ctl);
     if ctl.stopped() {
-        println!("The scan stopped. No file was read. To start again, run the same command.");
-        return Ok(4);
+        ctl.message(&format!(
+            "The scan stopped. No file was read. To start again, run the same command."
+        ));
+        return Ok(ScanOutcome {
+            status: RunStatus::Stopped,
+            ..Default::default()
+        });
     }
-    let files: Vec<_> = found.into_iter().filter(|(p, _)| !done.contains(&p.to_string_lossy().into_owned())).collect();
+    let files: Vec<_> = found
+        .into_iter()
+        .filter(|(p, _)| !done.contains(&p.to_string_lossy().into_owned()))
+        .collect();
     let total: u64 = files.iter().map(|f| f.1).sum();
-    println!("  Files to read: {}, {}.", fmt_count(files.len() as u64), fmt_bytes(total));
+    ctl.message(&format!(
+        "  Files to read: {}, {}.",
+        fmt_count(files.len() as u64),
+        fmt_bytes(total)
+    ));
 
     // ---------- Step 2 ----------
     let parallel = o.parallel.max(1);
-    println!();
+    ctl.message("");
     // Files that the scan reads at the same time wait for each other. Thus in this step each
     // extent gets `parallel` times the extra time. Step 3 uses the normal extra time.
-    let first_pass = ReadOptions { allowance_ms: o.read.allowance_ms * parallel as f64, ..o.read.clone() };
-    println!("Step 2/3  Read each file one time");
-    para(2, "The scan reads each file directly from the disk, not from the OS cache. It measures the time for each extent. An extent is one continuous part of the file on the disk.");
+    let first_pass = ReadOptions {
+        allowance_ms: o.read.allowance_ms * parallel as f64,
+        ..o.read.clone()
+    };
+    ctl.message(&format!("Step 2/3  Read each file one time"));
+    ctl.paragraph(2, "The scan reads each file directly from the disk, not from the OS cache. It measures the time for each extent. An extent is one continuous part of the file on the disk.");
     if parallel > 1 {
-        para(
+        ctl.paragraph(
             2,
             &format!(
                 "The scan reads {parallel} files at the same time. It reads files of {} MiB or more one at a time, with {} requests at the same time. It reads smaller files {} at a time.",
@@ -234,21 +237,24 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
             ),
         );
     }
-    para(
+    ctl.paragraph(
         2,
         &format!(
             "The I/O priority is {}. Thus other programs get the disk first. When the disk is busy, this step is slower or waits. This is normal.",
             priority_words(o.read.io_priority)
         ),
     );
-    para(
+    ctl.paragraph(
         2,
         &format!(
             "If one extent is slower than {} MB/s, the file goes on the CHECK LIST. In this step, {parallel} files use the disk at the same time. Thus each extent gets {} ms of extra time (step 3: {} ms). A file on the check list is NOT slow yet. Other reads, other programs and the SSD itself can make a good file slow for a short time. Step 3 decides.",
             o.read.threshold_mbps, first_pass.allowance_ms, o.read.allowance_ms
         ),
     );
-    para(2, "Keys: p + Enter = pause or continue. q + Enter = stop (use --resume later).");
+    ctl.paragraph(
+        2,
+        "Keys: p + Enter = pause or continue. q + Enter = stop (use --resume later).",
+    );
 
     let mut w = CsvWriter::create(&o.out, &HEADER, o.resume)?;
     let prog = Progress::new(Phase::Scan, files.len() as u64, total, ctl.clone());
@@ -262,7 +268,8 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
     // Thus a large file gets the full bandwidth, and other large files do not change its time.
     // Small files need little bandwidth, so the other lanes read them at the same time. When
     // there are no more large files, the large-file lane also reads small files.
-    let (large, small): (Vec<usize>, Vec<usize>) = (0..files.len()).partition(|&i| files[i].1 >= LARGE_FILE);
+    let (large, small): (Vec<usize>, Vec<usize>) =
+        (0..files.len()).partition(|&i| files[i].1 >= LARGE_FILE);
     let next_large = AtomicUsize::new(0);
     let next_small = AtomicUsize::new(0);
     let (tx, rx) = mpsc::channel::<(Row, Option<ReadResult>)>();
@@ -279,7 +286,9 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
                     }
                     ctl.wait_while_paused();
                     let pick = if lane == 0 || parallel == 1 {
-                        large.get(next_large.fetch_add(1, Ordering::Relaxed)).or_else(|| small.get(next_small.fetch_add(1, Ordering::Relaxed)))
+                        large
+                            .get(next_large.fetch_add(1, Ordering::Relaxed))
+                            .or_else(|| small.get(next_small.fetch_add(1, Ordering::Relaxed)))
                     } else {
                         small.get(next_small.fetch_add(1, Ordering::Relaxed))
                     };
@@ -310,6 +319,8 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
                     if let Err(e) = w.row(row.values()) {
                         write_err.get_or_insert(e);
                         ctl.request_stop();
+                    } else {
+                        outcome.record(&row.record());
                     }
                 }
             }
@@ -320,21 +331,25 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
         return Err(e);
     }
     let mut stopped = ctl.stopped();
-    println!(
+    ctl.message(&format!(
         "  The scan read {} files in {}. Files on the check list: {}.",
         fmt_count(files.len() as u64),
         fmt_duration(step2.elapsed()),
         fmt_count(to_check.len() as u64)
-    );
+    ));
 
     // ---------- Step 3 ----------
     if !stopped {
-        println!();
-        println!("Step 3/3  Check the files on the check list again");
+        ctl.message("");
+        ctl.message(&format!(
+            "Step 3/3  Check the files on the check list again"
+        ));
         if to_check.is_empty() {
-            println!("  The check list is empty. There is nothing to check.");
+            ctl.message(&format!(
+                "  The check list is empty. There is nothing to check."
+            ));
         } else {
-            para(
+            ctl.paragraph(
                 2,
                 &format!(
                     "The scan reads each file again, one at a time, at {} I/O priority. No other read of this tool uses the disk at that time. The scan does this two times. Round 2 starts {} s or more after the start of round 1. Thus one short pause of the disk cannot change both rounds. For each extent, the scan uses the fastest of the three reads, with the normal extra time of {} ms. A file is SLOW only if it is slow after this step. If round 1 finds no slow file, there is no round 2.",
@@ -346,14 +361,19 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
         }
         let mut round_start = Instant::now();
         for round in 1..=2u8 {
-            let todo: Vec<usize> = (0..to_check.len()).filter(|&i| to_check[i].1.is_slow()).collect();
+            let todo: Vec<usize> = (0..to_check.len())
+                .filter(|&i| to_check[i].1.is_slow())
+                .collect();
             if todo.is_empty() || stopped {
                 break;
             }
             if round == 2 {
                 let wait = RECHECK_GAP.saturating_sub(round_start.elapsed());
                 if !wait.is_zero() {
-                    println!("  The scan waits {} s before round 2...", wait.as_secs());
+                    ctl.message(&format!(
+                        "  The scan waits {} s before round 2...",
+                        wait.as_secs()
+                    ));
                     let until = Instant::now() + wait;
                     while Instant::now() < until && !ctl.stopped() {
                         ctl.report_progress(ProgressUpdate {
@@ -363,15 +383,22 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
                             bytes_done: 0,
                             total_bytes: 0,
                             mbps: 0.0,
-                            eta_secs: Some(until.saturating_duration_since(Instant::now()).as_secs()),
+                            eta_secs: Some(
+                                until.saturating_duration_since(Instant::now()).as_secs(),
+                            ),
                             paused: ctl.is_paused(),
+                            ..Default::default()
                         });
                         std::thread::sleep(Duration::from_millis(200));
                     }
                 }
             }
             let bytes: u64 = todo.iter().map(|&i| to_check[i].0.size).sum();
-            println!("  Round {round}: {} files, {}.", fmt_count(todo.len() as u64), fmt_bytes(bytes));
+            ctl.message(&format!(
+                "  Round {round}: {} files, {}.",
+                fmt_count(todo.len() as u64),
+                fmt_bytes(bytes)
+            ));
             round_start = Instant::now();
             let prog = Progress::new(Phase::Recheck(round), todo.len() as u64, bytes, ctl.clone());
             let mut q = sys::IoQueue::new(o.read.qd, o.read.chunk);
@@ -390,29 +417,41 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<i32> {
             }
             prog.finish();
             let still = to_check.iter().filter(|s| s.1.is_slow()).count();
-            println!("  Round {round} finished in {}. Slow files: {}.", fmt_duration(round_start.elapsed()), fmt_count(still as u64));
+            ctl.message(&format!(
+                "  Round {round} finished in {}. Slow files: {}.",
+                fmt_duration(round_start.elapsed()),
+                fmt_count(still as u64)
+            ));
         }
     }
     if stopped {
         if !to_check.is_empty() {
-            println!(
+            ctl.message(&format!(
                 "  The check of {} files did not finish. These files are not in the report. --resume reads them again.",
                 fmt_count(to_check.len() as u64)
-            );
+            ));
         }
     } else {
         for (row, _) in &to_check {
             w.row(row.values())?;
+            outcome.record(&row.record());
         }
     }
     drop(w);
 
-    println!();
+    ctl.message("");
     if stopped {
-        println!("The scan stopped. To continue, run the same command with --resume.");
+        ctl.message(&format!(
+            "The scan stopped. To continue, run the same command with --resume."
+        ));
     }
-    print_summary(&o.out, o.read.threshold_mbps)?;
-    Ok(if stopped { 4 } else { 0 })
+    outcome.status = if stopped {
+        RunStatus::Stopped
+    } else {
+        RunStatus::Completed
+    };
+    report_summary(&outcome, &o.out, o.read.threshold_mbps, &ctl);
+    Ok(outcome)
 }
 
 fn fmt_duration(d: Duration) -> String {
@@ -445,6 +484,18 @@ struct Row {
 }
 
 impl Row {
+    fn record(&self) -> crate::report::ScanRecord {
+        crate::report::ScanRecord {
+            path: self.path.clone(),
+            size: self.size,
+            kind: self.kind.clone(),
+            status: self.status.clone(),
+            mbps: self.mbps,
+            slow: self.slow,
+            slow_bytes: self.slow_bytes,
+        }
+    }
+
     fn values(&self) -> Vec<String> {
         vec![
             self.path.clone(),
@@ -454,7 +505,10 @@ impl Row {
             self.disk_bytes.to_string(),
             format!("{:.3}", self.read_ms),
             format!("{:.1}", self.mbps),
-            self.min_mbps.filter(|x| x.is_finite()).map(|x| format!("{x:.1}")).unwrap_or_default(),
+            self.min_mbps
+                .filter(|x| x.is_finite())
+                .map(|x| format!("{x:.1}"))
+                .unwrap_or_default(),
             (self.slow as u8).to_string(),
             self.slow_bytes.to_string(),
             (self.confirmed as u8).to_string(),
@@ -476,7 +530,14 @@ fn fill_result(row: &mut Row, res: &ReadResult) {
 
 /// Step 3: read a file on the check list again, at the measure priority. For each extent,
 /// keep the faster time of the two results. Then decide again if the file is slow.
-fn recheck(row: &mut Row, first: &mut ReadResult, vol: &VolumeInfo, o: &ScanOptions, q: &mut sys::IoQueue, ctl: &Control) {
+fn recheck(
+    row: &mut Row,
+    first: &mut ReadResult,
+    vol: &VolumeInfo,
+    o: &ScanOptions,
+    q: &mut sys::IoQueue,
+    ctl: &Control,
+) {
     let path = PathBuf::from(&row.path);
     let r = (|| -> io::Result<ReadResult> {
         let mf = sys::open_meta(&path)?;
@@ -501,8 +562,20 @@ fn recheck(row: &mut Row, first: &mut ReadResult, vol: &VolumeInfo, o: &ScanOpti
 }
 
 /// Step 2 for one file. If the file goes on the check list, it also gives the read result.
-fn scan_one(path: &Path, vol: &VolumeInfo, o: &ScanOptions, opts: &ReadOptions, q: &mut sys::IoQueue, seen: &Mutex<HashSet<(u64, u64)>>, ctl: &Control) -> (Row, Option<ReadResult>) {
-    let mut row = Row { path: path.to_string_lossy().into_owned(), status: "OK".into(), ..Default::default() };
+fn scan_one(
+    path: &Path,
+    vol: &VolumeInfo,
+    o: &ScanOptions,
+    opts: &ReadOptions,
+    q: &mut sys::IoQueue,
+    seen: &Mutex<HashSet<(u64, u64)>>,
+    ctl: &Control,
+) -> (Row, Option<ReadResult>) {
+    let mut row = Row {
+        path: path.to_string_lossy().into_owned(),
+        status: "OK".into(),
+        ..Default::default()
+    };
     let mut check = None;
     let r = (|| -> io::Result<()> {
         let mf = sys::open_meta(path)?;
@@ -538,35 +611,42 @@ fn scan_one(path: &Path, vol: &VolumeInfo, o: &ScanOptions, opts: &ReadOptions, 
     (row, check)
 }
 
-/// The summary of the full report (also the rows of earlier runs before --resume).
-pub fn print_summary(path: &Path, threshold: f64) -> io::Result<()> {
-    let rows = csv::latest_by(csv::read_all(path)?, "path");
-    let num = |r: &csv::Row, k: &str| r[k].parse::<f64>().unwrap_or(0.0);
-    let ok: Vec<_> = rows.iter().filter(|r| r["status"] == "OK").collect();
-    let slow: Vec<_> = ok.iter().filter(|r| r["slow"] == "1").collect();
-    let slow_data: f64 = slow.iter().map(|r| num(r, "slow_bytes")).sum();
-    let slow_files: f64 = slow.iter().map(|r| num(r, "size")).sum();
-    let skipped = rows.iter().filter(|r| r["status"] == "SKIP" || r["status"] == "DUP_LINK").count();
-    let errors = rows.iter().filter(|r| r["status"] == "ERROR").count();
-    println!("Summary of {}", path.display());
-    println!("  Files in the report: {}", fmt_count(rows.len() as u64));
-    println!("  Measured:            {}", fmt_count(ok.len() as u64));
-    println!("  Slow files:          {}, {} in total", fmt_count(slow.len() as u64), fmt_bytes(slow_files as u64));
-    println!("  Slow data:           {} (slower than {threshold} MB/s)", fmt_bytes(slow_data as u64));
-    println!("  Not measured:        {} (see the column 'kind')", fmt_count(skipped as u64));
-    println!("  Errors:              {} (see the column 'error')", fmt_count(errors as u64));
-    // Only the slow files after step 3. A file in many small pieces (for example a log file
-    // that a program adds to all the time) has a low average speed, but it is not slow.
-    let mut list: Vec<_> = slow.clone();
-    list.sort_by(|a, b| num(b, "slow_bytes").total_cmp(&num(a, "slow_bytes")));
-    if !list.is_empty() {
-        println!("  Slow files with the most slow data (speed, slow data, path):");
-        for r in list.iter().take(10) {
-            println!("    {:7.1} MB/s  {:>6}  {}", num(r, "mbps"), fmt_bytes(num(r, "slow_bytes") as u64), r["path"]);
-        }
-        println!();
-        println!("Next: a dry run of the refresh (it measures again and does not move files):");
-        println!("  ssd-refresh refresh --from \"{}\" --dry-run", path.display());
+/// Load an existing report for the CLI summary command.
+pub fn load_summary(path: &Path) -> io::Result<ScanOutcome> {
+    let mut outcome = ScanOutcome::default();
+    for record in crate::report::read_scan(path)? {
+        outcome.record(&record);
     }
-    Ok(())
+    Ok(outcome)
+}
+
+pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &Control) {
+    ctl.message(&format!("Summary of {}", path.display()));
+    ctl.message(&format!(
+        "  Files in the report: {}",
+        fmt_count(result.total_files as u64)
+    ));
+    ctl.message(&format!(
+        "  Measured: {}",
+        fmt_count(result.measured_files as u64)
+    ));
+    ctl.message(&format!(
+        "  Slow files: {}, {} in total",
+        result.slow_total,
+        fmt_bytes(result.slow_file_bytes)
+    ));
+    ctl.message(&format!(
+        "  Slow data: {} (slower than {threshold} MB/s)",
+        fmt_bytes(result.slow_bytes)
+    ));
+    ctl.message(&format!("  Not measured: {}", result.skipped_files));
+    ctl.message(&format!("  Errors: {}", result.error_files));
+    for file in result.slow_files.iter().take(10) {
+        ctl.message(&format!(
+            "    {:7.1} MB/s  {:>6}  {}",
+            file.mbps,
+            fmt_bytes(file.slow_bytes),
+            file.path
+        ));
+    }
 }

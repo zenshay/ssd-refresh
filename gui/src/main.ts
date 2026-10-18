@@ -39,6 +39,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   // Listen to Tauri progress events and feed live console
   try {
+    await api.onMessage((message) => {
+      if (message.trim()) logMessage("info", message);
+    });
     await api.onProgress((p) => {
       store.set({ progress: p });
       logProgressStream(p, store.get().activeRoot);

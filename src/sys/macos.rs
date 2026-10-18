@@ -13,6 +13,7 @@ use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
 extern "C" {
+    fn getiopolicy_np(iotype: i32, scope: i32) -> i32;
     fn setiopolicy_np(iotype: libc::c_int, scope: libc::c_int, policy: libc::c_int) -> libc::c_int;
 }
 
@@ -28,7 +29,10 @@ pub fn has_other_writers(_p: &Path) -> Option<bool> {
 
 /// macOS has no reliable way to get the physical layout; the whole file is timed as one piece.
 pub fn layout(_f: &File, _m: &Meta, _block: u64) -> io::Result<Layout> {
-    Ok(Layout { known: false, ..Default::default() })
+    Ok(Layout {
+        known: false,
+        ..Default::default()
+    })
 }
 
 pub fn set_thread_io_priority(p: Priority) {
@@ -41,6 +45,34 @@ pub fn set_thread_io_priority(p: Priority) {
     unsafe { setiopolicy_np(0, 1, policy) };
 }
 
+pub struct ThreadIoPriorityGuard {
+    previous: i32,
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl ThreadIoPriorityGuard {
+    pub fn new(priority: Priority) -> Self {
+        let previous = unsafe { getiopolicy_np(0, 1) };
+        if previous >= 0 {
+            set_thread_io_priority(priority);
+        }
+        Self {
+            previous,
+            _thread: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Drop for ThreadIoPriorityGuard {
+    fn drop(&mut self) {
+        if self.previous >= 0 {
+            unsafe {
+                setiopolicy_np(0, 1, self.previous);
+            }
+        }
+    }
+}
+
 pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
     let abs = std::fs::canonicalize(p)?;
     let c = CString::new(abs.as_os_str().as_bytes()).unwrap();
@@ -48,13 +80,19 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
     if unsafe { libc::statfs(c.as_ptr(), &mut s) } != 0 {
         return Err(io::Error::last_os_error());
     }
-    let root = unsafe { CStr::from_ptr(s.f_mntonname.as_ptr()) }.to_string_lossy().into_owned();
+    let root = unsafe { CStr::from_ptr(s.f_mntonname.as_ptr()) }
+        .to_string_lossy()
+        .into_owned();
     let bs = s.f_bsize as u64;
     Ok(VolumeInfo {
         is_system: root == "/" || root == "/System/Volumes/Data",
         root: PathBuf::from(&root),
-        device: unsafe { CStr::from_ptr(s.f_mntfromname.as_ptr()) }.to_string_lossy().into_owned(),
-        fs: unsafe { CStr::from_ptr(s.f_fstypename.as_ptr()) }.to_string_lossy().into_owned(),
+        device: unsafe { CStr::from_ptr(s.f_mntfromname.as_ptr()) }
+            .to_string_lossy()
+            .into_owned(),
+        fs: unsafe { CStr::from_ptr(s.f_fstypename.as_ptr()) }
+            .to_string_lossy()
+            .into_owned(),
         block: bs,
         total_bytes: s.f_blocks * bs,
         free_bytes: s.f_bavail * bs,
@@ -79,11 +117,25 @@ pub struct Relocator;
 
 impl Relocator {
     pub fn new(_vol: &VolumeInfo, _opt: &RelocOptions) -> io::Result<Relocator> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "refresh is not supported on macOS"))
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "refresh is not supported on macOS",
+        ))
     }
 
-    pub fn relocate(&mut self, _path: &Path, _file: &File, _layout: &Layout, _ctl: &Control, _st: &mut MoveStats, _log: &dyn Fn(&str)) -> io::Result<bool> {
-        Err(io::Error::new(io::ErrorKind::Unsupported, "refresh is not supported on macOS"))
+    pub fn relocate(
+        &mut self,
+        _path: &Path,
+        _file: &File,
+        _layout: &Layout,
+        _ctl: &Control,
+        _st: &mut MoveStats,
+        _log: &dyn Fn(&str),
+    ) -> io::Result<bool> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "refresh is not supported on macOS",
+        ))
     }
 }
 

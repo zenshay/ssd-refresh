@@ -31,7 +31,8 @@ pub fn meta(f: &File) -> io::Result<Meta> {
 /// Width of the terminal in columns, if stdout is a terminal.
 pub fn terminal_width() -> Option<usize> {
     let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
-    if unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) } != 0 || ws.ws_col == 0 {
+    if unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) } != 0 || ws.ws_col == 0
+    {
         return None;
     }
     Some(ws.ws_col as usize)
@@ -39,7 +40,11 @@ pub fn terminal_width() -> Option<usize> {
 
 /// Local wall-clock time `secs` from now, as "HH:MM".
 pub fn local_clock_after(secs: u64) -> Option<String> {
-    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() + secs;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs()
+        + secs;
     let t = now as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
@@ -56,7 +61,10 @@ pub fn flush_file(p: &Path) -> io::Result<()> {
 }
 
 fn local_now() -> Option<libc::tm> {
-    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as libc::time_t;
+    let t = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
         return None;
@@ -67,13 +75,27 @@ fn local_now() -> Option<libc::tm> {
 /// Local date and time now, as "YYYYMMDD-HHMM" (for default file names).
 pub fn local_stamp() -> Option<String> {
     let tm = local_now()?;
-    Some(format!("{:04}{:02}{:02}-{:02}{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    Some(format!(
+        "{:04}{:02}{:02}-{:02}{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min
+    ))
 }
 
 /// Local date and time now, as "YYYY-MM-DD HH:MM" (for logs).
 pub fn local_time_text() -> Option<String> {
     let tm = local_now()?;
-    Some(format!("{:04}-{:02}-{:02} {:02}:{:02}", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min))
+    Some(format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday,
+        tm.tm_hour,
+        tm.tm_min
+    ))
 }
 
 pub fn is_elevated() -> bool {
@@ -100,7 +122,13 @@ pub fn volume_label(v: &VolumeInfo) -> String {
 pub fn set_file_priority(_f: &File, _p: Priority) {}
 
 enum Job {
-    Read { slot: usize, fd: RawFd, ptr: usize, len: usize, offset: u64 },
+    Read {
+        slot: usize,
+        fd: RawFd,
+        ptr: usize,
+        len: usize,
+        offset: u64,
+    },
     Prio(Priority),
 }
 
@@ -125,7 +153,13 @@ impl IoQueue {
                 for job in jrx {
                     match job {
                         Job::Prio(p) => super::set_thread_io_priority(p),
-                        Job::Read { slot, fd, ptr, len, offset } => {
+                        Job::Read {
+                            slot,
+                            fd,
+                            ptr,
+                            len,
+                            offset,
+                        } => {
                             let r = pread_full(fd, ptr as *mut u8, len, offset);
                             if rtx.send((slot, r, Instant::now())).is_err() {
                                 return;
@@ -136,7 +170,12 @@ impl IoQueue {
             }));
             tx.push(jtx);
         }
-        IoQueue { bufs: (0..qd).map(|_| AlignedBuf::new(chunk)).collect(), tx, rx, workers }
+        IoQueue {
+            bufs: (0..qd).map(|_| AlignedBuf::new(chunk)).collect(),
+            tx,
+            rx,
+            workers,
+        }
     }
 
     pub fn slots(&self) -> usize {
@@ -158,7 +197,13 @@ impl IoQueue {
         let b = &self.bufs[slot];
         assert!(len <= b.len());
         self.tx[slot]
-            .send(Job::Read { slot, fd: f.as_raw_fd(), ptr: b.as_mut_ptr() as usize, len, offset })
+            .send(Job::Read {
+                slot,
+                fd: f.as_raw_fd(),
+                ptr: b.as_mut_ptr() as usize,
+                len,
+                offset,
+            })
             .map_err(|_| io::Error::other("reader thread has exited"))
     }
 
@@ -179,7 +224,14 @@ impl Drop for IoQueue {
 fn pread_full(fd: RawFd, ptr: *mut u8, len: usize, offset: u64) -> io::Result<usize> {
     let mut total = 0usize;
     while total < len {
-        let n = unsafe { libc::pread(fd, ptr.add(total).cast(), len - total, (offset + total as u64) as libc::off_t) };
+        let n = unsafe {
+            libc::pread(
+                fd,
+                ptr.add(total).cast(),
+                len - total,
+                (offset + total as u64) as libc::off_t,
+            )
+        };
         if n < 0 {
             let e = io::Error::last_os_error();
             if e.kind() == io::ErrorKind::Interrupted {

@@ -24,9 +24,18 @@ pub struct SmartDto {
 impl From<&SmartStatus> for SmartDto {
     fn from(s: &SmartStatus) -> Self {
         match s {
-            SmartStatus::Healthy => SmartDto { level: "healthy", detail: None },
-            SmartStatus::Failing(why) => SmartDto { level: "failing", detail: Some(why.clone()) },
-            SmartStatus::Unknown(why) => SmartDto { level: "unknown", detail: Some(why.clone()) },
+            SmartStatus::Healthy => SmartDto {
+                level: "healthy",
+                detail: None,
+            },
+            SmartStatus::Failing(why) => SmartDto {
+                level: "failing",
+                detail: Some(why.clone()),
+            },
+            SmartStatus::Unknown(why) => SmartDto {
+                level: "unknown",
+                detail: Some(why.clone()),
+            },
         }
     }
 }
@@ -112,4 +121,58 @@ pub struct RefreshOutcome {
     pub log_path: String,
     pub moved_files: usize,
     pub stopped: bool,
+}
+
+impl ScanOutcome {
+    pub fn from_core(path: &std::path::Path, result: ssd_refresh::outcome::ScanOutcome) -> Self {
+        Self {
+            report_path: path.to_string_lossy().into_owned(),
+            total_files: result.total_files,
+            slow_total: result.slow_total,
+            slow_files: result
+                .slow_files
+                .into_iter()
+                .map(|file| SlowFileDto {
+                    path: file.path,
+                    size: file.size,
+                    mbps: file.mbps,
+                })
+                .collect(),
+            stopped: result.status == ssd_refresh::outcome::RunStatus::Stopped,
+        }
+    }
+}
+
+impl RefreshOutcome {
+    pub fn from_core(path: &std::path::Path, result: ssd_refresh::outcome::RefreshOutcome) -> Self {
+        Self {
+            log_path: path.to_string_lossy().into_owned(),
+            moved_files: result.moved_files,
+            stopped: result.status == ssd_refresh::outcome::RunStatus::Stopped,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conversion_does_not_read_the_report_file() {
+        let missing = std::path::Path::new("missing-synthetic-report.csv");
+        let result = ScanOutcome::from_core(
+            missing,
+            ssd_refresh::outcome::ScanOutcome {
+                total_files: 12,
+                slow_total: 3,
+                ..Default::default()
+            },
+        );
+        assert_eq!(result.total_files, 12);
+        assert_eq!(result.slow_total, 3);
+        let mut refresh = ssd_refresh::outcome::RefreshOutcome::default();
+        refresh.record("OK", 10);
+        refresh.record("CHANGED", 20);
+        assert_eq!(RefreshOutcome::from_core(missing, refresh).moved_files, 2);
+    }
 }

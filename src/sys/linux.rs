@@ -37,9 +37,16 @@ struct MoveExtent {
 /// Reads that bypass the page cache. Falls back to normal reads where O_DIRECT is not
 /// supported (for example tmpfs); timings are then optimistic.
 pub fn open_direct(p: &Path) -> io::Result<File> {
-    match OpenOptions::new().read(true).custom_flags(libc::O_DIRECT | libc::O_NOATIME).open(p) {
+    match OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECT | libc::O_NOATIME)
+        .open(p)
+    {
         Ok(f) => Ok(f),
-        Err(e) if e.raw_os_error() == Some(libc::EPERM) => OpenOptions::new().read(true).custom_flags(libc::O_DIRECT).open(p),
+        Err(e) if e.raw_os_error() == Some(libc::EPERM) => OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECT)
+            .open(p),
         Err(e) if e.raw_os_error() == Some(libc::EINVAL) => File::open(p),
         Err(e) => Err(e),
     }
@@ -61,7 +68,10 @@ pub fn has_other_writers(p: &Path) -> Option<bool> {
 }
 
 pub fn layout(f: &File, m: &Meta, _block: u64) -> io::Result<Layout> {
-    let mut l = Layout { known: true, ..Default::default() };
+    let mut l = Layout {
+        known: true,
+        ..Default::default()
+    };
     const N: usize = 256;
     let mut buf = vec![0u64; (32 + N * 56) / 8];
     let mut start = 0u64;
@@ -75,8 +85,14 @@ pub fn layout(f: &File, m: &Meta, _block: u64) -> io::Result<Layout> {
         }
         if unsafe { libc::ioctl(f.as_raw_fd(), FS_IOC_FIEMAP as _, b) } != 0 {
             let e = io::Error::last_os_error();
-            if matches!(e.raw_os_error(), Some(libc::EOPNOTSUPP) | Some(libc::ENOTTY)) {
-                return Ok(Layout { known: false, ..Default::default() });
+            if matches!(
+                e.raw_os_error(),
+                Some(libc::EOPNOTSUPP) | Some(libc::ENOTTY)
+            ) {
+                return Ok(Layout {
+                    known: false,
+                    ..Default::default()
+                });
             }
             return Err(e);
         }
@@ -91,7 +107,12 @@ pub fn layout(f: &File, m: &Meta, _block: u64) -> io::Result<Layout> {
         for i in 0..mapped {
             let e = unsafe { b.add(32 + i * 56) };
             let (logical, physical, len, flags) = unsafe {
-                (*(e as *const u64), *(e.add(8) as *const u64), *(e.add(16) as *const u64), *(e.add(40) as *const u32))
+                (
+                    *(e as *const u64),
+                    *(e.add(8) as *const u64),
+                    *(e.add(16) as *const u64),
+                    *(e.add(40) as *const u32),
+                )
             };
             if flags & (FIEMAP_EXTENT_DATA_INLINE | FIEMAP_EXTENT_DATA_TAIL) != 0 {
                 l.inline = true;
@@ -105,8 +126,14 @@ pub fn layout(f: &File, m: &Meta, _block: u64) -> io::Result<Layout> {
             if flags & FIEMAP_EXTENT_DATA_ENCRYPTED != 0 {
                 l.encrypted = true;
             }
-            let no_phys = flags & (FIEMAP_EXTENT_UNKNOWN | FIEMAP_EXTENT_DELALLOC | FIEMAP_EXTENT_UNWRITTEN) != 0;
-            l.extents.push(Extent { logical, len, physical: (!no_phys).then_some(physical) });
+            let no_phys = flags
+                & (FIEMAP_EXTENT_UNKNOWN | FIEMAP_EXTENT_DELALLOC | FIEMAP_EXTENT_UNWRITTEN)
+                != 0;
+            l.extents.push(Extent {
+                logical,
+                len,
+                physical: (!no_phys).then_some(physical),
+            });
             start = logical + len;
             last = flags & FIEMAP_EXTENT_LAST != 0;
         }
@@ -119,11 +146,39 @@ pub fn layout(f: &File, m: &Meta, _block: u64) -> io::Result<Layout> {
 /// I/O priority of this thread (ioprio_set).
 pub fn set_thread_io_priority(p: Priority) {
     let prio = match p {
-        Priority::VeryLow => 3 << 13,     // IOPRIO_CLASS_IDLE
-        Priority::Low => (2 << 13) | 7,   // best effort, lowest level
+        Priority::VeryLow => 3 << 13,      // IOPRIO_CLASS_IDLE
+        Priority::Low => (2 << 13) | 7,    // best effort, lowest level
         Priority::Normal => (2 << 13) | 4, // best effort, default level
     };
     unsafe { libc::syscall(libc::SYS_ioprio_set, 1, 0, prio) };
+}
+
+pub struct ThreadIoPriorityGuard {
+    previous: i64,
+    _thread: std::marker::PhantomData<std::rc::Rc<()>>,
+}
+
+impl ThreadIoPriorityGuard {
+    pub fn new(priority: Priority) -> Self {
+        let previous = unsafe { libc::syscall(libc::SYS_ioprio_get, 1, 0) } as i64;
+        if previous >= 0 {
+            set_thread_io_priority(priority);
+        }
+        Self {
+            previous,
+            _thread: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Drop for ThreadIoPriorityGuard {
+    fn drop(&mut self) {
+        if self.previous >= 0 {
+            unsafe {
+                libc::syscall(libc::SYS_ioprio_set, 1, 0, self.previous as libc::c_int);
+            }
+        }
+    }
 }
 
 fn fs_name(t: i64) -> String {
@@ -144,7 +199,11 @@ pub fn volume(p: &Path) -> io::Result<VolumeInfo> {
     let abs = std::fs::canonicalize(p)?;
     let dev = std::fs::metadata(&abs)?.dev();
     // walk up until the parent is on another device: that is the mount point
-    let mut root = if abs.is_dir() { abs.clone() } else { abs.parent().unwrap_or(&abs).to_path_buf() };
+    let mut root = if abs.is_dir() {
+        abs.clone()
+    } else {
+        abs.parent().unwrap_or(&abs).to_path_buf()
+    };
     while let Some(parent) = root.parent() {
         if std::fs::metadata(parent)?.dev() != dev {
             break;
@@ -176,16 +235,24 @@ fn mount_source(root: &Path) -> Option<String> {
     text.lines().rev().find_map(|line| {
         let f: Vec<&str> = line.split(' ').collect();
         let sep = f.iter().position(|x| *x == "-")?;
-        (f.get(4)? == &r).then(|| f.get(sep + 2).map(|s| s.to_string())).flatten()
+        (f.get(4)? == &r)
+            .then(|| f.get(sep + 2).map(|s| s.to_string()))
+            .flatten()
     })
 }
 
 pub fn refresh_check(v: &VolumeInfo) -> Result<(), String> {
     if v.fs != "ext4" {
-        return Err(format!("On Linux, the tool supports only ext4 at this time. This volume is {}.", v.fs));
+        return Err(format!(
+            "On Linux, the tool supports only ext4 at this time. This volume is {}.",
+            v.fs
+        ));
     }
     if !super::is_elevated() {
-        return Err(format!("The tool needs root to move data blocks. {}", super::ELEVATION_HINT));
+        return Err(format!(
+            "The tool needs root to move data blocks. {}",
+            super::ELEVATION_HINT
+        ));
     }
     Ok(())
 }
@@ -195,7 +262,10 @@ pub fn refresh_warnings(_v: &VolumeInfo) -> Vec<String> {
 }
 
 pub fn retrim_hint(v: &VolumeInfo) -> String {
-    format!("tell the SSD that the old places are free: sudo fstrim -v {}", v.root.display())
+    format!(
+        "tell the SSD that the old places are free: sudo fstrim -v {}",
+        v.root.display()
+    )
 }
 
 /// Moves a file's data into new blocks preallocated in a temporary donor file, using EXT4_IOC_MOVE_EXT.
@@ -209,10 +279,22 @@ pub struct Relocator {
 
 impl Relocator {
     pub fn new(vol: &VolumeInfo, opt: &RelocOptions) -> io::Result<Relocator> {
-        Ok(Relocator { root: vol.root.clone(), block: vol.block, opt: opt.clone() })
+        Ok(Relocator {
+            root: vol.root.clone(),
+            block: vol.block,
+            opt: opt.clone(),
+        })
     }
 
-    pub fn relocate(&mut self, path: &Path, _file: &File, layout: &Layout, ctl: &Control, st: &mut MoveStats, _log: &dyn Fn(&str)) -> io::Result<bool> {
+    pub fn relocate(
+        &mut self,
+        path: &Path,
+        _file: &File,
+        layout: &Layout,
+        ctl: &Control,
+        st: &mut MoveStats,
+        _log: &dyn Fn(&str),
+    ) -> io::Result<bool> {
         let bs = self.block;
         // MOVE_EXT requires the original to be open for reading and writing; nothing is written here
         let orig = OpenOptions::new().read(true).write(true).open(path)?;
@@ -238,15 +320,35 @@ impl Relocator {
                     return Ok(false);
                 }
                 let len = (end - start).min(max);
-                if unsafe { libc::fallocate(donor.as_raw_fd(), 0, (start * bs) as libc::off_t, (len * bs) as libc::off_t) } != 0 {
+                if unsafe {
+                    libc::fallocate(
+                        donor.as_raw_fd(),
+                        0,
+                        (start * bs) as libc::off_t,
+                        (len * bs) as libc::off_t,
+                    )
+                } != 0
+                {
                     return Err(io::Error::last_os_error());
                 }
-                let mut me = MoveExtent { reserved: 0, donor_fd: donor.as_raw_fd() as u32, orig_start: start, donor_start: start, len, moved_len: 0 };
+                let mut me = MoveExtent {
+                    reserved: 0,
+                    donor_fd: donor.as_raw_fd() as u32,
+                    orig_start: start,
+                    donor_start: start,
+                    len,
+                    moved_len: 0,
+                };
                 if unsafe { libc::ioctl(orig.as_raw_fd(), EXT4_IOC_MOVE_EXT as _, &mut me) } != 0 {
                     let err = io::Error::last_os_error();
                     failures += 1;
                     st.failures += 1;
-                    if failures > 10 || !matches!(err.raw_os_error(), Some(libc::EBUSY) | Some(libc::EAGAIN) | Some(libc::EINTR)) {
+                    if failures > 10
+                        || !matches!(
+                            err.raw_os_error(),
+                            Some(libc::EBUSY) | Some(libc::EAGAIN) | Some(libc::EINTR)
+                        )
+                    {
                         return Err(err);
                     }
                     std::thread::sleep(std::time::Duration::from_millis(20));
@@ -265,7 +367,8 @@ impl Relocator {
 }
 
 /// How refresh moves data on this platform (shown before a refresh starts).
-pub const MOVE_METHOD: &str = "EXT4_IOC_MOVE_EXT, the ext4 online defragmentation API used by e4defrag";
+pub const MOVE_METHOD: &str =
+    "EXT4_IOC_MOVE_EXT, the ext4 online defragmentation API used by e4defrag";
 
 pub fn list_volumes() -> Vec<VolumeInfo> {
     if let Ok(v) = volume(Path::new("/")) {

@@ -79,7 +79,11 @@ impl ReadResult {
         self.extents.iter().any(|e| e.slow)
     }
     pub fn slow_bytes(&self) -> u64 {
-        self.extents.iter().filter(|e| e.slow).map(|e| e.bytes).sum()
+        self.extents
+            .iter()
+            .filter(|e| e.slow)
+            .map(|e| e.bytes)
+            .sum()
     }
     pub fn min_extent_mbps(&self) -> Option<f64> {
         self.extents.iter().map(|e| e.mbps()).reduce(f64::min)
@@ -138,7 +142,11 @@ pub fn read_file(
     for s in &segs {
         let mut o = 0;
         while o < s.len {
-            chunks.push(Seg { offset: s.offset + o, len: chunk.min(s.len - o), extent: s.extent });
+            chunks.push(Seg {
+                offset: s.offset + o,
+                len: chunk.min(s.len - o),
+                extent: s.extent,
+            });
             o += chunk;
         }
     }
@@ -204,7 +212,9 @@ pub fn read_file(
         // hash finished chunks in file order
         while done < next {
             let slot = done % qd;
-            let Some((n, ts)) = completed[slot].take() else { break };
+            let Some((n, ts)) = completed[slot].take() else {
+                break;
+            };
             let c = chunks[done];
             if let Some(e) = c.extent {
                 last_done[e] = Some(last_done[e].map_or(ts, |t| t.max(ts)));
@@ -233,9 +243,14 @@ pub fn read_file(
     // sent" and "the previous extent finished" until its last request finished, minus pauses.
     let mut prev: Option<Instant> = None;
     for (i, e) in res.extents.iter_mut().enumerate() {
-        let (Some(fi), Some(ld)) = (first_issue[i], last_done[i]) else { continue };
+        let (Some(fi), Some(ld)) = (first_issue[i], last_done[i]) else {
+            continue;
+        };
         let begin = prev.map_or(fi, |p| p.max(fi));
-        e.secs = ld.saturating_duration_since(begin).saturating_sub(paused[i]).as_secs_f64();
+        e.secs = ld
+            .saturating_duration_since(begin)
+            .saturating_sub(paused[i])
+            .as_secs_f64();
         prev = Some(ld);
         res.disk_secs += e.secs;
         e.slow = measure && is_slow(e.bytes, e.secs, opt);
@@ -248,11 +263,19 @@ fn build_segments(layout: &Layout, end: u64, measure: bool, res: &mut ReadResult
     let mut segs = Vec::new();
     if !layout.known {
         let extent = measure.then(|| {
-            res.extents.push(ExtentTiming { offset: 0, bytes: end, ..Default::default() });
+            res.extents.push(ExtentTiming {
+                offset: 0,
+                bytes: end,
+                ..Default::default()
+            });
             0
         });
         if end > 0 {
-            segs.push(Seg { offset: 0, len: end, extent });
+            segs.push(Seg {
+                offset: 0,
+                len: end,
+                extent,
+            });
         }
         return segs;
     }
@@ -264,17 +287,34 @@ fn build_segments(layout: &Layout, end: u64, measure: bool, res: &mut ReadResult
             continue;
         }
         if a > pos {
-            segs.push(Seg { offset: pos, len: a - pos, extent: None }); // hole
+            segs.push(Seg {
+                offset: pos,
+                len: a - pos,
+                extent: None,
+            }); // hole
         }
         let extent = (x.physical.is_some() && measure).then(|| {
-            res.extents.push(ExtentTiming { offset: a, bytes: b - a, physical: x.physical, ..Default::default() });
+            res.extents.push(ExtentTiming {
+                offset: a,
+                bytes: b - a,
+                physical: x.physical,
+                ..Default::default()
+            });
             res.extents.len() - 1
         });
-        segs.push(Seg { offset: a, len: b - a, extent });
+        segs.push(Seg {
+            offset: a,
+            len: b - a,
+            extent,
+        });
         pos = b;
     }
     if pos < end {
-        segs.push(Seg { offset: pos, len: end - pos, extent: None });
+        segs.push(Seg {
+            offset: pos,
+            len: end - pos,
+            extent: None,
+        });
     }
     segs
 }

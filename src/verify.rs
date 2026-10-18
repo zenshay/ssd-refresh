@@ -14,9 +14,11 @@
 use crate::common::{fmt_bytes, fmt_count, hex, path_rank, unix_now, Kind};
 use crate::control::Control;
 use crate::csv::{self, CsvWriter};
-use crate::progress::{para, para_string, Phase, Progress};
+use crate::outcome::{RunStatus, VerifyOutcome};
+use crate::progress::{Phase, Progress};
 use crate::reader::{read_file, ReadOptions, ReadResult};
 use crate::sys;
+use crate::text::paragraph as para_string;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -38,8 +40,18 @@ pub struct VerifyOptions {
 pub const RECOVERED_SHARE: f64 = 0.8;
 
 pub const HEADER: [&str; 12] = [
-    "path", "group", "size", "before_mbps", "before_slow", "now_mbps", "now_min_extent_mbps", "now_slow", "reads",
-    "status", "detail", "time",
+    "path",
+    "group",
+    "size",
+    "before_mbps",
+    "before_slow",
+    "now_mbps",
+    "now_min_extent_mbps",
+    "now_slow",
+    "reads",
+    "status",
+    "detail",
+    "time",
 ];
 
 /// Before this time after the refresh, new data can still read fast for other reasons.
@@ -95,25 +107,37 @@ struct Outcome {
     detail: String,
 }
 
-pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
-    println!("ssd-refresh verify (read-only: this command does not change the disk)");
-    println!("  Source:  {}", o.from.display());
-    println!("  Log:     {}", o.log.display());
-    para(11, "Each run adds its summary to the end of this file. The file is the history.");
+pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
+    ctl.message(&format!(
+        "ssd-refresh verify (read-only: this command does not change the disk)"
+    ));
+    ctl.message(&format!("  Source:  {}", o.from.display()));
+    ctl.message(&format!("  Log:     {}", o.log.display()));
+    ctl.paragraph(
+        11,
+        "Each run adds its summary to the end of this file. The file is the history.",
+    );
     if let Some(out) = &o.out {
-        println!("  CSV:     {}", out.display());
+        ctl.message(&format!("  CSV:     {}", out.display()));
         if out.exists() {
-            eprintln!("  The CSV file exists already. Use a different file name with --out.");
-            return Ok(1);
+            ctl.message(&format!(
+                "  The CSV file exists already. Use a different file name with --out."
+            ));
+            return Ok(VerifyOutcome {
+                status: RunStatus::InvalidInput,
+                ..Default::default()
+            });
         }
     }
 
     // ---------- Step 1: choose files ----------
-    println!();
-    println!("Step 1/2  Choose the files and find the time of the refresh");
+    ctl.message("");
+    ctl.message(&format!(
+        "Step 1/2  Choose the files and find the time of the refresh"
+    ));
     let header = csv::header(&o.from)?;
     let is_log = header.iter().any(|h| h == "before_mbps");
-    let rows = csv::latest_by(csv::read_all(&o.from)?, "path");
+    let rows = crate::report::read_for_verify(&o.from, is_log)?;
     let num = |r: &csv::Row, k: &str| r.get(k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
     let mut groups_seen = [0u64; 2];
     let mut other = 0u64;
@@ -132,7 +156,11 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
             };
             last_time = last_time.max(num(r, "time") as u64);
             // After a move, the file has the data of the read after the move.
-            let sha = if group == Group::Rewritten { &r["sha_after"] } else { &r["sha_before"] };
+            let sha = if group == Group::Rewritten {
+                &r["sha_after"]
+            } else {
+                &r["sha_before"]
+            };
             Item {
                 path: r["path"].clone(),
                 group,
@@ -144,7 +172,11 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
                 // Writes through a memory map can change the data before they change the metadata.
                 meta_key: r
                     .get("meta_key")
-                    .filter(|k| !k.is_empty() && status != "CHANGED" && r.get("writers").map(String::as_str) != Some("1"))
+                    .filter(|k| {
+                        !k.is_empty()
+                            && status != "CHANGED"
+                            && r.get("writers").map(String::as_str) != Some("1")
+                    })
                     .cloned(),
             }
         } else {
@@ -165,7 +197,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
         items.push(item);
     }
     if is_log {
-        para(
+        ctl.paragraph(
             2,
             &format!(
                 "This is a refresh log. Rewritten group: {} files that the refresh moved (OK, CHANGED). Read-only group: {} files that the refresh read but did not move (CONTROL, DRYRUN). The tool does not use {} files with other statuses.",
@@ -175,7 +207,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
             ),
         );
     } else {
-        para(
+        ctl.paragraph(
             2,
             &format!(
                 "This is a scan report. The tool uses {} files ({}). The scan read these files but did not move them. They are the read-only group.",
@@ -185,8 +217,8 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
         );
     }
     if items.is_empty() {
-        println!("  There are no files to verify.");
-        return Ok(0);
+        ctl.message(&format!("  There are no files to verify."));
+        return Ok(VerifyOutcome::default());
     }
 
     // The time: the time column of the refresh log. Older logs have no time column; then the
@@ -194,49 +226,69 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
     let (when, how) = if last_time > 0 {
         (last_time, "the newest time in the log")
     } else {
-        let t = std::fs::metadata(&o.from)?.modified()?.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let t = std::fs::metadata(&o.from)?
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
         (t, "the time of the last change to the source file")
     };
     let age = unix_now().saturating_sub(when);
-    println!("  Time since the {}: {} (from {how}).", if is_log { "refresh" } else { "scan" }, fmt_time(age));
+    ctl.message(&format!(
+        "  Time since the {}: {} (from {how}).",
+        if is_log { "refresh" } else { "scan" },
+        fmt_time(age)
+    ));
 
     if o.sample > 0 {
         for g in [Group::Rewritten, Group::ReadOnly] {
-            let mut ranked: Vec<(f64, usize)> =
-                items.iter().enumerate().filter(|(_, it)| it.group == g).map(|(i, it)| (path_rank(&format!("sample:{}", it.path)), i)).collect();
+            let mut ranked: Vec<(f64, usize)> = items
+                .iter()
+                .enumerate()
+                .filter(|(_, it)| it.group == g)
+                .map(|(i, it)| (path_rank(&format!("sample:{}", it.path)), i))
+                .collect();
             if ranked.len() <= o.sample {
                 continue;
             }
             ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let cut: std::collections::HashSet<usize> = ranked[o.sample..].iter().map(|x| x.1).collect();
+            let cut: std::collections::HashSet<usize> =
+                ranked[o.sample..].iter().map(|x| x.1).collect();
             let mut i = 0;
             items.retain(|_| {
                 i += 1;
                 !cut.contains(&(i - 1))
             });
         }
-        para(2, &format!("--sample {}: the tool reads a maximum of {} files per group. The same path always gets the same choice, so the next run reads the same files.", o.sample, o.sample));
+        ctl.paragraph(2, &format!("--sample {}: the tool reads a maximum of {} files per group. The same path always gets the same choice, so the next run reads the same files.", o.sample, o.sample));
     } else if items.len() > 10_000 {
-        para(2, "Tip: there are many files. Use --sample 2000 to read a fixed sample from each group.");
+        ctl.paragraph(
+            2,
+            "Tip: there are many files. Use --sample 2000 to read a fixed sample from each group.",
+        );
     }
     let total: u64 = items.iter().map(|i| i.size).sum();
-    println!("  Files to read: {}, {}.", fmt_count(items.len() as u64), fmt_bytes(total));
+    ctl.message(&format!(
+        "  Files to read: {}, {}.",
+        fmt_count(items.len() as u64),
+        fmt_bytes(total)
+    ));
 
     // ---------- Step 2: read ----------
-    println!();
-    println!("Step 2/2  Read each file again");
-    para(
+    ctl.message("");
+    ctl.message(&format!("Step 2/2  Read each file again"));
+    ctl.paragraph(
         2,
         "The tool reads one file at a time, directly from the disk (not from the OS cache), at normal I/O priority. It measures the time for each extent. If the file is slow, the tool reads it one more time and uses the faster time of each extent. The tool does not move or write files.",
     );
-    para(
+    ctl.paragraph(
         2,
         &format!(
             "A file is slow if one extent is slower than {} MB/s. Use the same --threshold as for the scan. If a program changed a file, the file has new data. The tool does not count it (status MODIFIED).",
             o.read.threshold_mbps
         ),
     );
-    para(2, "Keys: p + Enter = pause or continue. q + Enter = stop. The summary then shows the files read until that time.");
+    ctl.paragraph(2, "Keys: p + Enter = pause or continue. q + Enter = stop. The summary then shows the files read until that time.");
 
     let mut w = match &o.out {
         Some(out) => Some(CsvWriter::create(out, &HEADER, false)?),
@@ -255,7 +307,11 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
         ctl.wait_while_paused();
         let out = match measure(it, &mut q, &mut block, &o.read, &ctl) {
             Ok(out) => out,
-            Err(e) => Outcome { status: "ERROR", detail: e.to_string(), ..Default::default() },
+            Err(e) => Outcome {
+                status: "ERROR",
+                detail: e.to_string(),
+                ..Default::default()
+            },
         };
         if ctl.stopped() && out.status == "ERROR" {
             stopped = true;
@@ -275,9 +331,20 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
                 it.size.to_string(),
                 format!("{:.1}", it.before_mbps),
                 (it.before_slow as u8).to_string(),
-                if out.status == "MEASURED" { format!("{:.1}", out.now_mbps) } else { String::new() },
-                out.now_min.filter(|x| x.is_finite()).map(|x| format!("{x:.1}")).unwrap_or_default(),
-                if out.status == "MEASURED" { (out.now_slow as u8).to_string() } else { String::new() },
+                if out.status == "MEASURED" {
+                    format!("{:.1}", out.now_mbps)
+                } else {
+                    String::new()
+                },
+                out.now_min
+                    .filter(|x| x.is_finite())
+                    .map(|x| format!("{x:.1}"))
+                    .unwrap_or_default(),
+                if out.status == "MEASURED" {
+                    (out.now_slow as u8).to_string()
+                } else {
+                    String::new()
+                },
                 out.reads.to_string(),
                 out.status.into(),
                 out.detail.clone(),
@@ -289,36 +356,68 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<i32> {
     prog.finish();
     drop(w);
 
-    let s = build_summary(&SummaryInput { items: &items, results: &results, is_log, has_meta: header.iter().any(|h| h == "meta_key"), age });
+    let s = build_summary(&SummaryInput {
+        items: &items,
+        results: &results,
+        is_log,
+        has_meta: header.iter().any(|h| h == "meta_key"),
+        age,
+    });
     let mut text = s.text;
     if stopped {
         text += "\nThe run stopped early. The summary shows only the files read until that time.\n";
     }
-    println!();
-    print!("{text}");
+    ctl.message("");
+    ctl.message(&format!("{text}"));
 
     // The log: the same summary, with the time and the source, at the end of one text file.
     let mut block = String::new();
-    block += &format!("==== ssd-refresh {} verify, {} ====\n", env!("CARGO_PKG_VERSION"), sys::local_time_text().unwrap_or_default());
+    block += &format!(
+        "==== ssd-refresh {} verify, {} ====\n",
+        env!("CARGO_PKG_VERSION"),
+        sys::local_time_text().unwrap_or_default()
+    );
     block += &format!("Source: {}\n", o.from.display());
-    block += &format!("Files read: {}{}\n\n", fmt_count(results.len() as u64), if o.sample > 0 { format!(" (--sample {})", o.sample) } else { String::new() });
+    block += &format!(
+        "Files read: {}{}\n\n",
+        fmt_count(results.len() as u64),
+        if o.sample > 0 {
+            format!(" (--sample {})", o.sample)
+        } else {
+            String::new()
+        }
+    );
     block += &text;
     block += "\n";
-    let logged = std::fs::OpenOptions::new().create(true).append(true).open(&o.log).and_then(|mut f| f.write_all(block.as_bytes()));
-    println!();
+    let logged = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&o.log)
+        .and_then(|mut f| f.write_all(block.as_bytes()));
+    ctl.message("");
     match logged {
-        Ok(()) => println!("Log: {} (this summary is at the end of the file)", o.log.display()),
-        Err(e) => println!("Log: the tool could not write {}: {e}", o.log.display()),
+        Ok(()) => ctl.message(&format!(
+            "Log: {} (this summary is at the end of the file)",
+            o.log.display()
+        )),
+        Err(e) => ctl.message(&format!(
+            "Log: the tool could not write {}: {e}",
+            o.log.display()
+        )),
     }
     if let Some(out) = &o.out {
-        println!("CSV: {} (one row per file)", out.display());
+        ctl.message(&format!("CSV: {} (one row per file)", out.display()));
     }
-    Ok(if s.data_not_safe {
-        3
-    } else if stopped {
-        4
-    } else {
-        0
+    Ok(VerifyOutcome {
+        status: if s.data_not_safe {
+            RunStatus::DataMismatch
+        } else if stopped {
+            RunStatus::Stopped
+        } else {
+            RunStatus::Completed
+        },
+        processed_files: results.len(),
+        summary: text,
     })
 }
 
@@ -332,10 +431,19 @@ fn fmt_time(secs: u64) -> String {
     format!("{n} {unit}{}", if n == 1 { "" } else { "s" })
 }
 
-fn measure(it: &Item, q: &mut sys::IoQueue, block: &mut Option<u64>, opt: &ReadOptions, ctl: &Control) -> io::Result<Outcome> {
+fn measure(
+    it: &Item,
+    q: &mut sys::IoQueue,
+    block: &mut Option<u64>,
+    opt: &ReadOptions,
+    ctl: &Control,
+) -> io::Result<Outcome> {
     let path = Path::new(&it.path);
     if !path.exists() {
-        return Ok(Outcome { status: "MISSING", ..Default::default() });
+        return Ok(Outcome {
+            status: "MISSING",
+            ..Default::default()
+        });
     }
     let block = match *block {
         Some(b) => b,
@@ -346,13 +454,21 @@ fn measure(it: &Item, q: &mut sys::IoQueue, block: &mut Option<u64>, opt: &ReadO
     let l = sys::layout(&mf, &m, block)?;
     let kind = Kind::classify(&m, &l);
     if !kind.measurable() {
-        return Ok(Outcome { status: "SKIP_KIND", detail: kind.name().into(), ..Default::default() });
+        return Ok(Outcome {
+            status: "SKIP_KIND",
+            detail: kind.name().into(),
+            ..Default::default()
+        });
     }
     let data = sys::open_direct(path)?;
     sys::set_read_priority(q, &data, opt.measure_priority);
     let check_hash = !it.sha.is_empty();
     let mut res: ReadResult = read_file(q, &data, m.size, &l, true, check_hash, opt, ctl)?;
-    let differs = if check_hash { res.sha256.map(|h| hex(&h)) != Some(it.sha.clone()) } else { m.size != it.size };
+    let differs = if check_hash {
+        res.sha256.map(|h| hex(&h)) != Some(it.sha.clone())
+    } else {
+        m.size != it.size
+    };
     if differs {
         // The data is different. Compare the metadata (size, times, USN) with the metadata at the
         // refresh, before and after this read. If it is the same, no program changed the file:
@@ -368,7 +484,12 @@ fn measure(it: &Item, q: &mut sys::IoQueue, block: &mut Option<u64>, opt: &ReadO
             });
         }
         let what = if check_hash { "SHA-256" } else { "size" };
-        return Ok(Outcome { status: "MODIFIED", reads: 1, detail: format!("the {what} is different: a program changed the file"), ..Default::default() });
+        return Ok(Outcome {
+            status: "MODIFIED",
+            reads: 1,
+            detail: format!("the {what} is different: a program changed the file"),
+            ..Default::default()
+        });
     }
     let mut reads = 1;
     if res.is_slow() {
@@ -394,7 +515,11 @@ fn median(mut v: Vec<f64>) -> Option<f64> {
     }
     v.sort_by(f64::total_cmp);
     let n = v.len();
-    Some(if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 })
+    Some(if n % 2 == 1 {
+        v[n / 2]
+    } else {
+        (v[n / 2 - 1] + v[n / 2]) / 2.0
+    })
 }
 
 /// The speed of the files in one group that were slow before.
@@ -433,7 +558,11 @@ struct Summary {
 /// nothing, and the text. Long text continues on the next lines, below the text.
 fn result_line(label: &str, verdict: &str, text: &str) -> String {
     const COL: usize = 22;
-    let v = if verdict.is_empty() { String::new() } else { format!("{verdict:<3}  ") };
+    let v = if verdict.is_empty() {
+        String::new()
+    } else {
+        format!("{verdict:<3}  ")
+    };
     let first = COL + v.len();
     let body = para_string(first, first, text);
     format!("  {:<w$}{v}{}", label, &body[first..], w = COL - 2)
@@ -459,8 +588,10 @@ struct SummaryInput<'a> {
 
 fn build_summary(s: &SummaryInput) -> Summary {
     let (items, results, is_log) = (s.items, s.results, s.is_log);
-    let groups: Vec<Group> =
-        [Group::Rewritten, Group::ReadOnly].into_iter().filter(|g| items.iter().any(|it| it.group == *g)).collect();
+    let groups: Vec<Group> = [Group::Rewritten, Group::ReadOnly]
+        .into_iter()
+        .filter(|g| items.iter().any(|it| it.group == *g))
+        .collect();
     let label = |g: Group| match g {
         Group::Rewritten => "Rewritten",
         Group::ReadOnly if is_log => "Read only",
@@ -473,7 +604,9 @@ fn build_summary(s: &SummaryInput) -> Summary {
 
     // ---------- table ----------
     let mut table: Vec<(String, Vec<String>)> = Vec::new();
-    let mut add = |name: &str, f: &dyn Fn(Group) -> String| table.push((name.into(), groups.iter().map(|&g| f(g)).collect()));
+    let mut add = |name: &str, f: &dyn Fn(Group) -> String| {
+        table.push((name.into(), groups.iter().map(|&g| f(g)).collect()))
+    };
     add("Files read", &|g| fmt_count(of(g).count() as u64));
     add("Files measured", &|g| fmt_count(measured(g).count() as u64));
     add("Slow before->now", &|g| {
@@ -489,7 +622,9 @@ fn build_summary(s: &SummaryInput) -> Summary {
             _ => "-".into(),
         }
     });
-    add("Changed by a program", &|g| count(g, "MODIFIED").to_string());
+    add("Changed by a program", &|g| {
+        count(g, "MODIFIED").to_string()
+    });
     if is_log {
         add("Changed, no program", &|g| count(g, "MISMATCH").to_string());
     }
@@ -500,8 +635,16 @@ fn build_summary(s: &SummaryInput) -> Summary {
     let mut t = String::new();
     t += "Summary\n";
     let lw = table.iter().map(|r| r.0.len()).max().unwrap_or(0);
-    let cw: Vec<usize> =
-        (0..groups.len()).map(|c| table.iter().map(|r| r.1[c].len()).chain([label(groups[c]).len()]).max().unwrap_or(0)).collect();
+    let cw: Vec<usize> = (0..groups.len())
+        .map(|c| {
+            table
+                .iter()
+                .map(|r| r.1[c].len())
+                .chain([label(groups[c]).len()])
+                .max()
+                .unwrap_or(0)
+        })
+        .collect();
     let mut line = format!("  {:lw$}", "");
     for (c, &g) in groups.iter().enumerate() {
         line += &format!("  {:>w$}", label(g), w = cw[c]);
@@ -524,16 +667,26 @@ fn build_summary(s: &SummaryInput) -> Summary {
     // ---------- Result ----------
     t += "\nResult\n";
     // Data safe
-    let bad: Vec<&str> = results.iter().filter(|(_, r)| r.status == "MISMATCH").map(|(i, _)| items[*i].path.as_str()).collect();
+    let bad: Vec<&str> = results
+        .iter()
+        .filter(|(_, r)| r.status == "MISMATCH")
+        .map(|(i, _)| items[*i].path.as_str())
+        .collect();
     let matched = all("MEASURED");
     let modified = all("MODIFIED");
     let changed_note = if modified > 0 {
-        format!(" {modified} files were changed by other programs after the refresh. This is normal.")
+        format!(
+            " {modified} files were changed by other programs after the refresh. This is normal."
+        )
     } else {
         String::new()
     };
     if !is_log {
-        t += &result_line("Data safe:", "n/a", "This is a scan report. The scan did not move files.");
+        t += &result_line(
+            "Data safe:",
+            "n/a",
+            "This is a scan report. The scan did not move files.",
+        );
     } else if !bad.is_empty() {
         t += &result_line(
             "Data safe:",
@@ -544,7 +697,11 @@ fn build_summary(s: &SummaryInput) -> Summary {
             t += &format!("{:27}{p}\n", "");
         }
         if bad.len() > 20 {
-            t += &format!("{:27}... and {} more (status MISMATCH in the CSV)\n", "", bad.len() - 20);
+            t += &format!(
+                "{:27}... and {} more (status MISMATCH in the CSV)\n",
+                "",
+                bad.len() - 20
+            );
         }
     } else if !s.has_meta && modified > 0 {
         t += &result_line(
@@ -592,7 +749,11 @@ fn build_summary(s: &SummaryInput) -> Summary {
     );
     let few_reason = |n: usize| format!("Only {n} slow files. Need {MIN_SLOW_FILES} or more.");
     for (g, sp) in &speeds {
-        let name = if groups.len() == 1 { "Faster:".to_string() } else { format!("Faster ({}):", label(*g).to_lowercase()) };
+        let name = if groups.len() == 1 {
+            "Faster:".to_string()
+        } else {
+            format!("Faster ({}):", label(*g).to_lowercase())
+        };
         if sp.n == 0 {
             t += &result_line(&name, "n/a", "No measured file was slow before.");
             continue;
@@ -615,14 +776,22 @@ fn build_summary(s: &SummaryInput) -> Summary {
         if reasons.is_empty() {
             t += &result_line(&name, if sp.recovered() { "YES" } else { "NO" }, &numbers);
         } else {
-            t += &result_line(&name, "NOT DECIDED", &format!("{} {numbers}", reasons.join(" ")));
+            t += &result_line(
+                &name,
+                "NOT DECIDED",
+                &format!("{} {numbers}", reasons.join(" ")),
+            );
         }
     }
     if let [(_, rw), (_, ro)] = speeds.as_slice() {
         let mut reasons = Vec::new();
         for (sp, name) in [(rw, "rewritten"), (ro, label(Group::ReadOnly))] {
             if sp.n < MIN_SLOW_FILES {
-                reasons.push(format!("Only {} slow files in the {} group. Need {MIN_SLOW_FILES} or more.", sp.n, name.to_lowercase()));
+                reasons.push(format!(
+                    "Only {} slow files in the {} group. Need {MIN_SLOW_FILES} or more.",
+                    sp.n,
+                    name.to_lowercase()
+                ));
             }
         }
         if too_soon {
@@ -630,9 +799,15 @@ fn build_summary(s: &SummaryInput) -> Summary {
         }
         if reasons.is_empty() {
             let text = match (rw.recovered(), ro.recovered()) {
-                (true, false) => format!("Rewriting made the files {} than reading only.", times(rw.now_bps / ro.now_bps)),
+                (true, false) => format!(
+                    "Rewriting made the files {} than reading only.",
+                    times(rw.now_bps / ro.now_bps)
+                ),
                 (true, true) => "Reading only was enough on this drive.".to_string(),
-                (false, _) => "Rewriting did not keep the files fast on this drive. Run verify again later.".to_string(),
+                (false, _) => {
+                    "Rewriting did not keep the files fast on this drive. Run verify again later."
+                        .to_string()
+                }
             };
             t += &result_line("Conclusion:", "", &text);
         } else {
@@ -641,8 +816,19 @@ fn build_summary(s: &SummaryInput) -> Summary {
     }
 
     // Time
-    t += &result_line(if is_log { "Time since refresh:" } else { "Time since scan:" }, "", &format!("{}.", fmt_time(s.age)));
-    Summary { text: t, data_not_safe: !bad.is_empty() && is_log }
+    t += &result_line(
+        if is_log {
+            "Time since refresh:"
+        } else {
+            "Time since scan:"
+        },
+        "",
+        &format!("{}.", fmt_time(s.age)),
+    );
+    Summary {
+        text: t,
+        data_not_safe: !bad.is_empty() && is_log,
+    }
 }
 
 #[cfg(test)]
@@ -650,55 +836,149 @@ mod tests {
     use super::*;
 
     fn item(path: &str, group: Group, before_mbps: f64, before_slow: bool) -> Item {
-        Item { path: path.into(), group, size: 1 << 20, before_mbps, before_slow, sha: "x".into(), meta_key: Some("k".into()) }
+        Item {
+            path: path.into(),
+            group,
+            size: 1 << 20,
+            before_mbps,
+            before_slow,
+            sha: "x".into(),
+            meta_key: Some("k".into()),
+        }
     }
 
     fn measured(now_slow: bool, mbps: f64) -> Outcome {
         let bytes = 1u64 << 20;
-        Outcome { status: "MEASURED", now_mbps: mbps, now_slow, now_bytes: bytes, now_secs: bytes as f64 / (mbps * 1e6), ..Default::default() }
+        Outcome {
+            status: "MEASURED",
+            now_mbps: mbps,
+            now_slow,
+            now_bytes: bytes,
+            now_secs: bytes as f64 / (mbps * 1e6),
+            ..Default::default()
+        }
     }
 
     fn summary(items: &[Item], results: &[(usize, Outcome)]) -> Summary {
-        build_summary(&SummaryInput { items, results, is_log: true, has_meta: true, age: 21 * 86400 })
+        build_summary(&SummaryInput {
+            items,
+            results,
+            is_log: true,
+            has_meta: true,
+            age: 21 * 86400,
+        })
     }
 
     #[test]
     fn recovered_files_are_faster_and_safe() {
         // 10 files were slow at 10 MB/s. Now 9 files read at 500 MB/s and 1 file at 10 MB/s.
-        let items: Vec<Item> = (0..10).map(|i| item(&format!("f{i}"), Group::Rewritten, 10.0, true)).collect();
-        let results: Vec<(usize, Outcome)> = (0..10).map(|i| (i, if i == 0 { measured(true, 10.0) } else { measured(false, 500.0) })).collect();
+        let items: Vec<Item> = (0..10)
+            .map(|i| item(&format!("f{i}"), Group::Rewritten, 10.0, true))
+            .collect();
+        let results: Vec<(usize, Outcome)> = (0..10)
+            .map(|i| {
+                (
+                    i,
+                    if i == 0 {
+                        measured(true, 10.0)
+                    } else {
+                        measured(false, 500.0)
+                    },
+                )
+            })
+            .collect();
         let s = summary(&items, &results);
         assert!(!s.data_not_safe);
-        assert!(s.text.contains("Data safe:          YES  10 of 10 files that no program changed"), "{}", s.text);
-        assert!(s.text.contains("Faster:             YES  10 files were slow before. 1 files are slow now."), "{}", s.text);
+        assert!(
+            s.text
+                .contains("Data safe:          YES  10 of 10 files that no program changed"),
+            "{}",
+            s.text
+        );
+        assert!(
+            s.text.contains(
+                "Faster:             YES  10 files were slow before. 1 files are slow now."
+            ),
+            "{}",
+            s.text
+        );
         // All bytes divided by all time: 1 file at 10 MB/s and 9 files at 500 MB/s.
-        let now = 10.0 * (1u64 << 20) as f64 / ((1u64 << 20) as f64 / 10e6 + 9.0 * (1u64 << 20) as f64 / 500e6);
-        assert!(s.text.contains(&format!("{:.0} MB/s now ({:.1} times", now / 1e6, now / 10e6)), "{}", s.text);
-        assert!(s.text.contains("Time since refresh: 21 days."), "{}", s.text);
+        let now = 10.0 * (1u64 << 20) as f64
+            / ((1u64 << 20) as f64 / 10e6 + 9.0 * (1u64 << 20) as f64 / 500e6);
+        assert!(
+            s.text.contains(&format!(
+                "{:.0} MB/s now ({:.1} times",
+                now / 1e6,
+                now / 10e6
+            )),
+            "{}",
+            s.text
+        );
+        assert!(
+            s.text.contains("Time since refresh: 21 days."),
+            "{}",
+            s.text
+        );
     }
 
     #[test]
     fn below_the_recovered_share_is_no() {
-        let items: Vec<Item> = (0..10).map(|i| item(&format!("f{i}"), Group::Rewritten, 10.0, true)).collect();
+        let items: Vec<Item> = (0..10)
+            .map(|i| item(&format!("f{i}"), Group::Rewritten, 10.0, true))
+            .collect();
         // 3 of 10 files are slow now: 70% are not slow, which is less than 80%.
-        let results: Vec<(usize, Outcome)> = (0..10).map(|i| (i, measured(i < 3, if i < 3 { 10.0 } else { 500.0 }))).collect();
-        assert!(summary(&items, &results).text.contains("Faster:             NO   10 files"));
+        let results: Vec<(usize, Outcome)> = (0..10)
+            .map(|i| (i, measured(i < 3, if i < 3 { 10.0 } else { 500.0 })))
+            .collect();
+        assert!(summary(&items, &results)
+            .text
+            .contains("Faster:             NO   10 files"));
     }
 
     #[test]
     fn change_without_a_program_is_not_safe() {
-        let items = vec![item("a", Group::Rewritten, 10.0, true), item("b", Group::Rewritten, 10.0, true)];
-        let results = vec![(0, measured(false, 500.0)), (1, Outcome { status: "MISMATCH", ..Default::default() })];
+        let items = vec![
+            item("a", Group::Rewritten, 10.0, true),
+            item("b", Group::Rewritten, 10.0, true),
+        ];
+        let results = vec![
+            (0, measured(false, 500.0)),
+            (
+                1,
+                Outcome {
+                    status: "MISMATCH",
+                    ..Default::default()
+                },
+            ),
+        ];
         let s = summary(&items, &results);
         assert!(s.data_not_safe);
-        assert!(s.text.contains("Data safe:          NO   1 files have a different SHA-256"), "{}", s.text);
+        assert!(
+            s.text
+                .contains("Data safe:          NO   1 files have a different SHA-256"),
+            "{}",
+            s.text
+        );
     }
 
     /// `n` slow files in each group. The rewritten files are fast now, the read-only files are not.
     fn two_groups(n: usize) -> (Vec<Item>, Vec<(usize, Outcome)>) {
-        let mut items: Vec<Item> = (0..n).map(|i| item(&format!("r{i}"), Group::Rewritten, 10.0, true)).collect();
+        let mut items: Vec<Item> = (0..n)
+            .map(|i| item(&format!("r{i}"), Group::Rewritten, 10.0, true))
+            .collect();
         items.extend((0..n).map(|i| item(&format!("c{i}"), Group::ReadOnly, 10.0, true)));
-        let results = (0..2 * n).map(|i| (i, if i < n { measured(false, 400.0) } else { measured(true, 20.0) })).collect();
+        let results = (0..2 * n)
+            .map(|i| {
+                (
+                    i,
+                    if i < n {
+                        measured(false, 400.0)
+                    } else {
+                        measured(true, 20.0)
+                    },
+                )
+            })
+            .collect();
         (items, results)
     }
 
@@ -709,7 +989,12 @@ mod tests {
         let s = summary(&items, &results);
         assert!(s.text.contains("Faster (rewritten): YES"), "{}", s.text);
         assert!(s.text.contains("Faster (read only): NO"), "{}", s.text);
-        assert!(s.text.contains("Rewriting made the files 20.0 times faster than reading only."), "{}", s.text);
+        assert!(
+            s.text
+                .contains("Rewriting made the files 20.0 times faster than reading only."),
+            "{}",
+            s.text
+        );
         assert!(!s.text.contains("NOT DECIDED"), "{}", s.text);
     }
 
@@ -718,7 +1003,13 @@ mod tests {
         let (items, results) = two_groups(2);
         let s = summary(&items, &results);
         assert!(s.text.contains("Faster (read only): NOT DECIDED  Only 2 slow files. Need 10 or more. 2 files were slow before."), "{}", s.text);
-        assert!(s.text.contains("Conclusion:         NOT DECIDED  Only 2 slow files in the rewritten group."), "{}", s.text);
+        assert!(
+            s.text.contains(
+                "Conclusion:         NOT DECIDED  Only 2 slow files in the rewritten group."
+            ),
+            "{}",
+            s.text
+        );
         assert!(!s.text.contains("Rewriting made"), "{}", s.text);
         assert!(!s.data_not_safe);
     }
@@ -726,9 +1017,25 @@ mod tests {
     #[test]
     fn short_time_is_not_decided() {
         let (items, results) = two_groups(MIN_SLOW_FILES);
-        let s = build_summary(&SummaryInput { items: &items, results: &results, is_log: true, has_meta: true, age: 0 });
-        assert!(s.text.contains("Faster (rewritten): NOT DECIDED  Only 0 minutes since refresh."), "{}", s.text);
-        assert!(s.text.contains("Conclusion:         NOT DECIDED  Only 0 minutes since refresh."), "{}", s.text);
+        let s = build_summary(&SummaryInput {
+            items: &items,
+            results: &results,
+            is_log: true,
+            has_meta: true,
+            age: 0,
+        });
+        assert!(
+            s.text
+                .contains("Faster (rewritten): NOT DECIDED  Only 0 minutes since refresh."),
+            "{}",
+            s.text
+        );
+        assert!(
+            s.text
+                .contains("Conclusion:         NOT DECIDED  Only 0 minutes since refresh."),
+            "{}",
+            s.text
+        );
         // The numbers stay. Data safe does not change.
         assert!(s.text.contains("10 files were slow before."), "{}", s.text);
         assert!(s.text.contains("Data safe:          YES"), "{}", s.text);

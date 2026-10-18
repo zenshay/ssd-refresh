@@ -6,8 +6,8 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-pub struct CsvWriter {
-    f: File,
+pub struct CsvWriter<W = File> {
+    f: W,
 }
 
 impl CsvWriter {
@@ -25,6 +25,13 @@ impl CsvWriter {
         w.f.write_all("\u{feff}".as_bytes())?; // BOM, so Excel shows non-ASCII paths correctly
         w.row(header.iter().map(|s| s.to_string()))?;
         Ok(w)
+    }
+}
+
+impl<W: Write> CsvWriter<W> {
+    #[cfg(test)]
+    pub(crate) fn from_writer(f: W) -> Self {
+        Self { f }
     }
 
     pub fn row<I: IntoIterator<Item = String>>(&mut self, values: I) -> io::Result<()> {
@@ -104,11 +111,19 @@ pub fn read_all(path: &Path) -> io::Result<Vec<Row>> {
         rows.pop();
     }
     let mut it = rows.into_iter();
-    let Some(header) = it.next() else { return Ok(vec![]) };
-    Ok(it
-        .filter(|r| r.len() == header.len())
-        .map(|r| header.iter().cloned().zip(r).collect())
-        .collect())
+    let Some(header) = it.next() else {
+        return Ok(vec![]);
+    };
+    it.map(|row| {
+        if row.len() != header.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Report row has a different column count",
+            ));
+        }
+        Ok(header.iter().cloned().zip(row).collect())
+    })
+    .collect()
 }
 
 fn parse(s: &str) -> (Vec<Vec<String>>, bool) {
@@ -142,7 +157,7 @@ fn parse(s: &str) -> (Vec<Vec<String>>, bool) {
             _ => f.push(c),
         }
     }
-    if !f.is_empty() || !row.is_empty() {
+    if !f.is_empty() || !row.is_empty() || q {
         row.push(f);
         rows.push(row);
         return (rows, false);
