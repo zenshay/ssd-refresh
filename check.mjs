@@ -20,6 +20,15 @@ node("Architecture", "scripts/check-architecture.mjs");
 const manifest = ["--manifest-path", join(root, "Cargo.toml")];
 const offline = options.has("--offline") ? ["--offline"] : [];
 run("Rust format", "cargo", ["fmt", ...manifest, "--all", "--check"]);
+const [pnpm, ...prefix] = pnpmCommand();
+// Tauri needs the frontend files when it compiles in a clean checkout.
+run("Frontend build", pnpm, [
+  ...prefix,
+  "--dir",
+  join(root, "gui"),
+  "run",
+  "build",
+]);
 const scope = options.has("--core-only")
   ? ["-p", "ssd-refresh"]
   : ["--workspace"];
@@ -51,7 +60,6 @@ run("CLI help", "cargo", [
   "--",
   "help",
 ]);
-const [pnpm, ...prefix] = pnpmCommand();
 run("Shared script lint", pnpm, [
   ...prefix,
   "--dir",
@@ -66,7 +74,6 @@ for (const task of [
   "typecheck",
   "lint",
   "test",
-  "build",
   ...(!options.has("--skip-browser") ? ["test:e2e"] : []),
 ]) {
   run(`Frontend ${task}`, pnpm, [

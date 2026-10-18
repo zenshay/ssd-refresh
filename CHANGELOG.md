@@ -1,11 +1,13 @@
 # Changes
 
-## Unreleased
+## 1.0.2
 
 - Move shared checks and AST queries to Node. Keep the Windows PowerShell entry points.
 - Remove the PowerShell requirement from Linux and macOS shared checks.
 - Add an isolated Linux ext4 test for moves, stop, resume, hashes, metadata, and filesystem checks.
 - Remove deprecated musl time type casts. Check the integer range before local time conversion.
+- Build frontend files before Tauri checks in a clean checkout.
+- Use a browser pipe for tests. Show browser errors in CI and prefer Chrome on Linux.
 
 ## 1.0.1
 

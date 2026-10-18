@@ -2,7 +2,7 @@
 
 <h1>ssd-refresh</h1>
 
-[![Release: v1.0.1](https://img.shields.io/badge/release-v1.0.1-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
+[![Release: v1.0.2](https://img.shields.io/badge/release-v1.0.2-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 [![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#build)
 [![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#platforms)

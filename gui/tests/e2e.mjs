@@ -16,8 +16,8 @@ const candidates = [
       process.env["ProgramFiles(x86)"],
       "Microsoft/Edge/Application/msedge.exe",
     ),
-  "/usr/bin/chromium",
   "/usr/bin/google-chrome",
+  "/usr/bin/chromium",
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 ];
 const executablePath = candidates.find((path) => path && existsSync(path));
@@ -36,6 +36,8 @@ try {
   browser = await puppeteer.launch({
     executablePath,
     headless: true,
+    pipe: true,
+    dumpio: process.env.CI === "true",
     args: ["--no-first-run"],
   });
   const page = await browser.newPage();
