@@ -1,19 +1,24 @@
 // What happens when the user interacts. Views only call these actions.
+
+import type { Api } from "./api";
 import { api, type ScanOutcome } from "./api";
 import { fmtCount } from "./format";
+import type { Confirm } from "./interactions";
 import {
   allSelected,
   type Notice,
   type Store,
   totalSlowAcrossSelected,
 } from "./store";
-import { askConfirm } from "./views/confirm";
 
 const errorText = (e: unknown): string =>
   typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
 
-function scanNotice(results: { root: string; outcome: ScanOutcome }[]): Notice {
-  const stopped = results.some((r) => r.outcome.stopped);
+function scanNotice(
+  results: { root: string; outcome: ScanOutcome }[],
+  cancelled: boolean,
+): Notice {
+  const stopped = cancelled || results.some((r) => r.outcome.stopped);
   const totalFiles = results.reduce((acc, r) => acc + r.outcome.totalFiles, 0);
   const totalSlow = results.reduce((acc, r) => acc + r.outcome.slowTotal, 0);
 
@@ -40,11 +45,21 @@ function scanNotice(results: { root: string; outcome: ScanOutcome }[]): Notice {
   };
 }
 
-export function createActions(store: Store) {
+type Operations = Pick<
+  Api,
+  "listVolumes" | "startScan" | "startRefresh" | "togglePause" | "stop"
+>;
+
+export function createActions(
+  store: Store,
+  confirm: Confirm,
+  backend: Operations = api,
+) {
+  let confirming = false;
   async function loadVolumes(): Promise<void> {
     store.set({ volumesLoading: true });
     try {
-      const volumes = await api.listVolumes();
+      const volumes = await backend.listVolumes();
       const currentSelected = store.get().selectedRoots;
       // Retain already selected roots if they still exist, otherwise default to all or first
       const validSelected = currentSelected.filter((r) =>
@@ -125,7 +140,7 @@ export function createActions(store: Store) {
       store.set({ activeRoot: root, progress: null });
 
       try {
-        const outcome = await api.startScan(root);
+        const outcome = await backend.startScan(root);
         finishedOutcomes.push({ root, outcome });
 
         // Update scan results cache
@@ -137,6 +152,8 @@ export function createActions(store: Store) {
         }
       } catch (e) {
         store.set({
+          paused: false,
+          stopping: false,
           mode: "idle",
           activeRoot: null,
           progress: null,
@@ -155,14 +172,14 @@ export function createActions(store: Store) {
       activeRoot: null,
       progress: null,
       stopping: false,
-      notice: scanNotice(finishedOutcomes),
+      notice: scanNotice(finishedOutcomes, store.get().stopping),
     });
   }
 
   async function runRefresh(): Promise<void> {
     const s = store.get();
     const slowCount = totalSlowAcrossSelected(s);
-    if (s.mode !== "idle" || slowCount === 0) return;
+    if (s.mode !== "idle" || slowCount === 0 || confirming) return;
 
     const drivesWithSlow = s.selectedRoots.filter(
       (r) => s.scans[r] && !s.scans[r].stopped && s.scans[r].slowTotal > 0,
@@ -173,16 +190,21 @@ export function createActions(store: Store) {
       (v) => drivesWithSlow.includes(v.root) && v.isSystem,
     );
 
-    const confirmed = await askConfirm({
-      title: `Rewrite ${fmtCount(slowCount)} slow files across ${driveNames}?`,
-      body: "The file system safely moves each slow file to fresh NAND blocks. Unchanged and fast files are not touched. Programs can continue running.",
-      warning: hasSystem
-        ? "Includes your Windows system drive. Close other apps before starting."
-        : undefined,
-      okLabel: "Rewrite slow files",
-    });
-
-    if (!confirmed) return;
+    confirming = true;
+    let confirmed: boolean;
+    try {
+      confirmed = await confirm({
+        title: `Rewrite ${fmtCount(slowCount)} slow files across ${driveNames}?`,
+        body: "The file system safely moves each slow file to fresh NAND blocks. Unchanged and fast files are not touched. Programs can continue running.",
+        warning: hasSystem
+          ? "Includes your Windows system drive. Close other apps before starting."
+          : undefined,
+        okLabel: "Rewrite slow files",
+      });
+    } finally {
+      confirming = false;
+    }
+    if (!confirmed || store.get().mode !== "idle") return;
 
     store.set({
       mode: "refreshing",
@@ -193,6 +215,7 @@ export function createActions(store: Store) {
     });
 
     let totalMoved = 0;
+    const attemptedRoots = new Set<string>();
     let wasStopped = false;
 
     for (const root of drivesWithSlow) {
@@ -206,8 +229,12 @@ export function createActions(store: Store) {
 
       store.set({ activeRoot: root, progress: null });
 
+      attemptedRoots.add(root);
       try {
-        const outcome = await api.startRefresh(scanResult.reportPath, root);
+        const nextScans = { ...store.get().scans };
+        delete nextScans[root];
+        store.set({ scans: nextScans });
+        const outcome = await backend.startRefresh(scanResult.reportPath, root);
         totalMoved += outcome.movedFiles;
         if (outcome.stopped) {
           wasStopped = true;
@@ -215,6 +242,8 @@ export function createActions(store: Store) {
         }
       } catch (e) {
         store.set({
+          paused: false,
+          stopping: false,
           mode: "idle",
           activeRoot: null,
           progress: null,
@@ -230,7 +259,7 @@ export function createActions(store: Store) {
 
     // Invalidate scans for refreshed drives
     const nextScans = { ...store.get().scans };
-    for (const root of drivesWithSlow) {
+    for (const root of attemptedRoots) {
       delete nextScans[root];
     }
 
@@ -260,7 +289,7 @@ export function createActions(store: Store) {
     const next = !s.paused;
     store.set({ paused: next });
     try {
-      const confirmed = await api.togglePause();
+      const confirmed = await backend.togglePause();
       if (confirmed !== next) store.set({ paused: confirmed });
     } catch {
       store.set({ paused: !next });
@@ -272,7 +301,7 @@ export function createActions(store: Store) {
     if (s.mode === "idle" || s.stopping) return;
     store.set({ stopping: true, paused: false });
     try {
-      await api.stop();
+      await backend.stop();
     } catch {
       store.set({ stopping: false });
     }

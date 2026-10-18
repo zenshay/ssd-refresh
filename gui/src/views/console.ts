@@ -1,149 +1,15 @@
-import { api, type Progress } from "../api";
+import type { Api } from "../api";
+import type { Diagnostics } from "../diagnostics";
 import { $, el } from "../dom";
-import { fmtBytes, fmtCount, fmtDuration, fmtRate } from "../format";
 import type { Store } from "../store";
 
-export interface LogEntry {
-  timestamp: string;
-  level: "info" | "warn" | "error" | "cmd";
-  text: string;
-}
-
-const MAX_LOGS = 500;
-const logs: LogEntry[] = [];
-
-let lastStage = "";
-let lastLoggedPct = -1;
-let lastCatalogedCount = 0;
-
-export function resetProgressLogState(): void {
-  lastStage = "";
-  lastLoggedPct = -1;
-  lastCatalogedCount = 0;
-}
-
-export function logProgressStream(
-  p: Progress,
-  activeRoot?: string | null,
+export function mountConsole(
+  store: Store,
+  diagnostics: Diagnostics,
+  api: Api,
 ): void {
-  const currentRoot = activeRoot ?? "Drive";
+  const { logMessage, buildDiagnosticReport } = diagnostics;
 
-  // Stage transition logging
-  if (p.stage !== lastStage) {
-    lastStage = p.stage;
-    lastLoggedPct = -1;
-    lastCatalogedCount = 0;
-
-    if (p.stage === "find") {
-      logMessage(
-        "info",
-        `[Step 1/3] Finding files on ${currentRoot}... Traversing directories.`,
-      );
-    } else if (p.stage === "read") {
-      logMessage(
-        "info",
-        `[Step 2/3] Measuring read speeds on ${currentRoot}... (${fmtCount(p.totalFiles)} files, ${fmtBytes(p.totalBytes)})`,
-      );
-    } else if (p.stage === "settle") {
-      logMessage(
-        "info",
-        `[Step 3/3] Settle wait on ${currentRoot}. Drive cooldown in progress.`,
-      );
-    } else if (p.stage === "refresh") {
-      logMessage(
-        "info",
-        `[Step 2/3] Rewriting slow files on ${currentRoot} via safe relocation.`,
-      );
-    } else if (p.stage === "recheck" || p.stage === "verify") {
-      logMessage(
-        "info",
-        `[Step 3/3] Rechecking read speeds to verify improvements.`,
-      );
-    }
-  }
-
-  // Live stream logs during find (every 25,000 files)
-  if (p.stage === "find" && p.filesDone >= lastCatalogedCount + 25000) {
-    lastCatalogedCount = Math.floor(p.filesDone / 25000) * 25000;
-    logMessage("cmd", `Cataloged ${fmtCount(p.filesDone)} files so far...`);
-  }
-
-  // Live stream logs during read (every 10%)
-  if (p.stage === "read" && p.totalBytes > 0) {
-    const pct = Math.floor((p.bytesDone / p.totalBytes) * 10);
-    if (pct > lastLoggedPct) {
-      lastLoggedPct = pct;
-      const pctText = ((p.bytesDone / p.totalBytes) * 100).toFixed(0);
-      logMessage(
-        "cmd",
-        `[Progress ${pctText}%] Read ${fmtBytes(p.bytesDone)}/${fmtBytes(p.totalBytes)} · Speed: ${fmtRate(p.mbps)} · Time Left: ${p.etaSecs !== null ? fmtDuration(p.etaSecs) : "--"}`,
-      );
-    }
-  }
-}
-
-function getTimestamp(): string {
-  const d = new Date();
-  return (
-    d.toTimeString().split(" ")[0] +
-    "." +
-    String(d.getMilliseconds()).padStart(3, "0")
-  );
-}
-
-export function logMessage(level: LogEntry["level"], text: string): void {
-  const entry: LogEntry = {
-    timestamp: getTimestamp(),
-    level,
-    text,
-  };
-  logs.push(entry);
-  if (logs.length > MAX_LOGS) {
-    logs.shift();
-  }
-
-  // If view is mounted, append entry directly to DOM
-  const view = document.getElementById("console-log-view");
-  const countEl = document.getElementById("console-log-count");
-  if (view && countEl) {
-    const row = el(
-      "div",
-      { class: `log-row log-${level}` },
-      el("span", { class: "log-time", text: `[${entry.timestamp}]` }),
-      el("span", {
-        class: `log-tag log-tag-${level}`,
-        text: `[${level.toUpperCase()}]`,
-      }),
-      el("span", { class: "log-text", text: entry.text }),
-    );
-    view.appendChild(row);
-    view.scrollTop = view.scrollHeight;
-    countEl.textContent = `${logs.length} entries`;
-  }
-}
-
-export function buildDiagnosticReport(store: Store): string {
-  const state = store.get();
-  const lines: string[] = [
-    "# ssd-refresh Diagnostics Report",
-    `Generated at: ${new Date().toISOString()}`,
-    `OS: Windows (elevated: ${String(state.elevated)})`,
-    "",
-    "## Storage Volumes",
-    ...state.volumes.map(
-      (v) =>
-        `- Drive ${v.root} (${v.fs}): ${(v.totalBytes / 1e9).toFixed(1)} GB total, ${(v.freeBytes / 1e9).toFixed(1)} GB free, SMART: ${v.smart.level} (${v.smart.detail ?? "ok"})`,
-    ),
-    "",
-    "## Console Event Stream",
-    "```",
-    ...logs.map((l) => `[${l.timestamp}] [${l.level.toUpperCase()}] ${l.text}`),
-    "```",
-  ];
-  return lines.join("\n");
-}
-
-export function mountConsole(store: Store): void {
   const drawer = $<HTMLElement>("console-drawer");
   const copyBtn = $<HTMLButtonElement>("btn-copy-log");
   const saveBtn = $<HTMLButtonElement>("btn-save-log");
@@ -212,7 +78,8 @@ export function mountConsole(store: Store): void {
   reportBtn.addEventListener("click", () => {
     const state = store.get();
     const body = encodeURIComponent(
-      `### Problem Description\n<!-- Describe what went wrong -->\n\n### Environment\n- OS: Windows\n- Elevated: ${state.elevated}\n- Drives: ${state.volumes.map((v) => v.root.slice(0, 2)).join(", ")}\n\n### Log Summary\n\`\`\`\n${logs
+      `### Problem Description\n<!-- Describe what went wrong -->\n\n### Environment\n- OS: Windows\n- Elevated: ${state.elevated}\n- Drives: ${state.volumes.map((v) => v.root.slice(0, 2)).join(", ")}\n\n### Log Summary\n\`\`\`\n${diagnostics
+        .entries()
         .slice(-20)
         .map((l) => `[${l.timestamp}] [${l.level}] ${l.text}`)
         .join("\n")}\n\`\`\``,
@@ -224,11 +91,27 @@ export function mountConsole(store: Store): void {
 
   // 5. Clear Log View
   clearBtn.addEventListener("click", () => {
-    logs.length = 0;
-    logView.replaceChildren();
-    countEl.textContent = "0 entries";
-    resetProgressLogState();
+    diagnostics.clear();
     logMessage("info", "Console output cleared. System ready.");
+  });
+
+  diagnostics.subscribe(() => {
+    logView.replaceChildren(
+      ...diagnostics.entries().map((entry) =>
+        el(
+          "div",
+          { class: `log-row log-${entry.level}` },
+          el("span", { class: "log-time", text: `[${entry.timestamp}]` }),
+          el("span", {
+            class: `log-tag log-${entry.level}`,
+            text: `[${entry.level.toUpperCase()}]`,
+          }),
+          el("span", { class: "log-text", text: entry.text }),
+        ),
+      ),
+    );
+    countEl.textContent = `${diagnostics.entries().length} entries`;
+    logView.scrollTop = logView.scrollHeight;
   });
 
   // Initial welcome message

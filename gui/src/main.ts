@@ -1,13 +1,9 @@
 import { createActions } from "./actions";
 import { api } from "./api";
+import { createDiagnostics } from "./diagnostics";
 import { createStore, initialState } from "./store";
-import { mountConfirm } from "./views/confirm";
-import {
-  logMessage,
-  logProgressStream,
-  mountConsole,
-  resetProgressLogState,
-} from "./views/console";
+import { askConfirm, mountConfirm } from "./views/confirm";
+import { mountConsole } from "./views/console";
 import { mountDrives } from "./views/drives";
 import { mountNotice } from "./views/notice";
 import { mountProgress } from "./views/progress";
@@ -17,11 +13,13 @@ import { mountWorkflow } from "./views/workflow";
 // Global initialization
 window.addEventListener("DOMContentLoaded", async () => {
   const store = createStore(initialState);
-  const actions = createActions(store);
+  const actions = createActions(store, askConfirm);
+  const diagnostics = createDiagnostics();
+  const { logMessage, logProgressStream, resetProgressLogState } = diagnostics;
 
   // Mount views
   mountConfirm();
-  mountConsole(store);
+  mountConsole(store, diagnostics, api);
   mountWorkflow(store, actions);
   mountDrives(store, actions);
   mountProgress(store, actions);

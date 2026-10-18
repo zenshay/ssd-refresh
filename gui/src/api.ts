@@ -77,3 +77,5 @@ export const api = {
   onMessage: (handler: (message: string) => void): Promise<UnlistenFn> =>
     listen<string>("operation-message", (event) => handler(event.payload)),
 };
+
+export type Api = typeof api;

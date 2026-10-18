@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check src",
-    "lint:fix": "biome check --write src",
-    "format": "biome format --write src",
+    "lint": "biome check src tests test-cdp.js",
+    "lint:fix": "biome check --write src tests test-cdp.js",
+    "format": "biome format --write src tests test-cdp.js",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "test": "node --import ./tests/register.mjs --test tests/actions.test.mjs",
     "test:e2e": "node tests/e2e.mjs"
   },
   "devDependencies": {

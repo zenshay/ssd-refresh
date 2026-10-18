@@ -1,0 +1,126 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { createActions } from "../src/actions.ts";
+import { createDiagnostics } from "../src/diagnostics.ts";
+import { createStore, initialState } from "../src/store.ts";
+
+const scan = (root) => ({
+  reportPath: `${root}-synthetic.csv`,
+  totalFiles: 10,
+  slowTotal: 2,
+  slowFiles: [],
+  stopped: false,
+});
+const storeFor = () =>
+  createStore({
+    ...initialState,
+    selectedRoots: ["X:", "Y:"],
+    scans: { "X:": scan("X:"), "Y:": scan("Y:") },
+  });
+const backend = (overrides = {}) => ({
+  listVolumes: async () => [],
+  startScan: async (root) => scan(root),
+  startRefresh: async () => ({ movedFiles: 2, stopped: false }),
+  togglePause: async () => true,
+  stop: async () => {},
+  ...overrides,
+});
+
+test("cancel does not call refresh or invalidate reports", async () => {
+  const store = storeFor();
+  const calls = [];
+  await createActions(
+    store,
+    async () => false,
+    backend({ startRefresh: async () => calls.push(1) }),
+  ).runRefresh();
+  assert.equal(calls.length, 0);
+  assert.equal(Object.keys(store.get().scans).length, 2);
+  assert.equal(store.get().mode, "idle");
+});
+test("stop keeps reports for drives that did not run", async () => {
+  const store = storeFor();
+  const calls = [];
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startRefresh: async (_, root) => {
+        calls.push(root);
+        return { movedFiles: 1, stopped: true };
+      },
+    }),
+  ).runRefresh();
+  assert.deepEqual(calls, ["X:"]);
+  assert.equal(store.get().scans["X:"], undefined);
+  assert.ok(store.get().scans["Y:"]);
+  assert.match(store.get().notice.title, /stopped/);
+});
+test("failure clears transient state and invalidates the attempted report", async () => {
+  const store = storeFor();
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startRefresh: async () => {
+        store.set({ paused: true, stopping: true });
+        throw new Error("Synthetic failure");
+      },
+    }),
+  ).runRefresh();
+  assert.equal(store.get().mode, "idle");
+  assert.equal(store.get().paused, false);
+  assert.equal(store.get().stopping, false);
+  assert.equal(store.get().scans["X:"], undefined);
+  assert.ok(store.get().scans["Y:"]);
+  assert.equal(store.get().notice.kind, "error");
+});
+test("only one confirmation can run at a time", async () => {
+  const store = storeFor();
+  let close;
+  let confirmations = 0;
+  const actions = createActions(
+    store,
+    () => {
+      confirmations++;
+      return new Promise((resolve) => {
+        close = resolve;
+      });
+    },
+    backend(),
+  );
+  const first = actions.runRefresh();
+  await actions.runRefresh();
+  assert.equal(confirmations, 1);
+  close(false);
+  await first;
+});
+test("stop between scan drives is reported as stopped", async () => {
+  const store = storeFor();
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startScan: async (root) => {
+        store.set({ stopping: true });
+        return scan(root);
+      },
+    }),
+  ).runScan();
+  assert.match(store.get().notice.title, /stopped/);
+});
+test("diagnostic models are independent and keep only 500 entries", () => {
+  const first = createDiagnostics();
+  const second = createDiagnostics();
+  let updates = 0;
+  const unsubscribe = first.subscribe(() => updates++);
+  for (let i = 0; i < 700; i++) first.logMessage("info", `Synthetic ${i}`);
+  assert.equal(first.entries().length, 500);
+  assert.equal(first.entries()[0].text, "Synthetic 200");
+  assert.equal(second.entries().length, 0);
+  unsubscribe();
+  const count = updates;
+  first.clear();
+  assert.equal(updates, count);
+  assert.equal(first.entries().length, 0);
+});

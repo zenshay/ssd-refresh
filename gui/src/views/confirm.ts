@@ -1,12 +1,7 @@
 // Native <dialog> confirm prompt. Traps focus and closes on Esc.
 import { $ } from "../dom";
 
-export interface ConfirmOptions {
-  title: string;
-  body: string;
-  warning?: string;
-  okLabel: string;
-}
+import type { ConfirmOptions } from "../interactions";
 
 export function mountConfirm(): void {
   const dialog = $<HTMLDialogElement>("confirm-modal");
