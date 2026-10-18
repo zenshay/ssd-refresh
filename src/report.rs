@@ -256,6 +256,26 @@ mod tests {
     }
 
     #[test]
+    fn missing_required_column_is_rejected_even_when_the_summary_does_not_use_it() {
+        let file = TempFile::new();
+        let header: Vec<_> = SCAN_HEADER
+            .iter()
+            .copied()
+            .filter(|name| *name != "sha256")
+            .collect();
+        let mut values = row("synthetic.dat", "OK", "0");
+        values.remove(11);
+        let mut writer = CsvWriter::create(&file.0, &header, false).unwrap();
+        writer.row(values).unwrap();
+        drop(writer);
+        let error = read_scan(&file.0)
+            .err()
+            .expect("The required sha256 column must exist");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("sha256"));
+    }
+
+    #[test]
     fn malformed_report_does_not_become_an_empty_success() {
         let file = TempFile::new();
         std::fs::write(&file.0, "path,size\r\nfile,12\r\n").unwrap();

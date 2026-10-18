@@ -37,14 +37,15 @@ Unknown columns are accepted. Missing required columns and invalid values cause 
 
 Install Rust, Node.js 24, pnpm, fd, and ast-grep 0.45.3.
 Install the frontend packages with the lock file.
-Run `check.ps1` from PowerShell 7. The script resolves paths from its own location.
+Run `check.ps1` from Windows PowerShell 5.1 or PowerShell 7.
+The script resolves paths from its own location.
 For example:
 
 ```powershell
 & C:\path\to\ssd-refresh\check.ps1 -Offline
 ```
 
-The command checks dependencies, Rust format, Clippy without warnings, tests, CLI help, frontend types, lint, build, and browser behavior.
+The command checks dependencies, Rust format, Clippy without warnings, tests, CLI help, frontend types, lint, build, browser behavior, and targeted mutations.
 Browser tests use a synthetic IPC bridge. They do not start a scan or move files.
 The tests use an installed Chrome or Edge browser.
 Set `SSD_REFRESH_BROWSER` to the browser executable if it is in another location.
@@ -59,11 +60,35 @@ These checks cover module boundaries. They are not a complete call graph.
 The separate VHDX tests check real NTFS moves and require administrator rights.
 Do not add those tests to this default check command.
 
+## Targeted mutation tests
+
+The default check changes production behavior in isolated source copies and runs the original test suites.
+It tests cleanup, event delivery, report checks, moved counts, ETA, confirmation, report retention, and diagnostic logs.
+AST queries must find exactly one node for each mutation.
+Production files are not changed. Mutation files and Cargo output stay in `target/mutation`.
+Frontend tests use a loader override to read the changed copy.
+No new mutation package is required.
+
+The runner checks both suites before mutation and after source restoration.
+A mutation counts as killed only when tests fail.
+Build errors, runner errors, surviving mutations, and timeouts fail the command.
+Each child test command has a 120-second limit. Timeout cleanup stops its process tree.
+Set `SSD_REFRESH_MUTATION_TIMEOUT_MS` to change this limit.
+Read `target/mutation/report.json` and the per-mutation logs for details.
+
+Windows has 12 selected mutations. Linux and macOS have 11 because the Windows priority guard is not present.
+This is a targeted regression suite. It is not an exhaustive mutation score for the repository.
+The first run killed 10 of 12 mutations.
+Two added tests check final event delivery and a required column that the summary does not use.
+The same 12 mutations then failed their tests.
+
 ## Windows check result: 2026-10-18
 
-- Rust tests: 34 passed.
+- Rust tests: 36 passed.
 - Clippy warnings: 0.
-- Frontend state tests: 6 passed.
+- Frontend state and mutation scoring tests: 7 passed.
+- Targeted mutations: 12 killed, 0 survived, 0 invalid, 0 timeouts.
+- PowerShell versions: Windows PowerShell 5.1 and PowerShell 7.
 - Invalid dependency cases: 8 rejected. A cycle with only type imports is accepted.
 - Browser test: passed scan, core messages, cancel, confirmation, and refresh with synthetic IPC.
 - Frontend types, lint, and build: passed.

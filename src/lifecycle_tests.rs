@@ -4,10 +4,35 @@ use crate::csv::CsvWriter;
 use crate::progress::{Phase, Progress};
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 struct FailedWriter;
+
+#[test]
+fn finish_delivers_one_final_progress_snapshot() {
+    let control = Control::new(None);
+    let updates = Arc::new(Mutex::new(Vec::new()));
+    let received = updates.clone();
+    control.set_progress_reporter(Arc::new(move |update| {
+        received.lock().unwrap().push(update);
+    }));
+    let progress = Progress::new(Phase::Verify, 2, 200, control.clone());
+    progress.add_file(100);
+    control.set_paused(true);
+    progress.finish();
+    let updates = updates.lock().unwrap();
+    assert_eq!(updates.iter().filter(|update| update.finished).count(), 1);
+    let last = updates
+        .last()
+        .expect("The receiver must get the final update");
+    assert!(last.finished);
+    assert_eq!(last.stage, crate::control::Stage::Verify);
+    assert_eq!((last.files_done, last.total_files), (1, 2));
+    assert_eq!((last.bytes_done, last.total_bytes), (100, 200));
+    assert!(last.paused);
+}
+
 impl Write for FailedWriter {
     fn write(&mut self, _: &[u8]) -> io::Result<usize> {
         Err(io::Error::other("Test write error"))

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 export async function resolve(specifier, context, next) {
   if (
@@ -10,7 +11,13 @@ export async function resolve(specifier, context, next) {
 }
 export async function load(url, context, next) {
   if (!url.endsWith(".ts")) return next(url, context);
-  const source = await readFile(new URL(url), "utf8");
+  const overrides = JSON.parse(
+    process.env.SSD_REFRESH_MUTATION_OVERRIDES ?? "{}",
+  );
+  const source = await readFile(
+    overrides[fileURLToPath(url)] ?? new URL(url),
+    "utf8",
+  );
   return {
     format: "module",
     shortCircuit: true,

@@ -29,4 +29,13 @@ Invoke-Check 'Frontend lint' { pnpm --dir $gui run lint }
 Invoke-Check 'Frontend state tests' { pnpm --dir $gui run test }
 Invoke-Check 'Frontend build' { pnpm --dir $gui run build }
 if (-not $SkipBrowser) { Invoke-Check 'Browser tests with synthetic IPC' { pnpm --dir $gui run test:e2e } }
+$mutationOptions = @()
+if ($Offline) { $mutationOptions += '--offline' }
+$previousPowerShell = $env:SSD_REFRESH_POWERSHELL
+try {
+    $env:SSD_REFRESH_POWERSHELL = (Get-Process -Id $PID).Path
+    Invoke-Check 'Targeted mutation tests' { node (Join-Path $gui 'tests/mutation.mjs') @mutationOptions }
+} finally {
+    $env:SSD_REFRESH_POWERSHELL = $previousPowerShell
+}
 Write-Output 'RESULT: YES'

@@ -3,6 +3,7 @@ import test from "node:test";
 import { createActions } from "../src/actions.ts";
 import { createDiagnostics } from "../src/diagnostics.ts";
 import { createStore, initialState } from "../src/store.ts";
+import { mutationStatus } from "./mutation-status.mjs";
 
 const scan = (root) => ({
   reportPath: `${root}-synthetic.csv`,
@@ -10,6 +11,52 @@ const scan = (root) => ({
   slowTotal: 2,
   slowFiles: [],
   stopped: false,
+});
+
+test("mutation scoring rejects build errors and timeouts", () => {
+  assert.equal(
+    mutationStatus(
+      { code: 1, timedOut: false, text: "error: could not compile" },
+      "rust",
+    ),
+    "invalid",
+  );
+  assert.equal(
+    mutationStatus(
+      { code: null, timedOut: true, text: "test result: FAILED" },
+      "rust",
+    ),
+    "timeout",
+  );
+  assert.equal(
+    mutationStatus({ code: 0, timedOut: false, text: "" }, "rust"),
+    "survived",
+  );
+  assert.equal(
+    mutationStatus(
+      { code: 1, timedOut: false, text: "test result: FAILED" },
+      "rust",
+    ),
+    "killed",
+  );
+  assert.equal(
+    mutationStatus(
+      {
+        code: 1,
+        timedOut: false,
+        text: "not ok 1 - import error ERR_TEST_FAILURE",
+      },
+      "frontend",
+    ),
+    "invalid",
+  );
+  assert.equal(
+    mutationStatus(
+      { code: 1, timedOut: false, text: "not ok 1 - assertion ERR_ASSERTION" },
+      "frontend",
+    ),
+    "killed",
+  );
 });
 const storeFor = () =>
   createStore({

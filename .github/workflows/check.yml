@@ -36,3 +36,10 @@ jobs:
         run: |
           if ($IsWindows) { & ./check.ps1 }
           else { & ./check.ps1 -CoreOnly }
+      - name: Check Windows PowerShell 5.1 compatibility
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          & ./scripts/test-paths.ps1
+          & ./scripts/check-architecture.ps1
+          & ./scripts/test-architecture.ps1
