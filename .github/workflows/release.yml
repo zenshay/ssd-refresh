@@ -39,9 +39,9 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Setup Node & pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
-          version: 9
+          package_json_file: gui/package.json
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -51,7 +51,7 @@ jobs:
       - name: Install Frontend Dependencies
         run: |
           cd gui
-          pnpm install --no-frozen-lockfile
+          pnpm install --frozen-lockfile
 
       - name: Build Frontend
         run: |
