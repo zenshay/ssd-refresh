@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc" style="max-width:100%;height:auto">
+  <title id="title">從讀取變慢到唯讀掃描</title>
+  <desc id="desc">電腦卡住，磁碟使用率 100%，讀取約 1 MB/s。舊檔案的儲存電荷流失，讀取變慢。ssd-refresh 唯讀掃描並讀取慢檔案。部分 SSD 的檔案恢復快速讀取，效果取決於磁碟。</desc>
+  <defs>
+    <filter id="wobble" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="2" seed="7" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="420" rx="20" fill="#f8f8f4"/>
+  <g fill="none" stroke="#222" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#wobble)">
+    <!-- Four cards and their flat pastel marker highlights. -->
+    <rect x="24" y="28" width="252" height="364" rx="12"/>
+    <rect x="324" y="28" width="252" height="364" rx="12"/>
+    <rect x="624" y="28" width="252" height="364" rx="12"/>
+    <rect x="924" y="28" width="252" height="364" rx="12"/>
+    <rect x="28" y="46" width="242" height="28" rx="13" fill="#f3c95b" stroke="none" opacity="0.28"/>
+    <rect x="328" y="46" width="242" height="28" rx="13" fill="#ee9c98" stroke="none" opacity="0.28"/>
+    <rect x="628" y="46" width="242" height="28" rx="13" fill="#98cbe9" stroke="none" opacity="0.28"/>
+    <rect x="928" y="46" width="242" height="28" rx="13" fill="#a8d6a0" stroke="none" opacity="0.28"/>
+    <!-- Arrows connect the four steps. -->
+    <path d="M284 203 Q299 199 315 203 M306 194 L315 203 L306 212"/>
+    <path d="M584 203 Q599 199 615 203 M606 194 L615 203 L606 212"/>
+    <path d="M884 203 Q899 199 915 203 M906 194 L915 203 L906 212"/>
+    <!-- Monitor and a full disk-use bar. -->
+    <rect x="91" y="104" width="118" height="78" rx="5"/>
+    <path d="M150 183 L150 195 M128 196 L172 196"/>
+    <rect x="107" y="138" width="86" height="18" rx="3"/>
+    <rect x="112" y="142" width="76" height="10" rx="3" fill="#ee9c98" stroke="none" opacity="0.4"/>
+    <!-- SSD and charge bars that fall from left to right. -->
+    <rect x="388" y="105" width="124" height="82" rx="7"/>
+    <path d="M404 174 L404 152 M420 174 L420 160 M436 174 L436 168"/>
+    <path d="M454 160 Q473 170 495 171 M486 163 L495 171 L484 177"/>
+    <!-- Magnifier checks an SSD with a read-only scan. -->
+    <rect x="681" y="109" width="113" height="75" rx="7"/>
+    <circle cx="779" cy="155" r="26"/>
+    <path d="M798 175 L818 195"/>
+    <!-- SSD and check mark show a possible result. -->
+    <rect x="986" y="105" width="128" height="82" rx="7"/>
+    <path d="M1039 158 L1045 150 L1062 164 L1090 131 L1101 139 L1064 186 Z" fill="#a8d6a0" stroke="none" opacity="0.4"/>
+    <path d="M1045 158 L1063 175 L1095 137"/>
+  </g>
+  <g fill="#222" font-family="'Segoe Print', 'Comic Sans MS', 'Bradley Hand', 'Microsoft JhengHei', cursive, sans-serif" font-size="24" text-anchor="middle">
+    <text x="150" y="70">1</text>
+    <text x="450" y="70">2</text>
+    <text x="750" y="70">3</text>
+    <text x="1050" y="70">4</text>
+    <g font-size="20">
+      <text x="450" y="137">SSD</text>
+      <text x="722" y="151">SSD</text>
+      <text x="1019" y="137">SSD</text>
+    </g>
+    <text x="150" y="226"><tspan x="150">電腦卡住</tspan><tspan x="150" dy="30">磁碟使用率 100%</tspan><tspan x="150" dy="30">讀取約 1 MB/s</tspan></text>
+    <text x="450" y="226"><tspan x="450">舊檔案的</tspan><tspan x="450" dy="30">儲存電荷流失</tspan><tspan x="450" dy="30">讀取變慢</tspan></text>
+    <text x="750" y="226"><tspan x="750">ssd-refresh</tspan><tspan x="750" dy="30">唯讀掃描</tspan><tspan x="750" dy="30">並讀取</tspan><tspan x="750" dy="30">慢檔案</tspan></text>
+    <text x="1050" y="226"><tspan x="1050">部分 SSD</tspan><tspan x="1050" dy="30">檔案恢復</tspan><tspan x="1050" dy="30">快速讀取</tspan><tspan x="1050" dy="30">效果取決於磁碟</tspan></text>
+  </g>
+</svg>

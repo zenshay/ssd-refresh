@@ -11,7 +11,7 @@
 
 **Old files read slowly? Start with a read-only scan.**
 
-![Four-panel comic: a PC freezes beside a tired SSD; stored charge fades; ssd-refresh reads files; the SSD smiles when reading helps.](docs/images/refresh-comic.svg)
+![Four steps: a PC freezes at 100% disk use and about 1 MB/s; old files lose stored charge and read slowly; ssd-refresh scans read-only and reads slow files; on some SSDs, files read fast again. Results depend on the drive.](docs/images/refresh-flow.svg)
 
 ## Does your PC freeze?
 
@@ -19,7 +19,7 @@ Windows may show **100% disk use**, but reads reach only **1 MB/s**.
 Old files can cause this problem when stored charge fades inside the SSD.
 ssd-refresh finds slow files and reads them.
 On some SSDs, this helps the drive restore read speed.
-Results depend on the drive. The comic shows a possible result.
+Results depend on the drive. The diagram shows a possible result.
 
 ## Download and start
 
