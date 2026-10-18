@@ -1,5 +1,10 @@
 # Changes
 
+## Unreleased
+
+- Move shared checks and AST queries to Node. Keep the Windows PowerShell entry points.
+- Remove the PowerShell requirement from Linux and macOS shared checks.
+
 ## 1.0.1
 
 - Stop progress workers and restore I/O priority after errors and panics.

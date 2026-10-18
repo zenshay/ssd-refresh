@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { astNodes } from "../../scripts/tools.mjs";
 import { mutationStatus } from "./mutation-status.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -22,9 +23,6 @@ assert.ok(
   Number.isFinite(timeout) && timeout >= 1000,
   "Invalid mutation timeout",
 );
-const powershell =
-  process.env.SSD_REFRESH_POWERSHELL ??
-  (process.platform === "win32" ? "powershell.exe" : "pwsh");
 const report = {
   suite: "targeted architecture regression mutations",
   baseline: [],
@@ -79,30 +77,7 @@ async function execute(command, arguments_, env = {}) {
 }
 
 function ast(file, kind, predicate) {
-  const result = spawnSync(
-    powershell,
-    [
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      join(repo, "scripts/query-ast.ps1"),
-      "-Kind",
-      kind,
-      "-Path",
-      join(repo, file),
-    ],
-    { encoding: "utf8", windowsHide: true },
-  );
-  assert.equal(
-    result.status,
-    0,
-    `AST query failed: ${result.stderr ?? result.error}`,
-  );
-  const nodes = JSON.parse(result.stdout.replace(/^\uFEFF/, "")).filter(
-    predicate,
-  );
+  const nodes = astNodes(kind, [join(repo, file)]).filter(predicate);
   assert.equal(
     nodes.length,
     1,

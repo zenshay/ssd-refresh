@@ -32,14 +32,9 @@ jobs:
         with:
           tool: fd-find
       - name: Check
-        shell: pwsh
-        run: |
-          if ($IsWindows) { & ./check.ps1 }
-          else { & ./check.ps1 -CoreOnly }
+        run: node check.mjs ${{ runner.os != 'Windows' && '--core-only' || '' }}
       - name: Check Windows PowerShell 5.1 compatibility
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          & ./scripts/test-paths.ps1
           & ./scripts/check-architecture.ps1
-          & ./scripts/test-architecture.ps1

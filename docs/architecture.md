@@ -37,7 +37,9 @@ Unknown columns are accepted. Missing required columns and invalid values cause 
 
 Install Rust, Node.js 24, pnpm, fd, and ast-grep 0.45.3.
 Install the frontend packages with the lock file.
-Run `check.ps1` from Windows PowerShell 5.1 or PowerShell 7.
+Run `node check.mjs` on Windows, Linux, or macOS.
+Shared checks do not need PowerShell.
+The Windows `check.ps1` wrapper accepts the same switches as before.
 The script resolves paths from its own location.
 For example:
 
@@ -49,12 +51,16 @@ The command checks dependencies, Rust format, Clippy without warnings, tests, CL
 Browser tests use a synthetic IPC bridge. They do not start a scan or move files.
 The tests use an installed Chrome or Edge browser.
 Set `SSD_REFRESH_BROWSER` to the browser executable if it is in another location.
-Use `-SkipBrowser` when no browser is available. This reduces the checks.
-Use `-CoreOnly` to exclude the native Tauri Rust targets on Linux or macOS.
+Use `--skip-browser` when no browser is available. This reduces the checks.
+Use `--core-only` to exclude the native Tauri Rust targets on Linux or macOS.
+Use `--offline` to stop Cargo from accessing the network.
+The PowerShell wrapper maps `-SkipBrowser`, `-CoreOnly`, and `-Offline` to these options.
 The CI matrix tests the core on Windows, Linux, and macOS. It tests native Tauri on Windows.
 
 Architecture checks reject core-to-CLI imports, terminal APIs in core, model-to-view imports, and frontend runtime import cycles.
 The checks use AST nodes. They do not count TypeScript type imports as runtime dependencies.
+Node calls ast-grep directly for boundary and mutation checks.
+Path tests include spaces, Unicode, parent segments, and platform case rules.
 These checks cover module boundaries. They are not a complete call graph.
 
 The separate VHDX tests check real NTFS moves and require administrator rights.
