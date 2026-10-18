@@ -11,7 +11,18 @@
 
 **舊檔案讀取變慢？先做唯讀掃描。**
 
-![四步流程圖：電腦卡住，磁碟使用率 100%，讀取約 1 MB/s；舊檔案的儲存電荷流失，讀取變慢；ssd-refresh 唯讀掃描並讀取慢檔案；部分 SSD 的檔案恢復快速讀取。效果取決於磁碟。](docs/images/refresh-flow.zh-TW.svg)
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/qwen/step1.png" alt="步驟 1：螢幕左半是 CrystalDiskMark，顯示健康狀態良好 100%；右半是工作管理員，顯示磁碟使用率 100%。"></td>
+    <td width="50%"><img src="docs/images/qwen/step2.png" alt="步驟 2：電量快用完的 SSD，旁邊是舊資料夾。舊檔案的電荷流失。"></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/qwen/step3.png" alt="步驟 3：放大鏡檢查 SSD 上的資料夾。掃描會讀取慢的檔案。"></td>
+    <td width="50%"><img src="docs/images/qwen/step4.png" alt="步驟 4：螢幕上的速度表指向高速，旁邊有勾號。檔案又讀得快了。"></td>
+  </tr>
+</table>
+
+效果取決於磁碟。圖中文字為英文。
 
 ## 電腦常常卡住嗎？
 
