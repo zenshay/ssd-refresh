@@ -11,16 +11,12 @@
 
 **Old files read slowly? Start with a read-only scan.**
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/qwen/step1.png" alt="Step 1: a monitor shows CrystalDiskMark with Good 100% health on the left and Task Manager with Disk 100% on the right."></td>
-    <td width="50%"><img src="docs/images/qwen/step2.png" alt="Step 2: an SSD with an almost empty battery next to old folders. Old files lose charge."></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/images/qwen/step3.png" alt="Step 3: a magnifying glass over folders on an SSD. The scan reads slow files."></td>
-    <td width="50%"><img src="docs/images/qwen/step4.png" alt="Step 4: a monitor with a fast speed gauge and a check mark. Files read fast again."></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/images/qwen/step1.png" width="49%" alt="Step 1: a monitor shows CrystalDiskMark with Good 100% health on the left and Task Manager with Disk 100% on the right.">
+  <img src="docs/images/qwen/step2.png" width="49%" alt="Step 2: an SSD with an almost empty battery next to old folders. Old files lose charge.">
+  <img src="docs/images/qwen/step3.png" width="49%" alt="Step 3: a magnifying glass over folders on an SSD. The scan reads slow files.">
+  <img src="docs/images/qwen/step4.png" width="49%" alt="Step 4: a monitor with a fast speed gauge and a check mark. Files read fast again.">
+</p>
 
 Results depend on the drive.
 

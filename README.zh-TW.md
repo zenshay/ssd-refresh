@@ -11,16 +11,12 @@
 
 **舊檔案讀取變慢？先做唯讀掃描。**
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/images/qwen/step1.png" alt="步驟 1：螢幕左半是 CrystalDiskMark，顯示健康狀態良好 100%；右半是工作管理員，顯示磁碟使用率 100%。"></td>
-    <td width="50%"><img src="docs/images/qwen/step2.png" alt="步驟 2：電量快用完的 SSD，旁邊是舊資料夾。舊檔案的電荷流失。"></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/images/qwen/step3.png" alt="步驟 3：放大鏡檢查 SSD 上的資料夾。掃描會讀取慢的檔案。"></td>
-    <td width="50%"><img src="docs/images/qwen/step4.png" alt="步驟 4：螢幕上的速度表指向高速，旁邊有勾號。檔案又讀得快了。"></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/images/qwen/step1.png" width="49%" alt="步驟 1：螢幕左半是 CrystalDiskMark，顯示健康狀態良好 100%；右半是工作管理員，顯示磁碟使用率 100%。">
+  <img src="docs/images/qwen/step2.png" width="49%" alt="步驟 2：電量快用完的 SSD，旁邊是舊資料夾。舊檔案的電荷流失。">
+  <img src="docs/images/qwen/step3.png" width="49%" alt="步驟 3：放大鏡檢查 SSD 上的資料夾。掃描會讀取慢的檔案。">
+  <img src="docs/images/qwen/step4.png" width="49%" alt="步驟 4：螢幕上的速度表指向高速，旁邊有勾號。檔案又讀得快了。">
+</p>
 
 效果取決於磁碟。圖中文字為英文。
 

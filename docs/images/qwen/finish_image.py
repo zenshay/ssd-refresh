@@ -5,8 +5,7 @@ Use: uv run --with pillow --with numpy python finish_image.py RAW.png STEP_NUMBE
 What it does:
 1. Makes the near-white background pure white.
 2. Draws a round badge with the step number at the top left.
-3. Adds a thin gray border with round corners. Corners are transparent.
-   The image then looks like a white card on the dark GitHub theme.
+3. Rounds the corners. Corners are transparent. There is no border line.
 4. Reduces the PNG to 256 colors.
 """
 import sys
@@ -15,7 +14,6 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 BADGE_COLOR = (108, 99, 201)  # violet-blue from the palette
-BORDER_COLOR = (208, 215, 222)
 RADIUS = 28
 
 
@@ -41,9 +39,6 @@ def round_card(img):
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, *img.size), RADIUS, fill=255)
     out = img.convert("RGBA")
     out.putalpha(mask)
-    ImageDraw.Draw(out).rounded_rectangle(
-        (0, 0, img.size[0] - 1, img.size[1] - 1), RADIUS, outline=BORDER_COLOR + (255,), width=2
-    )
     return out
 
 

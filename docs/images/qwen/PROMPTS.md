@@ -15,7 +15,7 @@ These four images were made with Qwen-Image-2.1-Turbo on a local PC. Use this fi
 | Sampler | euler |
 | Size | 1152 x 768 pixels |
 | Negative prompt | empty |
-| After making | Run `finish_image.py` (white background, step number badge, round border, 256 colors) |
+| After making | Run `finish_image.py` (white background, step number badge, round corners, 256 colors) |
 
 ## Style words
 
@@ -66,4 +66,4 @@ RTX 4070 Laptop GPU with 8 GB VRAM. One image takes about 25 to 33 seconds when 
 ## Change log
 
 - 2026-10-18: first version of the four images.
-- 2026-10-18: all backgrounds pure white, step number badges, round gray border for the dark theme.
+- 2026-10-18: all backgrounds pure white, step number badges, round corners and no border line.
