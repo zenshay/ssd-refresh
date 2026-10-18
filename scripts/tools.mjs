@@ -31,7 +31,9 @@ export function capture(command, args, options = {}) {
 }
 
 export function astNodes(kind, paths) {
-  const result = capture("ast-grep", [
+  const [program, ...prefix] = astGrepCommand();
+  const result = capture(program, [
+    ...prefix,
     "run",
     "--kind",
     kind,
@@ -42,6 +44,30 @@ export function astNodes(kind, paths) {
     throw new Error(`AST query failed: ${kind}\n${result.stderr}`);
   }
   return JSON.parse(result.stdout.replace(/^\uFEFF/, "") || "[]");
+}
+
+export function astGrepCommand() {
+  if (process.platform !== "win32") return ["ast-grep"];
+  const result = capture("where.exe", ["ast-grep"]);
+  if (result.status !== 0)
+    throw new Error("Install ast-grep before the check.");
+  return windowsAstGrepCommand(result.stdout.trim().split(/\r?\n/));
+}
+
+export function windowsAstGrepCommand(shims) {
+  for (const shim of shims) {
+    if (shim.toLowerCase().endsWith(".exe")) return [shim];
+    for (const entry of [
+      "node_modules/@ast-grep/cli/ast-grep",
+      "../@ast-grep/cli/ast-grep",
+    ]) {
+      const script = join(dirname(shim), entry);
+      if (existsSync(script)) return [process.execPath, script];
+    }
+  }
+  throw new Error(
+    "Cannot find the ast-grep program behind its Windows command file.",
+  );
 }
 
 // Windows cannot spawn a .cmd file without a shell. Use the installed program.

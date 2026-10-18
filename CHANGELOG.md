@@ -1,5 +1,9 @@
 # Changes
 
+## Unreleased
+
+- Run the npm ast-grep entry with Node on Windows. Keep support for the native executable.
+
 ## 1.0.2
 
 - Move shared checks and AST queries to Node. Keep the Windows PowerShell entry points.

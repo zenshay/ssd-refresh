@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkArchitecture } from "./check-architecture.mjs";
-import { childRelative } from "./tools.mjs";
+import {
+  astGrepCommand,
+  capture,
+  childRelative,
+  windowsAstGrepCommand,
+} from "./tools.mjs";
 
 const base = join(tmpdir(), "ssd refresh 路徑");
 assert.equal(
@@ -42,6 +47,34 @@ console.log("PATH TESTS: YES");
 const fixture = mkdtempSync(join(tmpdir(), "ssd refresh boundary 路徑-"));
 const write = (file, text) => writeFileSync(join(fixture, file), text);
 try {
+  if (process.platform === "win32") {
+    const original = astGrepCommand();
+    const npmFolder = join(fixture, "npm");
+    mkdirSync(join(npmFolder, "node_modules/@ast-grep/cli"), {
+      recursive: true,
+    });
+    writeFileSync(join(npmFolder, "ast-grep.cmd"), "");
+    writeFileSync(
+      join(npmFolder, "node_modules/@ast-grep/cli/ast-grep"),
+      `const { spawnSync } = require('node:child_process');\nconst [command, ...prefix] = ${JSON.stringify(original)};\nconst result = spawnSync(command, [...prefix, ...process.argv.slice(2)], {stdio: 'inherit', windowsHide: true});\nprocess.exit(result.status ?? 1);\n`,
+    );
+    write("query.rs", "fn npm_entry_test() {}");
+    const [command, ...prefix] = windowsAstGrepCommand([
+      join(npmFolder, "ast-grep.cmd"),
+    ]);
+    assert.equal(command, process.execPath);
+    const query = capture(command, [
+      ...prefix,
+      "run",
+      "--kind",
+      "function_item",
+      "--json=compact",
+      join(fixture, "query.rs"),
+    ]);
+    assert.equal(query.status, 0, query.stderr);
+    assert.equal(JSON.parse(query.stdout)[0].text, "fn npm_entry_test() {}");
+    console.log("WINDOWS NPM ENTRY TEST: YES");
+  }
   for (const folder of ["src", "gui/src/views", "gui/src-tauri/src"])
     mkdirSync(join(fixture, folder), { recursive: true });
   for (const module of [
