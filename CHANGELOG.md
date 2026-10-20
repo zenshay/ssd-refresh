@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.0.3-rc.2
+
+- Use macOS 15 Intel runners for checks and universal builds. Keep both output architectures.
+
 ## 1.0.3-rc.1
 
 - Require release checks before builds. Create one draft with package hashes and commit metadata after all builds pass.

@@ -56,6 +56,7 @@ Use `--core-only` to exclude the native Tauri Rust targets on Linux or macOS.
 Use `--offline` to stop Cargo from accessing the network.
 The PowerShell wrapper maps `-SkipBrowser`, `-CoreOnly`, and `-Offline` to these options.
 The CI matrix tests the core on Windows, Linux, and macOS. It tests native Tauri on Windows.
+macOS checks use macOS 15 Intel runners. Universal release builds still compile both Intel and ARM64 targets.
 
 Architecture checks reject core-to-CLI imports, terminal APIs in core, model-to-view imports, and frontend runtime import cycles.
 The checks use AST nodes. They do not count TypeScript type imports as runtime dependencies.
