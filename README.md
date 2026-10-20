@@ -4,10 +4,10 @@
 
 [![Release: v1.0.2](https://img.shields.io/badge/release-v1.0.2-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
-[![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#build)
+[![CLI Rust 1.83+](https://img.shields.io/badge/CLI_Rust-1.83%2B-orange?logo=rust)](#build)
 [![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#platforms)
 [![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#platforms)
-[![Safety test: 28 of 28 passed](https://img.shields.io/badge/safety%20test-28%2F28%20passed-brightgreen)](#safety-test-windows)
+[![Recorded VHDX test: 28/28](https://img.shields.io/badge/recorded_VHDX_test-28%2F28-blue)](#safety-test-windows)
 
 <p align="center">
   <img src="gui/src-tauri/icons/128x128@2x.png" width="128" alt="ssd-refresh app icon: an SSD drive with a refresh arrow">
@@ -33,14 +33,19 @@ Results depend on the drive.
 Windows may show **100% disk use**, but reads reach only **1 MB/s**.
 Old files can cause this problem when stored charge fades inside the SSD.
 ssd-refresh finds slow files and reads them.
-On some SSDs, this helps the drive restore read speed.
+Reading may trigger internal work in an SSD. Measure your own drive; results are not guaranteed.
 Results depend on the drive. The diagram shows a possible result.
 
 ## Download and start
 
 Get the Windows desktop app from [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases).
-Choose `ssd-refresh-gui-x64.zip` for Windows 10/11, or `ssd-refresh-gui-arm64.zip` for Windows on ARM.
+Choose `ssd-refresh-gui-v1.0.2-windows-x64.zip` for Windows 10/11.
+The ARM64 package is `ssd-refresh-gui-v1.0.2-windows-arm64.zip`.
 Extract the ZIP file and run the app. The app uses English.
+The desktop app needs Microsoft Edge WebView2 Runtime.
+The Windows app is not signed. Windows or your security software may show a warning.
+Check the release source before you run it. Do not disable security controls to remove a warning.
+Windows ARM64 packages are cross-compiled. A build does not prove operation on ARM hardware.
 See [all packages](#download) for other systems and command-line tools.
 
 1. Make a backup of important files.
@@ -76,9 +81,9 @@ It does not read or refresh old files.
 
 #### The Solution: ssd-refresh
 ssd-refresh finds only the slow files and tells the operating system to rewrite them to fresh blocks.
-1. **Read-only scan**: On many SSDs, just reading old files once makes the drive refresh them internally. The tool does not write file data. The SSD can write internally.
+1. **Read-only scan**: Some SSDs may restore read speed after a read. The tool does not write file data. The SSD can write internally.
 2. **Selective Refresh**: If files stay slow, it rewrites only the slow files. It skips fast files and empty space.
-3. **Safe in use**: It uses official operating system APIs (`FSCTL_MOVE_FILE`). It does not damage files that other programs are using.
+3. **File system moves**: It uses operating system APIs, such as `FSCTL_MOVE_FILE` on Windows. These APIs coordinate file access. They cannot prevent all failures.
 
 ---
 
@@ -88,7 +93,7 @@ ssd-refresh finds only the slow files and tells the operating system to rewrite 
 |---|---|---|---|
 | **Approach** | File-level (only slow files) | Raw disk sectors (entire drive) | Free space TRIM only |
 | **Rewrite empty space?** | **NO** (saves SSD lifespan) | YES (wastes SSD TBW) | NO |
-| **Safe while PC is in use?** | **YES** (OS manages file locks) | NO (can overwrite new writes) | YES |
+| **Concurrent access** | OS coordinates moves; failures remain possible | Depends on tool and mode | Managed by Windows |
 | **Execution speed** | **Fast** (minutes: only slow files) | Slow (hours: reads all sectors) | Seconds |
 | **Read-only wakeup mode?**| **YES** (scan without writes) | Needs manual sector setup | NO |
 | **Target identification** | Shows exact slow file paths | None (sector numbers only) | None |
@@ -100,9 +105,9 @@ ssd-refresh finds only the slow files and tells the operating system to rewrite 
 
 **Start with `scan`, not with `refresh`.**
 
-1. **Step 1: Scan (Read-only)**. Run `scan` on the drive. The scan reads each file one time. On some SSDs (such as the Crucial BX500), this is enough. The controller detects weak charge and rewrites the data internally.
+1. **Step 1: Scan (Read-only)**. Run `scan` on the drive. The scan measures file reads. Some drives may restore speed after reads. Measure your own drive.
 2. **Step 2: Check after 1 day**. Run `scan` again (or `verify --from`). If the slow files are fast now, you are done! The tool did not rewrite file data. The SSD may have written internally.
-3. **Step 3: Refresh (Only if still slow)**. If files are still slow, run `refresh`. It asks the file system to move slow files to fresh clusters safely.
+3. **Step 3: Refresh (Only if still slow)**. Read the risks before you use `refresh`. It asks the file system to move slow files.
 
 ---
 
@@ -117,7 +122,10 @@ Disk refresh tools like DiskFresh read each sector and write it back. This has t
 1. On a disk in use, a program can change a sector after the tool reads it. Then the tool writes the old data over the new data.
 2. The tool also writes the empty space. This uses SSD life, and the disk needs a TRIM after it.
 
-ssd-refresh works on files. It writes again only the files that are slow. It uses the defragmentation API of the file system. The file system makes the move safe for all programs that use the file. Thus problem 1 cannot occur.
+ssd-refresh works on files. By default, it moves only files that remain slow.
+It uses the file system move API to coordinate concurrent access.
+It checks hashes and file metadata before and after each move.
+These checks reduce risk. They do not prove that all failures are prevented.
 
 The differences from other tools:
 
@@ -154,13 +162,17 @@ The risk in this table is **an estimate from public information. This project di
 
 ### Tested drives
 
+The entry below is an observation with DiskFresh read-only mode.
+It is not a measured benefit of ssd-refresh. It does not establish results for other drives.
+
 | Drive | Interface | NAND / DRAM | Result | Date |
 |---|---|---|---|---|
 | Crucial BX500 480 GB | SATA | no DRAM | Read-only pass enough. After one read-only pass (DiskFresh read-only mode), old files read at 250–470 MB/s. Stops went down from 129 to 5 per day | 2026-10-15 |
 
 Results: *read-only pass enough* (one read made the files fast), *rewrite needed* (only the files that the refresh wrote again are fast), *no slowdown* (old files were not slow).
 
-Please report your drive with the [drive report](../../issues/new?template=drive-report.yml) issue template. The best report has a `verify` summary with a control group.
+Use the [drive report](https://github.com/zenshay/ssd-refresh/issues/new?template=drive-report.yml) template for non-sensitive results.
+Remove private file names, user names, and paths from summaries. Do not attach a full log or CSV.
 
 ### Download
 
@@ -168,16 +180,23 @@ Get pre-compiled binaries from [GitHub Releases](https://github.com/zenshay/ssd-
 
 | Package | Platform & Architecture | Description |
 |---|---|---|
-| **`ssd-refresh-gui-x64.zip`** | Windows 10/11 (`x86_64`) | Portable desktop GUI. Unzip and run. |
-| **`ssd-refresh-gui-arm64.zip`** | Windows 11 on ARM (`aarch64`) | Native for Copilot+ PC and Snapdragon X. |
-| **`ssd-refresh-cli-x64.zip`** | Windows 10/11 (`x86_64`) | Command-line tool. |
-| **`ssd-refresh-cli-arm64.zip`** | Windows on ARM (`aarch64`) | Command-line tool for ARM64 Windows. |
-| **`ssd-refresh-cli-linux-x64.tar.gz`** | Linux (`x86_64`) | Command-line tool for Linux and Steam Deck. |
-| **`ssd-refresh-cli-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | Universal CLI (scan mode only). |
+| **`ssd-refresh-gui-v1.0.2-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Desktop GUI; needs WebView2. |
+| **`ssd-refresh-gui-v1.0.2-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled GUI; ARM hardware operation is not confirmed here. |
+| **`ssd-refresh-cli-v1.0.2-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Command-line tool. |
+| **`ssd-refresh-cli-v1.0.2-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled CLI; ARM hardware operation is not confirmed here. |
+| **`ssd-refresh-cli-v1.0.2-linux-x64.tar.gz`** | Linux (`x86_64`) | Command-line tool. |
+| **`ssd-refresh-cli-v1.0.2-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | CLI; scan and verify only. |
+
+These names apply to v1.0.2. Check the asset list for another version.
 
 <a id="platforms"></a>
 
 ### Platforms & Architectures
+
+The CLI targets Windows, Linux, and macOS. Desktop GUI releases are Windows only.
+The table describes implemented operations, not hardware test coverage.
+Linux ARM64 can be built from source; the listed Linux release is x64 only.
+Cross-compilation does not confirm operation on a physical device.
 
 | Platform | Architectures | File system | Scan | Refresh |
 |---|---|---|---|---|
@@ -188,15 +207,47 @@ Get pre-compiled binaries from [GitHub Releases](https://github.com/zenshay/ssd-
 
 ### Build
 
-You need Rust 1.83 or newer.
+CLI source requires Rust 1.83 or newer.
+The current GUI dependency set requires Rust 1.90 or newer.
+GUI builds also need Node.js 24 and pnpm 12.14.0.
+On Windows, install MSVC C++ Build Tools, a Windows SDK, and WebView2 Runtime.
+See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for platform build tools.
 
-```bash
-# Build CLI
-cargo build --release --bin ssd-refresh
+The commands below use a Windows checkout at `C:\src\ssd-refresh`.
+Replace that path with your checkout path. The commands do not run scan or refresh.
 
-# Build Desktop GUI
-cargo build --release -p ssd-refresh-gui
-```
+1. Build the CLI with the committed lockfile:
+
+   ```powershell
+   cargo build --manifest-path C:\src\ssd-refresh\Cargo.toml --locked --release --bin ssd-refresh
+   ```
+
+2. Install pnpm 12.14.0 after you install Node.js 24:
+
+   ```powershell
+   npm install --global pnpm@12.14.0
+   ```
+
+3. Install the frontend dependencies:
+
+   ```powershell
+   pnpm --dir C:\src\ssd-refresh\gui install --frozen-lockfile
+   ```
+
+4. Build the frontend assets before the Rust GUI:
+
+   ```powershell
+   pnpm --dir C:\src\ssd-refresh\gui run build
+   ```
+
+5. Build the desktop executable with Rust 1.90 or newer:
+
+   ```powershell
+   cargo build --manifest-path C:\src\ssd-refresh\Cargo.toml --locked --release -p ssd-refresh-gui
+   ```
+
+The executables are in `target\release` under the checkout.
+On Linux or macOS, build the CLI from the repository root with `cargo build --locked --release --bin ssd-refresh`.
 
 ### Quick start (Windows)
 
@@ -312,7 +363,8 @@ Progress line:
 Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3m20s
 ```
 
-`moved` includes `changed`. `skipped`: not slow now, cannot move, not found, or dry run. `failed`: the tool could not move or read the file. The file is not damaged.
+`moved` includes `changed`. `skipped`: not slow now, cannot move, not found, or dry run.
+`failed`: the tool could not move or read the file. Check `detail` and verify your backup before another attempt.
 
 #### Log statuses
 
@@ -324,7 +376,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `SKIP_KIND` | The tool cannot move this kind of file (see `detail`) |
 | `SKIP_MISSING` | The file does not exist now |
 | `DRYRUN` | `--dry-run`: measured only |
-| `MOVE_FAILED` | The file system did not move the file. The file is not damaged |
+| `MOVE_FAILED` | A file system move failed. Check `detail`; this status alone does not prove data integrity |
 | `PARTIAL` | The run stopped during the move. `--resume` moves the file again |
 | `MISMATCH` | The SHA-256 is different, and no other program wrote the file. The tool stops immediately. This must not occur. Please report it |
 | `CONTROL` | Control group (`--control-fraction`): slow, read only, not moved |
@@ -427,7 +479,7 @@ Each run adds its summary to the end of one text file. The summary also has the 
 | File | Content |
 |---|---|
 | `<source>.verify.log`, next to the source (`--log` to choose) | The summary of each run. Example: `C-scan-refresh.csv` gives `C-scan-refresh.verify.log` |
-| `--out FILE` (optional) | A CSV with one row for each file. Use it to find problems or to attach it to an issue report |
+| `--out FILE` (optional) | A CSV with one row for each file. Keep it local; remove private names and paths before sharing any excerpt |
 
 #### Check one file with DiskSpd
 
@@ -466,12 +518,12 @@ The method is a control group. The tool refreshes a part of the slow files. It o
    ```
 
 3. After 1 day or more, run `verify --from C-scan-refresh.csv`. Its summary compares the rewritten group with the read-only group. It shows a conclusion in one line.
-4. Report the drive with the [drive report](../../issues/new?template=drive-report.yml) issue template: model and firmware, age, the `scan` summary and the `verify` summary. We add the results to [Tested drives](#tested-drives).
+4. Use the [drive report](https://github.com/zenshay/ssd-refresh/issues/new?template=drive-report.yml) template for the model, firmware, and measured summaries. Remove private names and paths. Do not attach full logs or CSV files.
 
 ### Pause, stop, resume
 
 - `p` + Enter: pause. Push again to continue. The requests that the tool sent already finish first.
-- `q` + Enter, or Ctrl+C: stop after the files that the tool reads now. A second Ctrl+C stops immediately. You can stop at any time. This does not damage files.
+- `q` + Enter, or Ctrl+C: request a stop after current work. A second Ctrl+C stops immediately. Forced termination can leave an incomplete report. It does not establish data integrity.
 - If the file `<output>.pause` exists, the tool pauses until you delete it.
 - To continue, run the same command with `--resume`. The tool saves the report or log row by row. The saved file is the checkpoint. With `--resume`, the scan also reads the files with status `ERROR` again (for example, now as administrator). The new row replaces the old row.
 
@@ -514,13 +566,20 @@ First, make a backup of important data.
 - **Writes.** Refresh writes each slow file one time. SSD life is limited. Do not refresh full drives often.
 - **Sharing check.** On Windows, the tool opens the file for a very short time and does not let other programs write. A program that tries to open the file for writing at exactly that time gets a sharing error. In the VHDX test, another program wrote 11,610 times and did not get this error.
 - **Disk load.** Refresh keeps the disk busy. The moves use very low I/O priority. Thus other programs get the disk first.
-- **Not tested.** Linux ext4 refresh compiles, but it is not tested on a real system.
+- **Linux hardware coverage.** Physical-device refresh results are not established here. Isolated ext4 tests do not cover every drive or file system state.
+- **Test boundary.** Recorded VHDX results cover one synthetic Windows environment and selected concurrent writes. They do not cover every driver or filesystem state.
+- **Power loss and hardware faults.** The recorded tests do not prove recovery after power loss, device failure, or controller faults.
+- **Reports.** CSV and log files can contain private paths. Keep them local. See [Security](SECURITY.md) and [Support](SUPPORT.md).
 
 ### Safety test (Windows)
 
 Normal users do not need this test. It is for developers, and for persons who want to check the safety themselves.
 
-Why a VHDX: `refresh` moves the data of real files. To show that this is safe, the test must compare each file after the worst cases. Examples: other programs write the files during the move, and a run stops and continues. You cannot do this test on a real drive. A VHDX is a virtual disk in one file. Windows uses it as a real NTFS disk. Thus the test uses the same APIs, but it does not touch your real data. At the end, the script deletes the VHDX. Only the reports stay.
+The test uses synthetic files in a VHDX, which Windows mounts as an NTFS volume.
+It compares files after selected concurrent writes, stops, and resumed operations.
+The VHDX still uses the host drive and privileged Windows APIs. Back up important host data first.
+Its results do not establish safety for every device, firmware, driver, power failure, or write pattern.
+The script normally deletes the VHDX and keeps reports. Use a separate test environment.
 
 Why administrator: to attach a virtual disk, to use `FSCTL_MOVE_FILE` and to run `chkdsk`, you need administrator rights. If you start the test from a normal window, Windows shows a UAC window. Click "Yes". At the end, the window waits for some seconds and then closes. The report folder keeps the full output:
 
@@ -596,6 +655,9 @@ Run `node check.mjs` on Windows, or `node check.mjs --core-only` on Linux and ma
 Shared checks need Node, Rust, pnpm, fd, and ast-grep. They do not need PowerShell.
 The Windows `check.ps1` entry point is still available.
 The default checks use synthetic data. They do not scan or refresh a real drive.
+
+See [Contributing](CONTRIBUTING.md) for checks and review requirements.
+Use [Support](SUPPORT.md) for ordinary problems and [Security](SECURITY.md) for private security reports.
 
 ### License
 

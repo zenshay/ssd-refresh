@@ -75,21 +75,8 @@ pub fn window_close(window: tauri::Window) {
 }
 
 #[tauri::command]
-pub fn open_url(url: String) {
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url])
-            .spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg(&url).spawn();
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-    }
+pub fn open_url(url: String) -> Result<(), String> {
+    crate::native_open::open_issue(&url)
 }
 
 #[tauri::command]
@@ -102,21 +89,7 @@ pub fn write_and_open_log(app: AppHandle, content: String) -> Result<(), String>
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("latest-diagnostic.log");
     std::fs::write(&path, content).map_err(|e| e.to_string())?;
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "start", "", &path.to_string_lossy()])
-            .spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg(&path).spawn();
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
-    }
-    Ok(())
+    crate::native_open::open_path(&path)
 }
 
 #[tauri::command]
@@ -127,19 +100,7 @@ pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())?
         .join("logs");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    #[cfg(windows)]
-    {
-        let _ = std::process::Command::new("explorer").arg(&dir).spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg(&dir).spawn();
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
-    }
-    Ok(())
+    crate::native_open::open_path(&dir)
 }
 
 #[tauri::command]

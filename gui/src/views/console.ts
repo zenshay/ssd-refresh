@@ -75,18 +75,13 @@ export function mountConsole(
   });
 
   // 4. One-Click Report Issue on GitHub
-  reportBtn.addEventListener("click", () => {
-    const state = store.get();
-    const body = encodeURIComponent(
-      `### Problem Description\n<!-- Describe what went wrong -->\n\n### Environment\n- OS: Windows\n- Elevated: ${state.elevated}\n- Drives: ${state.volumes.map((v) => v.root.slice(0, 2)).join(", ")}\n\n### Log Summary\n\`\`\`\n${diagnostics
-        .entries()
-        .slice(-20)
-        .map((l) => `[${l.timestamp}] [${l.level}] ${l.text}`)
-        .join("\n")}\n\`\`\``,
-    );
-    const url = `https://github.com/my-org/ssd-refresh/issues/new?title=[Bug]+Diagnostic+Report&body=${body}`;
-    void api.openUrl(url);
-    logMessage("info", "Opened GitHub Issues in default browser.");
+  reportBtn.addEventListener("click", async () => {
+    try {
+      await api.openUrl("https://github.com/zenshay/ssd-refresh/issues/new");
+      logMessage("info", "Opened the GitHub issue page.");
+    } catch (err) {
+      logMessage("error", `Cannot open the GitHub issue page: ${err}`);
+    }
   });
 
   // 5. Clear Log View

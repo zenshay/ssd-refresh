@@ -66,6 +66,62 @@ These checks cover module boundaries. They are not a complete call graph.
 The separate VHDX tests check real NTFS moves and require administrator rights.
 Do not add those tests to this default check command.
 
+## Release drafts
+
+The release workflow runs when a `v*` tag is pushed.
+For a manual run, select an existing version tag in the Actions interface.
+Branch runs fail. The workflow does not create tags or select a default version.
+The tag version must match both Cargo manifests, `gui/package.json`, and `gui/src-tauri/tauri.conf.json`.
+
+The release calls `check.yml` from the same commit before it builds any package.
+Checks run on Windows, Linux, and macOS. Native Tauri checks run on Windows only.
+Each build reads the event commit and uses `cargo build --locked`.
+All builds must pass before one job collects the eight product files.
+Archives include project licenses, third-party notices, and the linked safety and support documents.
+Standalone Windows programs have separate notice files. Download both project license files with them.
+Only that final job has release write permission.
+
+The final job checks that the remote tag still points to the source commit.
+It accepts lightweight and annotated tags. It rejects an already published release.
+It checks package names and sizes, then creates `SHA256SUMS` and `release-metadata.json`.
+After upload, it compares every remote asset name, size, and SHA-256 digest with the local files.
+Unexpected files from an older draft fail this check. The workflow does not delete them.
+The metadata records the commit, workflow run, check scope, package sizes, and hashes.
+The workflow creates a draft. A version with a suffix also marks the draft as a prerelease.
+Review its files and check results before you publish it.
+You can repeat a failed run while the release remains a draft.
+Use a new version tag after publication.
+
+These checks do not run VHDX, ext4 image, or physical SSD tests.
+Cross-compilation does not confirm that a package runs on the target hardware.
+
+## Dependency and secret checks
+
+CI scans reachable Git history with Gitleaks 8.30.1 and a fixed download hash.
+CI runs the frontend audit at the moderate severity level.
+The Rust audit checks only dependencies reachable from supported package and target pairs.
+It sends crate names and versions to OSV. It does not send source files or local paths.
+Missing metadata, incomplete responses, network errors, and reported issues fail the audit.
+The lock file can also contain packages for GUI platforms that this project does not release.
+Those entries are not evidence that a Windows program contains them.
+
+CI checks CLI builds with Rust 1.83 on Windows and Linux.
+The Windows workspace check uses Rust 1.90, which current Tauri packages require.
+The other platform checks and release builds use stable Rust.
+Dependabot opens weekly dependency update requests. It does not merge or publish them.
+
+Windows checks also run synthetic release guard and remote asset tests.
+These tests do not create a tag, upload a file, or publish a release.
+
+## Windows security smoke result: 2026-10-21
+
+The current debug GUI loaded embedded frontend files in WebView2.
+Real IPC returned the environment and delivered a synthetic event.
+The backend rejected an unapproved URL. CSP blocked an external connection.
+The global Tauri API was absent. The page controls loaded.
+The test did not scan files, move files, or test power loss.
+This result does not replace release package tests on each target device.
+
 ## Targeted mutation tests
 
 The default check changes production behavior in isolated source copies and runs the original test suites.

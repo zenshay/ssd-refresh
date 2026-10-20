@@ -1,6 +1,8 @@
 // Browser test with synthetic IPC. This test does not access storage volumes.
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
@@ -25,14 +27,19 @@ assert.ok(
   executablePath,
   "Set SSD_REFRESH_BROWSER to a Chrome or Edge executable path.",
 );
-const server = await createServer({
+const vite = await createServer({
   root,
   configFile: false,
-  server: { host: "127.0.0.1", port: 0, strictPort: false },
+  server: { host: "127.0.0.1", middlewareMode: true, hmr: false },
 });
+const server = createHttpServer(vite.middlewares);
 let browser;
 try {
-  await server.listen();
+  await once(server.listen(0, "127.0.0.1"), "listening");
+  const address = server.address();
+  assert.equal(address.address, "127.0.0.1");
+  assert.ok(address.port > 0);
+  console.log(`TEST SERVER: ${address.address}:${address.port}`);
   browser = await puppeteer.launch({
     executablePath,
     headless: true,
@@ -48,6 +55,7 @@ try {
     const listeners = new Map();
     let id = 0;
     const calls = [];
+    const requests = [];
     const emit = (event, payload) =>
       callbacks.get(listeners.get(event))?.({ event, id: 1, payload });
     window.__TAURI_INTERNALS__ = {
@@ -60,6 +68,7 @@ try {
       },
       async invoke(command, args) {
         calls.push(command);
+        requests.push({ command, args });
         if (command === "plugin:event|listen") {
           listeners.set(args.event, args.handler);
           return id;
@@ -79,6 +88,10 @@ try {
           ];
         if (command === "start_scan") {
           emit("operation-message", "Synthetic core message");
+          emit(
+            "operation-message",
+            "Synthetic private data: X:\\private\\synthetic-patient.txt; synthetic-secret",
+          );
           emit("progress", {
             stage: "read",
             filesDone: 1,
@@ -103,12 +116,16 @@ try {
             stopped: false,
           };
         if (command === "toggle_pause") return true;
+        if (command === "open_url" && window.__mockRejectOpen) {
+          throw new Error("Synthetic browser failure.");
+        }
         return null;
       },
     };
     window.__mockCalls = calls;
+    window.__mockRequests = requests;
+    window.__mockRejectOpen = false;
   });
-  const address = server.httpServer.address();
   await page.goto(`http://127.0.0.1:${address.port}`, {
     waitUntil: "networkidle0",
   });
@@ -155,9 +172,60 @@ try {
     ),
     1,
   );
+  assert.match(
+    await page.$eval("#console-log-view", (node) => node.textContent),
+    /synthetic-secret/,
+  );
+  await page.click("#btn-report-issue");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#console-log-view")
+      .textContent.includes("Opened the GitHub issue page."),
+  );
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.__mockRequests
+        .filter((request) => request.command === "open_url")
+        .map((request) => request.args),
+    ),
+    [{ url: "https://github.com/zenshay/ssd-refresh/issues/new" }],
+  );
+  await page.click("#btn-clear-log");
+  await page.evaluate(() => {
+    window.__mockRejectOpen = true;
+  });
+  await page.click("#btn-report-issue");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#console-log-view .log-error")
+      ?.textContent.includes(
+        "Cannot open the GitHub issue page: Error: Synthetic browser failure.",
+      ),
+  );
+  assert.doesNotMatch(
+    await page.$eval("#console-log-view", (node) => node.textContent),
+    /Opened the GitHub issue page\./,
+  );
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.__mockRequests
+        .filter((request) => request.command === "open_url")
+        .map((request) => request.args),
+    ),
+    Array.from({ length: 2 }, () => ({
+      url: "https://github.com/zenshay/ssd-refresh/issues/new",
+    })),
+  );
   assert.deepEqual(errors, []);
-  console.log("RESULT: YES (scan, core messages, cancel, confirm, refresh)");
+  console.log(
+    "RESULT: YES (scan, messages, cancel, confirm, refresh, report privacy, report failure)",
+  );
 } finally {
   await browser?.close();
-  await server.close();
+  await vite.close();
+  if (server.listening) {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
 }

@@ -1,5 +1,6 @@
 name: Check
 on:
+  workflow_call:
   push:
     branches: [main]
   pull_request:
@@ -13,22 +14,31 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ runner.os == 'Windows' && '1.90.0' || 'stable' }}
           components: rustfmt, clippy
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           package_json_file: gui/package.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Install frontend packages
         run: pnpm --dir gui install --frozen-lockfile
+      - name: Audit frontend dependencies
+        run: pnpm --dir gui audit --audit-level moderate
+      - name: Audit supported Rust targets
+        if: runner.os == 'Windows'
+        run: node scripts/audit-rust.mjs
       - name: Install architecture query tool
         run: npm install --global @ast-grep/cli@0.45.3
       - name: Install file search tool
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2
         with:
           tool: fd-find
       - name: Check
@@ -38,3 +48,36 @@ jobs:
         shell: powershell
         run: |
           & ./scripts/check-architecture.ps1
+
+  cli-msrv:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: 1.83.0
+      - name: Check CLI minimum Rust version
+        run: cargo check --locked -p ssd-refresh --all-targets
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Gitleaks
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/gitleaks.tar.gz" https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan reachable history for secrets
+        run: '"$RUNNER_TEMP/gitleaks" git --redact=100 --no-banner --log-opts="--all" .'

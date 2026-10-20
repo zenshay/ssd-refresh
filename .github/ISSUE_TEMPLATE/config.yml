@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security reporting instructions
+    url: https://github.com/zenshay/ssd-refresh/security/policy
+    about: Read the private reporting instructions and current channel limits before disclosing a vulnerability.
+  - name: Support and report privacy
+    url: https://github.com/zenshay/ssd-refresh/blob/main/SUPPORT.md
+    about: Read platform limits and remove private fields before you report an ordinary problem.

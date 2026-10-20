@@ -1,6 +1,7 @@
 scratch/
 input/
 output/
+.ua/
 *.vhdx
 target/
 gui/node_modules/

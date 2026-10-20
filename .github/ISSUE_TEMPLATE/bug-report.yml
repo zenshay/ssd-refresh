@@ -1,0 +1,55 @@
+name: Bug report
+description: Report an ordinary defect with a synthetic example.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not use this public form for vulnerabilities or private data.
+        Read SECURITY.md for private reporting instructions and current channel limits.
+        Do not attach full logs, CSV files, disk images, or personal files.
+        Remove user names, file names, paths, serial numbers, and secrets from excerpts.
+        Do not run another refresh only to create a report.
+  - type: input
+    id: version
+    attributes:
+      label: Release version or commit
+      placeholder: v1.0.2
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS, architecture, file system, and interface
+      placeholder: Windows 11, x64, NTFS, desktop app
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps with synthetic files
+      description: Use invented file names and paths. State any required privileges.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: Include only a short excerpt with private fields removed.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed private fields and did not attach full logs or CSV files.
+          required: true
+        - label: This report does not disclose a vulnerability.
+          required: true

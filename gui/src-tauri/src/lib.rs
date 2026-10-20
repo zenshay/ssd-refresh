@@ -1,5 +1,6 @@
 mod commands;
 mod dto;
+mod native_open;
 mod state;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

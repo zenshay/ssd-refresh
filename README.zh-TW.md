@@ -4,10 +4,10 @@
 
 [![Release: v1.0.2](https://img.shields.io/badge/release-v1.0.2-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#授權)
-[![Rust 1.83+](https://img.shields.io/badge/rust-1.83%2B-orange?logo=rust)](#建置)
+[![CLI Rust 1.83+](https://img.shields.io/badge/CLI_Rust-1.83%2B-orange?logo=rust)](#建置)
 [![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#支援的平台與架構)
 [![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#支援的平台與架構)
-[![Safety test: 28 of 28 passed](https://img.shields.io/badge/safety%20test-28%2F28%20passed-brightgreen)](#安全測試windows)
+[![VHDX 測試紀錄：28/28](https://img.shields.io/badge/recorded_VHDX_test-28%2F28-blue)](#安全測試windows)
 
 <p align="center">
   <img src="gui/src-tauri/icons/128x128@2x.png" width="128" alt="ssd-refresh 軟體圖示：SSD 與重新整理箭頭">
@@ -33,15 +33,19 @@
 Windows 可能顯示**磁碟使用率 100%**，讀取卻只有 **1 MB/s**。
 SSD 內儲存的電荷會慢慢流失。舊檔案可能因此變慢。
 ssd-refresh 找出慢檔案，並讀取檔案。
-部分 SSD 會因此恢復讀取速度。
+讀取可能觸發 SSD 內部處理。請量測自己的磁碟，效果沒有保證。
 效果取決於磁碟。流程圖呈現的是一種可能結果。
 
 ## 下載與開始
 
 從 [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases) 下載 Windows 桌面版。
-Windows 10/11 選 `ssd-refresh-gui-x64.zip`。
-Windows on ARM 選 `ssd-refresh-gui-arm64.zip`。
+Windows 10/11 選 `ssd-refresh-gui-v1.0.2-windows-x64.zip`。
+Windows on ARM 的檔案是 `ssd-refresh-gui-v1.0.2-windows-arm64.zip`。
 解壓縮 ZIP 檔案，再執行程式。程式介面使用英文。
+桌面版需要 Microsoft Edge WebView2 Runtime。
+Windows 程式尚未簽署，Windows 或安全軟體可能顯示警告。
+執行前請確認發行來源。不要停用安全防護來消除警告。
+Windows ARM64 套件採交叉編譯。建置成功不代表已通過 ARM 實機測試。
 其他系統與命令列工具，請看[完整下載清單](#下載)。
 
 1. 先備份重要檔案。
@@ -77,9 +81,9 @@ Windows 內建的 SSD 最佳化只會送出 TRIM 指令來標記已刪除的空�
 
 #### 解決方案：ssd-refresh
 ssd-refresh 找出真正變慢的檔案，請作業系統將它們搬移重寫到新的健康區塊。
-1. **唯讀掃描（Read Wakeup）**：在許多 SSD 上，只要將舊檔案讀取一遍，SSD 控制器就會自行在背景重寫修復，工具不寫入檔案資料，但 SSD 可能自行寫入內部資料。
+1. **唯讀掃描**：部分 SSD 可能在讀取後恢復速度。工具不寫入檔案資料，但 SSD 可能自行寫入內部資料。
 2. **精準重寫**：如果讀完依然慢，只重寫真正變慢的檔案。跳過健康的檔案與空白磁區。
-3. **在線安全**：使用作業系統官方重組 API（`FSCTL_MOVE_FILE`）。其他程式正在使用中的檔案也能安全處理，絕不損壞。
+3. **檔案系統搬移**：Windows 使用 `FSCTL_MOVE_FILE` 等系統 API 協調檔案存取。這些介面不能排除所有故障。
 
 ---
 
@@ -89,7 +93,7 @@ ssd-refresh 找出真正變慢的檔案，請作業系統將它們搬移重寫�
 |---|---|---|---|
 | **處理層級** | 檔案層級（只針對變慢的檔案） | 實體磁區（整顆磁碟所有磁區） | 僅標記空白空間 (TRIM) |
 | **會重寫空白區嗎？** | **不會**（省下 SSD 壽命與 TBW） | 會（浪費 SSD 壽命） | 不會 |
-| **能在使用電腦時跑嗎？**| **安全**（作業系統鎖定保護） | 危險（可能覆蓋正在寫入的新資料） | 安全 |
+| **並行存取** | 系統協調搬移；仍可能失敗 | 取決於工具與模式 | Windows 管理 |
 | **執行耗時** | **快速**（幾分鐘，只處理慢檔） | 緩慢（數小時，掃瞄整顆硬碟） | 幾秒鐘 |
 | **唯讀喚醒自癒模式？** | **有**（只讀掃描，0 寫入） | 需手動切換唯讀模式 | 無 |
 | **能看出哪些檔案慢嗎？**| 能列出每一個慢速檔案路徑 | 無（只能看到磁區號碼） | 無 |
@@ -101,9 +105,9 @@ ssd-refresh 找出真正變慢的檔案，請作業系統將它們搬移重寫�
 
 **請先從 `scan` 開始，不要直接 `refresh`。**
 
-1. **第一步：唯讀掃描（Scan）**。對磁碟執行 `scan`。這會把每個檔案讀過一遍。在部分 SSD 上（例如 Crucial BX500），這樣就足夠喚醒控制器自癒。
+1. **第一步：唯讀掃描（Scan）**。對磁碟執行 `scan`，量測檔案讀取。部分磁碟可能在讀取後恢復速度，請量測自己的磁碟。
 2. **第二步：隔天檢查**。隔天再跑一次 `scan`（或 `verify --from`）。如果慢檔已經恢復高速，就已經完成修復！工具沒有重寫檔案資料，但 SSD 可能自行寫入內部資料。
-3. **第三步：精準刷新（Refresh，僅在仍變慢時執行）**。如果檔案讀取依然緩慢，再執行 `refresh` 請檔案系統安全搬移重寫。
+3. **第三步：刷新（Refresh，僅在仍變慢時執行）**。先閱讀風險，再用 `refresh` 請檔案系統搬移慢檔。
 
 ---
 
@@ -118,7 +122,10 @@ DiskFresh 這類整顆磁碟的刷新工具，做法是把每個磁區讀出來�
 1. 使用中的磁碟上，程式可能在工具讀出之後、寫回之前改了那個磁區。工具寫回時就把新資料蓋成舊內容。
 2. 空白區域也會被重寫，浪費 SSD 的寫入壽命，事後還要再做一次 TRIM。
 
-ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用檔案系統自己的重組 API。檔案系統會和其他使用該檔案的程式同步，上面的競態就不會發生。
+ssd-refresh 以檔案為單位，預設只搬移仍然慢的檔案。
+工具使用檔案系統的搬移 API 協調並行存取。
+工具比較搬移前後的雜湊與中繼資料。
+這些檢查用於降低風險，不代表可以排除所有故障。
 
 和其他工具的差別：
 
@@ -155,13 +162,17 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 
 ### 實測過的磁碟
 
+下列結果來自 DiskFresh 唯讀模式的觀察。
+這不是 ssd-refresh 的效益實測，也不能推廣到其他磁碟。
+
 | 磁碟 | 介面 | NAND／DRAM | 結果 | 日期 |
 |---|---|---|---|---|
 | Crucial BX500 480 GB | SATA | 沒有 DRAM | 讀一遍就恢復：做一次唯讀掃描（DiskFresh 唯讀模式）後，舊檔讀取 250–470 MB/s，卡頓從每天 129 次降到 5 次 | 2026-10-15 |
 
 結果分三種：*讀一遍就恢復*（read-only pass enough）、*需要重寫*（rewrite needed，只有重寫過的檔案恢復）、*沒有變慢*（no slowdown，舊檔本來就不慢）。
 
-歡迎用 [drive report](../../issues/new?template=drive-report.yml) 範本回報你的磁碟。附上含對照組的 `verify` 摘要最有幫助。
+請用 [drive report](https://github.com/zenshay/ssd-refresh/issues/new?template=drive-report.yml) 範本回報不含敏感資訊的結果。
+摘要中的檔名、使用者名稱與路徑須先遮蔽。不要附上完整 log 或 CSV。
 
 ### 下載
 
@@ -169,33 +180,72 @@ ssd-refresh 改成以檔案為單位：只重寫真的慢的檔案，而且用�
 
 | 套件檔名 | 適用平台與架構 | 說明 |
 |---|---|---|
-| **`ssd-refresh-gui-x64.zip`** | Windows 10/11 (`x86_64`) | 綠色免安裝 GUI 桌面版。解壓縮即可使用。 |
-| **`ssd-refresh-gui-arm64.zip`** | Windows 11 on ARM (`aarch64`) | 原生支援 Copilot+ PC 與 Snapdragon X Elite 筆電。 |
-| **`ssd-refresh-cli-x64.zip`** | Windows 10/11 (`x86_64`) | 純命令列工具。 |
-| **`ssd-refresh-cli-arm64.zip`** | Windows on ARM (`aarch64`) | ARM64 Windows 命令列工具。 |
-| **`ssd-refresh-cli-linux-x64.tar.gz`** | Linux (`x86_64`) | Linux 與 Steam Deck 專用 CLI 工具。 |
-| **`ssd-refresh-cli-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | 通用版 CLI 工具（僅支援唯讀掃描喚醒）。 |
+| **`ssd-refresh-gui-v1.0.2-windows-x64.zip`** | Windows 10/11 (`x86_64`) | 桌面 GUI；需要 WebView2。 |
+| **`ssd-refresh-gui-v1.0.2-windows-arm64.zip`** | Windows on ARM (`aarch64`) | 交叉編譯 GUI；此處沒有 ARM 實機執行證據。 |
+| **`ssd-refresh-cli-v1.0.2-windows-x64.zip`** | Windows 10/11 (`x86_64`) | 命令列工具。 |
+| **`ssd-refresh-cli-v1.0.2-windows-arm64.zip`** | Windows on ARM (`aarch64`) | 交叉編譯 CLI；此處沒有 ARM 實機執行證據。 |
+| **`ssd-refresh-cli-v1.0.2-linux-x64.tar.gz`** | Linux (`x86_64`) | 命令列工具。 |
+| **`ssd-refresh-cli-v1.0.2-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | 通用版 CLI；支援掃描與驗證。 |
+
+這些檔名適用於 v1.0.2。其他版本請核對發行頁的檔案清單。
 
 ### 支援的平台與架構
 
+CLI 的目標平台是 Windows、Linux 與 macOS。桌面 GUI 目前只發行 Windows 版本。
+下表描述程式已實作的功能，不等於硬體測試涵蓋範圍。
+Linux ARM64 可以從原始碼建置；上述 Linux 發行檔只有 x64。
+交叉編譯成功不代表已在實體裝置執行。
+
 | 平台 | 硬體架構 | 檔案系統 | 掃描 | 刷新 |
 |---|---|---|---|---|
-| Windows 10/11 | `x86_64`, `aarch64` (ARM64) | NTFS | 支援 | 支援（`FSCTL_MOVE_FILE`），已通過 VHDX 測試 |
+| Windows 10/11 | `x86_64`, `aarch64` (ARM64) | NTFS | 支援 | 已實作（`FSCTL_MOVE_FILE`）；測試範圍見下文 |
 | Linux | `x86_64`, `aarch64` (ARM64) | ext4 | 支援 | 支援（`EXT4_IOC_MOVE_EXT`） |
 | Linux | `x86_64`, `aarch64` (ARM64) | btrfs、XFS | 支援 | 不支援 |
 | macOS | `Apple Silicon`, `Intel` | APFS | 支援（整檔測速） | 不支援：APFS 沒有能安全搬移使用中檔案的 API |
 
 ### 建置
 
-需要 Rust 1.83 以上。
+CLI 原始碼需要 Rust 1.83 以上。
+GUI 目前的相依套件需要 Rust 1.90 以上。
+GUI 建置還需要 Node.js 24 與 pnpm 12.14.0。
+Windows 需要 MSVC C++ Build Tools、Windows SDK 與 WebView2 Runtime。
+其他平台建置工具見 [Tauri 前置需求](https://v2.tauri.app/start/prerequisites/)。
 
-```bash
-# 編譯 CLI 工具
-cargo build --release --bin ssd-refresh
+以下以 Windows 專案路徑 `C:\src\ssd-refresh` 為例。
+請改成自己的專案絕對路徑。這些指令不會執行掃描或刷新。
 
-# 編譯桌面 GUI 應用程式
-cargo build --release -p ssd-refresh-gui
-```
+1. 使用既有 lockfile 建置 CLI：
+
+   ```powershell
+   cargo build --manifest-path C:\src\ssd-refresh\Cargo.toml --locked --release --bin ssd-refresh
+   ```
+
+2. 安裝 Node.js 24 後，安裝 pnpm 12.14.0：
+
+   ```powershell
+   npm install --global pnpm@12.14.0
+   ```
+
+3. 安裝前端相依套件：
+
+   ```powershell
+   pnpm --dir C:\src\ssd-refresh\gui install --frozen-lockfile
+   ```
+
+4. 先建置前端資產：
+
+   ```powershell
+   pnpm --dir C:\src\ssd-refresh\gui run build
+   ```
+
+5. 使用 Rust 1.90 以上建置桌面程式：
+
+   ```powershell
+   cargo build --manifest-path C:\src\ssd-refresh\Cargo.toml --locked --release -p ssd-refresh-gui
+   ```
+
+執行檔位於專案的 `target\release`。
+Linux 與 macOS 可在專案根目錄用 `cargo build --locked --release --bin ssd-refresh` 建置 CLI。
 
 程式的畫面與說明都是英文。`ssd-refresh help scan`、`ssd-refresh help refresh` 有每個選項、進度欄位與狀態的完整說明。
 
@@ -311,7 +361,8 @@ ssd-refresh refresh --from 報告.csv [--dry-run] [--allow-system-volume] [--res
 Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3m20s
 ```
 
-`moved` 包含 `changed`。`skipped` 是已經不慢、不能搬、已不存在或試跑的檔案。`failed` 是沒能搬移或讀取的檔案，但檔案本身完整。
+`moved` 包含 `changed`。`skipped` 是已經不慢、不能搬、已不存在或試跑的檔案。
+`failed` 是沒能搬移或讀取的檔案。再次操作前，請檢查 `detail` 與備份。
 
 #### 記錄檔的狀態
 
@@ -323,7 +374,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `SKIP_KIND` | 不能搬的種類（見 `detail`） |
 | `SKIP_MISSING` | 檔案已經不存在 |
 | `DRYRUN` | `--dry-run`：只測量 |
-| `MOVE_FAILED` | 檔案系統拒絕搬移；檔案完整 |
+| `MOVE_FAILED` | 檔案系統搬移失敗。請看 `detail`；這個狀態本身不能證明資料完整 |
 | `PARTIAL` | 中途停止；`--resume` 會重搬 |
 | `MISMATCH` | 雜湊變了，而且沒有偵測到其他寫入者。程式立刻停止。這不應該發生，請回報 |
 | `CONTROL` | 對照組（`--control-fraction`）：仍然慢，只讀取，刻意不搬 |
@@ -422,7 +473,7 @@ Result
 | 檔案 | 內容 |
 |---|---|
 | `<來源檔名>.verify.log`，放在來源檔旁邊（可用 `--log` 指定） | 每次執行的摘要。例如 `C-scan-refresh.csv` 對應 `C-scan-refresh.verify.log` |
-| `--out 檔名`（選用） | 每個檔案一列的 CSV。除錯或附在 issue 回報時使用 |
+| `--out 檔名`（選用） | 每個檔案一列的 CSV。留在本機；分享節錄前須遮蔽檔名與路徑 |
 
 #### 用 DiskSpd 獨立檢查單一檔案
 
@@ -461,12 +512,12 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
    ```
 
 3. 隔一天以上，執行 `verify --from C-scan-refresh.csv`。摘要會比較重寫組和只讀組，並給一行結論。
-4. 用 [drive report](../../issues/new?template=drive-report.yml) 範本回報：型號與韌體、使用年數、`scan` 摘要和 `verify` 摘要。結果會加進[實測過的磁碟](#實測過的磁碟)表。
+4. 用 [drive report](https://github.com/zenshay/ssd-refresh/issues/new?template=drive-report.yml) 範本回報型號、韌體與量測摘要。先遮蔽檔名和路徑，不要附完整 log 或 CSV。
 
 ### 暫停、停止與續跑
 
 - 輸入 `p` 按 Enter：暫停或繼續。已送出的請求會先做完。
-- 輸入 `q` 按 Enter，或按 Ctrl+C：做完手上的檔案後停止。再按一次 Ctrl+C 立刻結束。任何時候結束都不會損壞檔案。
+- 輸入 `q` 按 Enter，或按 Ctrl+C：做完手上的檔案後停止。再按一次 Ctrl+C 立刻結束。強制結束可能留下未完成的紀錄，不能視為通過完整性驗證。
 - 建立 `<輸出檔名>.pause` 檔案會暫停，刪掉就繼續。
 - 用同樣的指令加 `--resume` 續跑。報告與記錄檔每寫一列就存檔，本身就是檢查點。掃描續跑時，先前記成 `ERROR` 的檔案會重試（例如改用系統管理員執行後），以新的那一列為準。
 
@@ -507,13 +558,20 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 - **寫入量**：刷新會把每個慢檔寫一次。SSD 的寫入壽命有限，不要頻繁地對整顆磁碟執行。
 - **共用檢查**：在 Windows 上檢查寫入者時，程式會用不允許寫入的模式開檔一瞬間。剛好在那一瞬間要開檔寫入的程式，會收到共用衝突。VHDX 測試中，另一個程式寫入 11,610 次，一次都沒有撞到。
 - **背景負載**：刷新期間磁碟會比較忙。搬移用最低的 I/O 優先權，讓其他程式先用。
-- **未驗證的平台**：Linux ext4 的刷新能編譯，但還沒在實機上測試。
+- **Linux 硬體涵蓋範圍**：此處沒有實體裝置的刷新結果證據。隔離 ext4 測試不能涵蓋所有磁碟或檔案系統狀態。
+- **測試邊界**：VHDX 紀錄涵蓋一個 Windows 合成環境與指定並行寫入模式，不能代表所有驅動程式與檔案系統狀態。
+- **斷電與硬體故障**：現有測試不能證明斷電、裝置故障或控制器異常後可恢復資料。
+- **報告隱私**：CSV 與 log 可能含私人路徑，請留在本機。詳見[安全政策](SECURITY.md)與[支援說明](SUPPORT.md)。
 
 ### 安全測試（Windows）
 
 一般使用者不需要跑這個測試。它是給開發者，以及想自己確認安全性的人用的。
 
-為什麼要建 VHDX：`refresh` 會搬動真實檔案的資料。要證明它安全，就要在最壞的情況下逐一比對每個檔案，例如搬移時有程式同時寫入、跑到一半停止再續跑。這種測試不能拿真正的磁碟來做。VHDX 是放在一個檔案裡的虛擬磁碟，Windows 把它當成一顆真的 NTFS 磁碟，所以能用完全相同的 API 測試，而且完全不會碰到你的真實資料。測完就刪掉 VHDX，只留下報告。
+測試使用 VHDX 裡的合成檔案。Windows 將它掛載為 NTFS 磁碟區。
+測試比對指定並行寫入、停止與續跑後的檔案。
+VHDX 仍使用主機磁碟與高權限 API，請先備份主機的重要資料。
+結果不能證明所有裝置、韌體、驅動程式、斷電或寫入模式都安全。
+腳本通常刪除 VHDX 並留下報告，請在獨立測試環境執行。
 
 為什麼需要系統管理員：掛載虛擬磁碟、`FSCTL_MOVE_FILE` 和 `chkdsk` 都需要系統管理員權限。從一般視窗啟動測試時會跳出 UAC 視窗，請按「是」。測試視窗跑完會稍等一下再自動關閉，完整輸出保留在報告資料夾：
 
@@ -589,6 +647,9 @@ Windows 執行 `node check.mjs`。Linux 與 macOS 執行 `node check.mjs --core-
 Windows 原有的 `check.ps1` 入口仍可使用。
 預設檢查使用合成資料，不會掃描或刷新真實磁碟。
 完整步驟與 WSL2 ext4 實測結果見 [架構文件](docs/architecture.md)。
+
+驗收與審查要求見[貢獻說明](CONTRIBUTING.md)。
+一般問題見[支援說明](SUPPORT.md)，私人安全問題見[安全政策](SECURITY.md)。
 
 ### 授權
 

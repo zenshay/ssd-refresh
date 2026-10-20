@@ -17,6 +17,12 @@ const node = (name, file, args = []) =>
   run(name, process.execPath, [join(root, file), ...args]);
 node("Path and architecture regression tests", "scripts/test-common.mjs");
 node("Architecture", "scripts/check-architecture.mjs");
+node("Rust audit regression tests", "scripts/test-audit-rust.mjs");
+node("Package notice regression tests", "scripts/test-package-notices.mjs");
+if (process.platform === "win32") {
+  node("Release workflow regression tests", "scripts/test-release.mjs");
+  node("Windows release package tests", "scripts/test-release-packages.mjs");
+}
 const manifest = ["--manifest-path", join(root, "Cargo.toml")];
 const offline = options.has("--offline") ? ["--offline"] : [];
 run("Rust format", "cargo", ["fmt", ...manifest, "--all", "--check"]);

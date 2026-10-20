@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.0.3-rc.1
+
+- Require release checks before builds. Create one draft with package hashes and commit metadata after all builds pass.
+- Replace Windows shell URL handling with an exact project URL check and the native opener.
+- Keep issue reports free of automatic log or path uploads. Show opener errors.
+- Limit desktop capabilities to the main window. Add a content security policy.
+- Let browser tests use a free loopback port. Check issue privacy and failure paths.
+- Update Vite security fixes. Add dependency and secret checks and weekly update requests.
+- Add public support and contribution documents. Include license texts and third-party notices in release archives.
+- Keep the local architecture map outside Git. Update it manually after code changes.
 - Run the npm ast-grep entry with Node on Windows. Keep support for the native executable.
 
 ## 1.0.2
