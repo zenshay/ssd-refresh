@@ -312,10 +312,14 @@ Options
 
 CSV columns (with --out)
   path, group, size, before_mbps, before_slow, now_mbps, now_min_extent_mbps,
-  now_slow, first_mbps, first_min_extent_mbps, first_slow, reads, status,
-  detail, time
+  now_slow, first_mbps, first_min_extent_mbps, first_slow, first_start_ms,
+  first_slow_extents, first_worst_at_ms, first_worst_ms, first_worst_bytes,
+  reads, status, detail, time
   now_*     The result after the second read (if the first read is slow).
   first_*   The result of the first read only.
+  first_start_ms     The start of the first read (Unix time in ms).
+  first_worst_*      The extent with the most time above the limit: its
+                     start (Unix ms), its read time (ms) and its bytes.
   status    MEASURED. MODIFIED: a program changed the file; not counted.
             MISMATCH: the data changed, but no program changed the file.
             MISSING. SKIP_KIND: cannot measure. ERROR.

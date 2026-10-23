@@ -7,7 +7,7 @@ use crate::sys::IoQueue;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone, Debug)]
 pub struct ReadOptions {
@@ -46,9 +46,15 @@ pub struct ExtentTiming {
     pub physical: Option<u64>,
     pub secs: f64,
     pub slow: bool,
+    /// The time when the timing of this extent began, in Unix milliseconds (system clock)
+    pub begin_unix_ms: f64,
 }
 
 impl ExtentTiming {
+    /// The read time above the limit (bytes at the threshold speed + allowance). Above 0 = slow.
+    pub fn excess_secs(&self, opt: &ReadOptions) -> f64 {
+        self.secs - limit_secs(self.bytes, opt)
+    }
     pub fn mbps(&self) -> f64 {
         if self.secs > 0.0 {
             self.bytes as f64 / 1e6 / self.secs
@@ -88,6 +94,12 @@ impl ReadResult {
     pub fn min_extent_mbps(&self) -> Option<f64> {
         self.extents.iter().map(|e| e.mbps()).reduce(f64::min)
     }
+    /// The extent with the most read time above the limit. This extent decides if the file is slow.
+    pub fn worst_extent(&self, opt: &ReadOptions) -> Option<&ExtentTiming> {
+        self.extents
+            .iter()
+            .max_by(|a, b| a.excess_secs(opt).total_cmp(&b.excess_secs(opt)))
+    }
 
     /// The same file read twice: keep the faster time of each extent and decide slowness again.
     pub fn keep_faster(&mut self, other: &ReadResult, opt: &ReadOptions) {
@@ -103,8 +115,12 @@ impl ReadResult {
     }
 }
 
+fn limit_secs(bytes: u64, opt: &ReadOptions) -> f64 {
+    bytes as f64 / (opt.threshold_mbps * 1e6) + opt.allowance_ms / 1000.0
+}
+
 fn is_slow(bytes: u64, secs: f64, opt: &ReadOptions) -> bool {
-    secs > bytes as f64 / (opt.threshold_mbps * 1e6) + opt.allowance_ms / 1000.0
+    secs > limit_secs(bytes, opt)
 }
 
 const ALIGN: u64 = 4096;
@@ -151,6 +167,12 @@ pub fn read_file(
         }
     }
 
+    // One pair of clocks: the monotonic clock times the extents, the system clock converts the
+    // start of each extent to Unix milliseconds.
+    let t0 = Instant::now();
+    let t0_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0.0, |d| d.as_secs_f64() * 1000.0);
     let n_ext = res.extents.len();
     let mut first_issue: Vec<Option<Instant>> = vec![None; n_ext];
     let mut last_done: Vec<Option<Instant>> = vec![None; n_ext];
@@ -247,6 +269,7 @@ pub fn read_file(
             continue;
         };
         let begin = prev.map_or(fi, |p| p.max(fi));
+        e.begin_unix_ms = t0_unix_ms + begin.saturating_duration_since(t0).as_secs_f64() * 1000.0;
         e.secs = ld
             .saturating_duration_since(begin)
             .saturating_sub(paused[i])
@@ -317,4 +340,39 @@ fn build_segments(layout: &Layout, end: u64, measure: bool, res: &mut ReadResult
         });
     }
     segs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ext(bytes: u64, secs: f64) -> ExtentTiming {
+        ExtentTiming {
+            bytes,
+            secs,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn worst_extent_is_the_one_most_above_the_limit() {
+        let opt = ReadOptions::default(); // 100 MB/s, 2 ms
+        let res = ReadResult {
+            extents: vec![
+                // 4 KB in 2.5 ms: 1.6 MB/s (lowest MB/s), but only 0.46 ms above the limit
+                ext(4096, 0.0025),
+                // 10 MB in 110 ms: 91 MB/s, 8 ms above the limit (100 ms + 2 ms)
+                ext(10_000_000, 0.110),
+                // 1 MB in 5 ms: fast
+                ext(1_000_000, 0.005),
+            ],
+            ..Default::default()
+        };
+        let w = res.worst_extent(&opt).unwrap();
+        assert_eq!(w.bytes, 10_000_000);
+        assert!((w.excess_secs(&opt) - 0.008).abs() < 1e-9);
+        assert!(res.extents[0].excess_secs(&opt) > 0.0);
+        assert!(res.extents[2].excess_secs(&opt) < 0.0);
+        assert!(ReadResult::default().worst_extent(&opt).is_none());
+    }
 }

@@ -38,7 +38,7 @@ pub struct VerifyOptions {
 /// "Faster: YES" needs this share (or more) of the slow files to be not slow now.
 pub const RECOVERED_SHARE: f64 = 0.8;
 
-pub const HEADER: [&str; 15] = [
+pub const HEADER: [&str; 20] = [
     "path",
     "group",
     "size",
@@ -50,6 +50,11 @@ pub const HEADER: [&str; 15] = [
     "first_mbps",
     "first_min_extent_mbps",
     "first_slow",
+    "first_start_ms",
+    "first_slow_extents",
+    "first_worst_at_ms",
+    "first_worst_ms",
+    "first_worst_bytes",
     "reads",
     "status",
     "detail",
@@ -109,6 +114,11 @@ struct Outcome {
     first_mbps: f64,
     first_min: Option<f64>,
     first_slow: bool,
+    /// First read: Unix ms of its first extent, the count of slow extents, and the extent with the
+    /// most time above the limit (Unix ms of its start, its read time in ms, its bytes)
+    first_start_ms: Option<f64>,
+    first_slow_extents: usize,
+    first_worst: Option<(f64, f64, u64)>,
     reads: u8,
     detail: String,
 }
@@ -359,6 +369,21 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
                 } else {
                     String::new()
                 },
+                out.first_start_ms
+                    .map(|t| format!("{t:.1}"))
+                    .unwrap_or_default(),
+                if out.status == "MEASURED" {
+                    out.first_slow_extents.to_string()
+                } else {
+                    String::new()
+                },
+                out.first_worst
+                    .map(|w| format!("{:.1}", w.0))
+                    .unwrap_or_default(),
+                out.first_worst
+                    .map(|w| format!("{:.2}", w.1))
+                    .unwrap_or_default(),
+                out.first_worst.map(|w| w.2.to_string()).unwrap_or_default(),
                 out.reads.to_string(),
                 out.status.into(),
                 out.detail.clone(),
@@ -506,6 +531,16 @@ fn measure(
         });
     }
     let (first_mbps, first_min, first_slow) = (res.mbps(), res.min_extent_mbps(), res.is_slow());
+    let first_start_ms = res
+        .extents
+        .iter()
+        .map(|e| e.begin_unix_ms)
+        .filter(|t| *t > 0.0)
+        .reduce(f64::min);
+    let first_slow_extents = res.extents.iter().filter(|e| e.slow).count();
+    let first_worst = res
+        .worst_extent(opt)
+        .map(|e| (e.begin_unix_ms, e.secs * 1000.0, e.bytes));
     let mut reads = 1;
     if first_slow {
         let second = read_file(q, &data, m.size, &l, true, false, opt, ctl)?;
@@ -522,6 +557,9 @@ fn measure(
         first_mbps,
         first_min,
         first_slow,
+        first_start_ms,
+        first_slow_extents,
+        first_worst,
         reads,
         detail: String::new(),
     })

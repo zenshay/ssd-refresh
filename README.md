@@ -418,7 +418,7 @@ Two more things can change the result:
 
 To find out which is true for your drive, see [Help test your drive](#help-test-your-drive).
 
-`verify` reads one file at a time, at normal priority, not from the OS cache. If a file is slow, it reads the file one more time and uses the faster time of each extent. The `--out` CSV also keeps the result of the first read (columns `first_*`). It shows a table for the `rewritten` group (`OK`, `CHANGED`) and, if it exists, the `read_only` group (`CONTROL`, `DRYRUN`). Example (the numbers are only an example):
+`verify` reads one file at a time, at normal priority, not from the OS cache. If a file is slow, it reads the file one more time and uses the faster time of each extent. The `--out` CSV also keeps the result of the first read (columns `first_*`). For the first read, it also gives the start time (Unix ms) and the read time of the extent with the most time above the limit. Use these times to compare with other disk records. It shows a table for the `rewritten` group (`OK`, `CHANGED`) and, if it exists, the `read_only` group (`CONTROL`, `DRYRUN`). Example (the numbers are only an example):
 
 ```
 Summary
