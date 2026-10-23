@@ -312,7 +312,10 @@ Options
 
 CSV columns (with --out)
   path, group, size, before_mbps, before_slow, now_mbps, now_min_extent_mbps,
-  now_slow, reads, status, detail, time
+  now_slow, first_mbps, first_min_extent_mbps, first_slow, reads, status,
+  detail, time
+  now_*     The result after the second read (if the first read is slow).
+  first_*   The result of the first read only.
   status    MEASURED. MODIFIED: a program changed the file; not counted.
             MISMATCH: the data changed, but no program changed the file.
             MISSING. SKIP_KIND: cannot measure. ERROR.

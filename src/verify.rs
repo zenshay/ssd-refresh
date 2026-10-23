@@ -38,7 +38,7 @@ pub struct VerifyOptions {
 /// "Faster: YES" needs this share (or more) of the slow files to be not slow now.
 pub const RECOVERED_SHARE: f64 = 0.8;
 
-pub const HEADER: [&str; 12] = [
+pub const HEADER: [&str; 15] = [
     "path",
     "group",
     "size",
@@ -47,6 +47,9 @@ pub const HEADER: [&str; 12] = [
     "now_mbps",
     "now_min_extent_mbps",
     "now_slow",
+    "first_mbps",
+    "first_min_extent_mbps",
+    "first_slow",
     "reads",
     "status",
     "detail",
@@ -102,6 +105,10 @@ struct Outcome {
     /// The bytes read from the disk and the read time (after the second read, if any)
     now_bytes: u64,
     now_secs: f64,
+    /// The result of the first read only, before the second read can make it faster
+    first_mbps: f64,
+    first_min: Option<f64>,
+    first_slow: bool,
     reads: u8,
     detail: String,
 }
@@ -272,7 +279,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
     ctl.message("Step 2/2  Read each file again");
     ctl.paragraph(
         2,
-        "The tool reads one file at a time, directly from the disk (not from the OS cache), at normal I/O priority. It measures the time for each extent. If the file is slow, the tool reads it one more time and uses the faster time of each extent. The tool does not move or write files.",
+        "The tool reads one file at a time, directly from the disk (not from the OS cache), at normal I/O priority. It measures the time for each extent. If the file is slow, the tool reads it one more time and uses the faster time of each extent. The CSV also keeps the result of the first read (columns first_*). The tool does not move or write files.",
     );
     ctl.paragraph(
         2,
@@ -335,6 +342,20 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
                     .unwrap_or_default(),
                 if out.status == "MEASURED" {
                     (out.now_slow as u8).to_string()
+                } else {
+                    String::new()
+                },
+                if out.status == "MEASURED" {
+                    format!("{:.1}", out.first_mbps)
+                } else {
+                    String::new()
+                },
+                out.first_min
+                    .filter(|x| x.is_finite())
+                    .map(|x| format!("{x:.1}"))
+                    .unwrap_or_default(),
+                if out.status == "MEASURED" {
+                    (out.first_slow as u8).to_string()
                 } else {
                     String::new()
                 },
@@ -484,8 +505,9 @@ fn measure(
             ..Default::default()
         });
     }
+    let (first_mbps, first_min, first_slow) = (res.mbps(), res.min_extent_mbps(), res.is_slow());
     let mut reads = 1;
-    if res.is_slow() {
+    if first_slow {
         let second = read_file(q, &data, m.size, &l, true, false, opt, ctl)?;
         res.keep_faster(&second, opt);
         reads = 2;
@@ -497,6 +519,9 @@ fn measure(
         now_slow: res.is_slow(),
         now_bytes: res.disk_bytes,
         now_secs: res.disk_secs,
+        first_mbps,
+        first_min,
+        first_slow,
         reads,
         detail: String::new(),
     })

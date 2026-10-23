@@ -412,7 +412,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 想知道你的 SSD 屬於哪一種，見[幫忙測試你的 SSD](#幫忙測試你的-ssd)。
 
-`verify` 一次只讀一個檔案，用一般優先權，不經作業系統快取；讀得慢的檔案會再讀一次，每個 extent 取較快的時間。它會分別列出 `rewritten` 組（`OK`、`CHANGED`）和 `read_only` 組（`CONTROL`、`DRYRUN`，有的話），格式如下（數字只是示意）：
+`verify` 一次只讀一個檔案，用一般優先權，不經作業系統快取；讀得慢的檔案會再讀一次，每個 extent 取較快的時間。`--out` 的 CSV 另外保留第一次讀取的結果（`first_*` 欄位）。它會分別列出 `rewritten` 組（`OK`、`CHANGED`）和 `read_only` 組（`CONTROL`、`DRYRUN`，有的話），格式如下（數字只是示意）：
 
 ```
 Summary
