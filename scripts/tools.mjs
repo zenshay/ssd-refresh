@@ -90,12 +90,18 @@ export function astNodes(kind, paths) {
   return JSON.parse(result.stdout.replace(/^\uFEFF/, "") || "[]");
 }
 
+let astGrepCache;
+
 export function astGrepCommand() {
   if (process.platform !== "win32") return ["ast-grep"];
+  const key = `${process.env.PATH}\0${process.env.PATHEXT}`;
+  if (astGrepCache?.key === key) return [...astGrepCache.command];
   const result = capture("where.exe", ["ast-grep"]);
   if (result.status !== 0)
     throw new Error("Install ast-grep before the check.");
-  return windowsAstGrepCommand(result.stdout.trim().split(/\r?\n/));
+  const command = windowsAstGrepCommand(result.stdout.trim().split(/\r?\n/));
+  astGrepCache = { key, command };
+  return [...command];
 }
 
 export function windowsAstGrepCommand(shims) {
