@@ -25,6 +25,10 @@ node C:\src\ssd-refresh\check.mjs
 On Linux or macOS, run `node check.mjs --core-only` from the repository root.
 Record each command, exit code, operating system, tool version, and skipped check in the pull request.
 The default checks use synthetic data. They do not scan or refresh a real drive.
+Shared script checks and application checks run in two parallel lanes.
+Cargo checks run in order. Mutation tests start after both lanes pass and run in order.
+Each `TIME` line shows one check's elapsed time. Output from each check appears together when that check ends.
+Mutation output appears as the test runs. A lane failure waits for the other lane and prevents mutation tests.
 Do not treat a skipped check as a passed check.
 
 ## Changes with storage risk

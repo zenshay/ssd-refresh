@@ -1,5 +1,10 @@
 import { join } from "node:path";
-import { capture, pnpmCommand, root } from "./scripts/tools.mjs";
+import {
+  pnpmCommand,
+  root,
+  runCheck as run,
+  runBoth,
+} from "./scripts/tools.mjs";
 
 const options = new Set(process.argv.slice(2));
 for (const option of options) {
@@ -7,93 +12,106 @@ for (const option of options) {
     throw new Error(`Unknown check option: ${option}`);
   }
 }
-function run(name, command, args) {
-  console.log(`CHECK: ${name}`);
-  const result = capture(command, args, { stdio: "inherit" });
-  if (result.status !== 0)
-    throw new Error(`Check failed: ${name} (exit ${result.status})`);
-}
-const node = (name, file, args = []) =>
-  run(name, process.execPath, [join(root, file), ...args]);
-node("Line ending regression tests", "scripts/test-eol.mjs");
-node("Line endings", "scripts/check-eol.mjs");
-node("Path and architecture regression tests", "scripts/test-common.mjs");
-node("Architecture", "scripts/check-architecture.mjs");
-node("Rust audit regression tests", "scripts/test-audit-rust.mjs");
-node("Package notice regression tests", "scripts/test-package-notices.mjs");
-if (process.platform === "win32") {
-  node("Release workflow regression tests", "scripts/test-release.mjs");
-  node("Windows release package tests", "scripts/test-release-packages.mjs");
-}
+const node = (name, file, args = [], live = false) =>
+  run(name, process.execPath, [join(root, file), ...args], live);
 const manifest = ["--manifest-path", join(root, "Cargo.toml")];
 const offline = options.has("--offline") ? ["--offline"] : [];
-run("Rust format", "cargo", ["fmt", ...manifest, "--all", "--check"]);
 const [pnpm, ...prefix] = pnpmCommand();
-// Tauri needs the frontend files when it compiles in a clean checkout.
-run("Frontend build", pnpm, [
-  ...prefix,
-  "--dir",
-  join(root, "gui"),
-  "run",
-  "build",
-]);
-const scope = options.has("--core-only")
-  ? ["-p", "ssd-refresh"]
-  : ["--workspace"];
-run("Rust tests", "cargo", [
-  "test",
-  "--locked",
-  ...manifest,
-  ...offline,
-  ...scope,
-  "--all-targets",
-]);
-run("Rust lint", "cargo", [
-  "clippy",
-  "--locked",
-  ...manifest,
-  ...offline,
-  ...scope,
-  "--all-targets",
-  "--",
-  "-D",
-  "warnings",
-]);
-run("CLI help", "cargo", [
-  "run",
-  ...manifest,
-  "--locked",
-  ...offline,
-  "-p",
-  "ssd-refresh",
-  "--bin",
-  "ssd-refresh",
-  "--",
-  "help",
-]);
-run("Shared script lint", pnpm, [
-  ...prefix,
-  "--dir",
-  join(root, "gui"),
-  "exec",
-  "biome",
-  "check",
-  join(root, "check.mjs"),
-  join(root, "scripts"),
-]);
-for (const task of [
-  "typecheck",
-  "lint",
-  "test",
-  ...(!options.has("--skip-browser") ? ["test:e2e"] : []),
-]) {
-  run(`Frontend ${task}`, pnpm, [
+
+async function sharedChecks() {
+  await node("Check runner regression tests", "scripts/test-check-runner.mjs");
+  await node("Line ending regression tests", "scripts/test-eol.mjs");
+  await node("Line endings", "scripts/check-eol.mjs");
+  await node(
+    "Path and architecture regression tests",
+    "scripts/test-common.mjs",
+  );
+  await node("Architecture", "scripts/check-architecture.mjs");
+  await node("Rust audit regression tests", "scripts/test-audit-rust.mjs");
+  await node(
+    "Package notice regression tests",
+    "scripts/test-package-notices.mjs",
+  );
+  if (process.platform === "win32") {
+    await node("Release workflow regression tests", "scripts/test-release.mjs");
+    await node(
+      "Windows release package tests",
+      "scripts/test-release-packages.mjs",
+    );
+  }
+}
+
+async function applicationChecks() {
+  await run("Rust format", "cargo", ["fmt", ...manifest, "--all", "--check"]);
+  // Tauri needs the frontend files before the GUI can compile.
+  await run("Frontend build", pnpm, [
     ...prefix,
     "--dir",
     join(root, "gui"),
     "run",
-    task,
+    "build",
   ]);
+  const scope = options.has("--core-only")
+    ? ["-p", "ssd-refresh"]
+    : ["--workspace"];
+  await run("Rust tests", "cargo", [
+    "test",
+    "--locked",
+    ...manifest,
+    ...offline,
+    ...scope,
+    "--all-targets",
+  ]);
+  await run("Rust lint", "cargo", [
+    "clippy",
+    "--locked",
+    ...manifest,
+    ...offline,
+    ...scope,
+    "--all-targets",
+    "--",
+    "-D",
+    "warnings",
+  ]);
+  await run("CLI help", "cargo", [
+    "run",
+    ...manifest,
+    "--locked",
+    ...offline,
+    "-p",
+    "ssd-refresh",
+    "--bin",
+    "ssd-refresh",
+    "--",
+    "help",
+  ]);
+  await run("Shared script lint", pnpm, [
+    ...prefix,
+    "--dir",
+    join(root, "gui"),
+    "exec",
+    "biome",
+    "check",
+    join(root, "check.mjs"),
+    join(root, "scripts"),
+  ]);
+  for (const task of [
+    "typecheck",
+    "lint",
+    "test",
+    ...(!options.has("--skip-browser") ? ["test:e2e"] : []),
+  ]) {
+    await run(`Frontend ${task}`, pnpm, [
+      ...prefix,
+      "--dir",
+      join(root, "gui"),
+      "run",
+      task,
+    ]);
+  }
 }
-node("Targeted mutation tests", "gui/tests/mutation.mjs", offline);
+
+await runBoth(sharedChecks, applicationChecks);
+// Mutations share one copy and one Cargo target directory. Keep them serial.
+await node("Targeted mutation tests", "gui/tests/mutation.mjs", offline, true);
 console.log("RESULT: YES");

@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,50 @@ export function capture(command, args, options = {}) {
   });
   if (result.error) throw result.error;
   return result;
+}
+
+export function runCheck(name, command, args, live = false) {
+  console.log(`CHECK: ${name}`);
+  const start = performance.now();
+  return new Promise((resolveCheck, reject) => {
+    let output = "";
+    const child = spawn(command, args, {
+      cwd: root,
+      windowsHide: true,
+      stdio: live ? "inherit" : ["ignore", "pipe", "pipe"],
+    });
+    if (!live) {
+      for (const stream of [child.stdout, child.stderr]) {
+        stream.setEncoding("utf8");
+        stream.on("data", (text) => {
+          output += text;
+        });
+      }
+    }
+    child.once("error", reject);
+    child.once("close", (code, signal) => {
+      if (output) process.stdout.write(output);
+      console.log(
+        `TIME: ${name}: ${((performance.now() - start) / 1000).toFixed(2)}s`,
+      );
+      if (code === 0) resolveCheck();
+      else
+        reject(
+          new Error(`Check failed: ${name} (exit ${code}, signal ${signal})`),
+        );
+    });
+  });
+}
+
+export async function runBoth(first, second) {
+  // Wait for both lanes before a failure can end the main process.
+  const results = await Promise.allSettled(
+    [first, second].map((check) => Promise.resolve().then(check)),
+  );
+  const failures = results
+    .filter((result) => result.status === "rejected")
+    .map((result) => result.reason);
+  if (failures.length) throw new AggregateError(failures, "Checks failed");
 }
 
 export function astNodes(kind, paths) {
