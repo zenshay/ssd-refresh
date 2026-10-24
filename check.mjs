@@ -32,6 +32,9 @@ async function sharedChecks() {
     "Package notice regression tests",
     "scripts/test-package-notices.mjs",
   );
+}
+
+async function releaseChecks() {
   if (process.platform === "win32") {
     await node("Release workflow regression tests", "scripts/test-release.mjs");
     await node(
@@ -111,7 +114,14 @@ async function applicationChecks() {
   }
 }
 
-await runBoth(sharedChecks, applicationChecks);
+// Release cases run beside the other checks to balance the two lanes.
+await runBoth(
+  async () => {
+    await sharedChecks();
+    if (process.platform === "win32") await applicationChecks();
+  },
+  process.platform === "win32" ? releaseChecks : applicationChecks,
+);
 // Mutations share one copy and one Cargo target directory. Keep them serial.
 await node("Targeted mutation tests", "gui/tests/mutation.mjs", offline, true);
 console.log("RESULT: YES");
