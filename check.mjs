@@ -15,6 +15,8 @@ function run(name, command, args) {
 }
 const node = (name, file, args = []) =>
   run(name, process.execPath, [join(root, file), ...args]);
+node("Line ending regression tests", "scripts/test-eol.mjs");
+node("Line endings", "scripts/check-eol.mjs");
 node("Path and architecture regression tests", "scripts/test-common.mjs");
 node("Architecture", "scripts/check-architecture.mjs");
 node("Rust audit regression tests", "scripts/test-audit-rust.mjs");

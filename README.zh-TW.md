@@ -654,6 +654,7 @@ Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-re
 Windows 執行 `node check.mjs`。Linux 與 macOS 執行 `node check.mjs --core-only`。
 共用檢查需要 Node、Rust、pnpm、fd 與 ast-grep，不需要 PowerShell。
 Windows 原有的 `check.ps1` 入口仍可使用。
+Git 以 LF 儲存文字檔（見 `.gitattributes`）。檔案有 CRLF 時，檢查會失敗。執行 `node scripts/check-eol.mjs --fix` 可以改正。
 預設檢查使用合成資料，不會掃描或刷新真實磁碟。
 完整步驟與 WSL2 ext4 實測結果見 [架構文件](docs/architecture.md)。
 

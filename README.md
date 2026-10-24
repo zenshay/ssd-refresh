@@ -664,6 +664,7 @@ Run `node check.mjs` on Windows, or `node check.mjs --core-only` on Linux and ma
 Shared checks need Node, Rust, pnpm, fd, and ast-grep. They do not need PowerShell.
 The Windows `check.ps1` entry point is still available.
 The default checks use synthetic data. They do not scan or refresh a real drive.
+Git stores text files with LF (see `.gitattributes`). The check fails if a file has CRLF. To correct the files, run `node scripts/check-eol.mjs --fix`.
 
 See [Contributing](CONTRIBUTING.md) for checks and review requirements.
 Use [Support](SUPPORT.md) for ordinary problems and [Security](SECURITY.md) for private security reports.

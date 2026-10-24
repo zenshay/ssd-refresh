@@ -1,1 +1,6 @@
-* -text
+# Git stores all text files with LF. Git converts CRLF to LF when you add a file.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.ico binary
