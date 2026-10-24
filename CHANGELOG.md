@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 1.0.3-rc.3
 
 - If a read is slow, read the file again at once with the same handle. Use the faster time of each extent. Scan step 3 rounds 1 and 2 and refresh (before and after the move) do this now. Verify and round 3 did this already. Reason: an antivirus scan when a file opens can make the first read about 8 ms slower. Refresh then moved files that were not slow.
 - Checks: Git stores text files with LF. The check fails on CRLF. `node scripts/check-eol.mjs --fix` corrects the files.
