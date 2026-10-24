@@ -142,6 +142,7 @@ pub async fn start_scan(
             resume: false,
             parallel: PARALLEL_READS,
             read: ReadOptions::default(),
+            after_wait: scan::DEFAULT_AFTER_WAIT,
         };
         let result = scan::run(&opts, ctl).map_err(|e| format!("The scan failed: {e}"))?;
         match result.status {

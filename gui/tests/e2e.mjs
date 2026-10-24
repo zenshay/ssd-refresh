@@ -105,7 +105,16 @@ try {
             reportPath: "synthetic.csv",
             totalFiles: 2,
             slowTotal: 1,
-            slowFiles: [{ path: "X:\\synthetic.dat", size: 1024, mbps: 12 }],
+            fastAfterWait: 0,
+            stillSlowAfterWait: 1,
+            slowFiles: [
+              {
+                path: "X:\\synthetic.dat",
+                size: 1024,
+                mbps: 12,
+                fastAfterWait: false,
+              },
+            ],
             stopped: false,
           };
         }

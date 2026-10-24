@@ -295,6 +295,8 @@ ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--
 
 所以第 2 步只產生待確認清單。它的進度列計算的是清單上的檔案數，不是慢檔數。第 3 步在沒有這些干擾的情況下，於兩個不同時間點重新測量。做完第 3 步，才知道慢檔有幾個。
 
+接著第 3 步做第 3 輪：掃描先等 `--after-wait` 秒（預設 60），再把慢檔各讀一次；仍然慢就再讀一次。在一顆測試用的 SSD（Crucial BX500）上，大部分慢檔在掃描結束 18 秒後就變快了，原因還不知道。第 3 輪只記錄「等待後變快」的檔案數，不改 `slow` 欄位。刷新在搬移前會重讀每個檔案，變快的檔案會跳過（`SKIP_FAST`）。設 `--after-wait 0` 就不做第 3 輪。
+
 #### 進度列
 
 進度列原地更新，寬度配合視窗。寬的視窗顯示完整欄位名稱，窄的視窗顯示簡寫。
@@ -323,7 +325,7 @@ ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--
 Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
 ```
 
-`slow` 是這一輪目前仍然慢的檔案數。
+`slow` 是這一輪目前仍然慢的檔案數。第 3 輪顯示 `Check after the wait`，不是 `Check again`。
 
 #### 報告欄位
 
@@ -336,8 +338,12 @@ Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
 | `min_extent_mbps` | 最慢那段的速度 |
 | `slow`、`slow_bytes` | 1 = 第 3 步後判定為慢；慢的那幾段共幾位元組 |
 | `confirmed` | 1 = 第 3 步重新確認過 |
+| `after_wait_slow` | 1 = 等待後仍慢；0 = 等待後變快；空白 = 第 3 輪沒有讀 |
+| `after_wait_min_extent_mbps` | 第 3 輪最慢那一段的速度 |
 | `sha256` | 加 `--hash` 時才有 |
 | `status` | `OK`（有測速）、`SKIP`（不測速，見 `kind`）、`DUP_LINK`（硬連結，同一個檔案已測過）、`ERROR`（見 `error`） |
+
+舊版報告沒有 `after_wait_*` 欄位，refresh 與 verify 仍然讀得進來。用 `--resume` 繼續舊報告時，掃描只寫舊的欄位。
 
 ### 刷新
 
@@ -532,6 +538,7 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 | `--qd` | 4 | 每個檔案同時排隊的讀取請求數 |
 | `--priority` | verylow | 掃描第 2 步與搬移的 I/O 優先權 |
 | `--measure-priority` | normal | 掃描第 3 步與刷新前後測速的 I/O 優先權 |
+| `--after-wait` | 60 | scan：第 3 步第 3 輪之前等待的秒數。0 = 不做第 3 輪 |
 | `--max-chunk-mb` | 16 | 每次搬移的最大長度 |
 | `--control-fraction` | 0 | refresh：慢檔中只讀不搬的比例（0 到 1），狀態記成 `CONTROL` |
 | `--sample` | 全部 | verify：每組最多讀 N 個檔案 |

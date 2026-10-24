@@ -297,6 +297,8 @@ Step 2 is fast, but its times are not exact:
 
 Thus step 2 makes only the check list. The progress line of step 2 counts the files on the check list. These are not slow files. Step 3 measures again, without the other reads, at two different times. Only then is the number of slow files known.
 
+Then step 3 does round 3. The scan waits `--after-wait` seconds (default 60). Then it reads each slow file again. If the file is slow, the scan reads it one more time. On one test SSD (Crucial BX500), most slow files were fast again 18 s after the scan. We do not know why. Round 3 records how many files are fast after the wait. It does not change the column `slow`. Refresh reads each file again before the move and skips files that are fast (`SKIP_FAST`). Use `--after-wait 0` to stop round 3.
+
 #### Progress lines
 
 The tool writes the line again at the same place. The line fits the width of the window. A wide window gets fields with names. A narrow window gets a short form.
@@ -325,7 +327,7 @@ Step 3:
 Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
 ```
 
-`slow` counts the files in this round that are still slow.
+`slow` counts the files in this round that are still slow. Round 3 shows `Check after the wait` in place of `Check again`.
 
 #### Report columns
 
@@ -338,8 +340,12 @@ Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
 | `min_extent_mbps` | The speed of the slowest extent |
 | `slow`, `slow_bytes` | 1 = slow after step 3; the bytes in slow extents |
 | `confirmed` | 1 = the scan read the file again in step 3 |
+| `after_wait_slow` | 1 = still slow after the wait; 0 = fast after the wait; empty = not read in round 3 |
+| `after_wait_min_extent_mbps` | The speed of the slowest extent in round 3 |
 | `sha256` | Only with `--hash` |
 | `status` | `OK` (measured), `SKIP` (not measured, see `kind`), `DUP_LINK` (one more hard link to a file that the scan measured), `ERROR` (see `error`) |
+
+An older report has no `after_wait_*` columns. Refresh and verify can read it. With `--resume`, the scan writes the old columns only.
 
 ### Refresh
 
@@ -538,6 +544,7 @@ The method is a control group. The tool refreshes a part of the slow files. It o
 | `--qd` | 4 | The number of read requests at the same time per file |
 | `--priority` | verylow | The I/O priority of scan step 2 and of the moves |
 | `--measure-priority` | normal | The I/O priority of scan step 3 and of the reads before and after the move |
+| `--after-wait` | 60 | scan: the wait (seconds) before round 3 of step 3. 0 = no round 3 |
 | `--max-chunk-mb` | 16 | The largest piece to move at one time |
 | `--control-fraction` | 0 | refresh: the part of the slow files (0 to 1) to read only and not move (`CONTROL`) |
 | `--sample` | all | verify: read a maximum of N files per group |

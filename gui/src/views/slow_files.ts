@@ -1,7 +1,7 @@
 import type { SlowFile } from "../api";
 import { $, el } from "../dom";
 import { fmtBytes, fmtCount, fmtRate } from "../format";
-import type { Store } from "../store";
+import { type Store, stillSlow } from "../store";
 
 export function mountSlowFiles(store: Store): void {
   const card = $("slow-files-card");
@@ -15,24 +15,35 @@ export function mountSlowFiles(store: Store): void {
       return;
     }
 
+    // List only the files that stayed slow after the wait.
     const allSlow: SlowFile[] = [];
     const reportPaths: string[] = [];
+    let slowCount = 0;
+    let fastAfterWait = 0;
 
     for (const root of s.selectedRoots) {
       const outcome = s.scans[root];
       if (outcome && !outcome.stopped && outcome.slowTotal > 0) {
-        allSlow.push(...outcome.slowFiles);
+        allSlow.push(
+          ...outcome.slowFiles.filter((f) => f.fastAfterWait !== true),
+        );
         reportPaths.push(outcome.reportPath);
+        slowCount += stillSlow(outcome);
+        fastAfterWait += outcome.fastAfterWait;
       }
     }
 
-    if (allSlow.length === 0) {
+    if (slowCount === 0 && fastAfterWait === 0) {
       card.hidden = true;
       return;
     }
 
     card.hidden = false;
-    countEl.textContent = `${fmtCount(allSlow.length)} slow files detected`;
+    countEl.textContent =
+      `${fmtCount(slowCount)} slow files detected` +
+      (fastAfterWait > 0
+        ? ` · ${fmtCount(fastAfterWait)} fast after the wait`
+        : "");
     reportPathEl.textContent = reportPaths.join(" · ");
     reportPathEl.title = reportPaths.join("\n");
 

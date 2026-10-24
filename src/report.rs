@@ -13,7 +13,13 @@ pub struct ScanRecord {
     pub mbps: f64,
     pub slow: bool,
     pub slow_bytes: u64,
+    /// Step 3, round 3: Some(true) = still slow after the wait, Some(false) = fast after the
+    /// wait, None = not read in round 3 (or an old report without this column)
+    pub after_wait_slow: Option<bool>,
 }
+
+/// The first columns of a scan report. Old reports have only these columns.
+pub const SCAN_REQUIRED: usize = 14;
 
 fn invalid(detail: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, detail.into())
@@ -60,8 +66,15 @@ fn checked_rows(path: &Path, columns: &[&str]) -> io::Result<Vec<Row>> {
     Ok(rows)
 }
 
+fn optional_flag(row: &Row, key: &str) -> io::Result<Option<bool>> {
+    match row.get(key).map(String::as_str) {
+        None | Some("") => Ok(None),
+        Some(_) => flag(row, key).map(Some),
+    }
+}
+
 pub fn read_scan(path: &Path) -> io::Result<Vec<ScanRecord>> {
-    checked_rows(path, &SCAN_HEADER)?
+    checked_rows(path, &SCAN_HEADER[..SCAN_REQUIRED])?
         .iter()
         .map(ScanRecord::from_row)
         .collect()
@@ -91,6 +104,7 @@ impl ScanRecord {
             mbps,
             slow: flag(row, "slow")?,
             slow_bytes: integer(row, "slow_bytes")?,
+            after_wait_slow: optional_flag(row, "after_wait_slow")?,
         })
     }
 }
@@ -134,7 +148,7 @@ pub fn read_for_verify(path: &Path, is_log: bool) -> io::Result<Vec<Row>> {
         read_refresh(path)
     } else {
         read_scan(path)?;
-        checked_rows(path, &SCAN_HEADER)
+        checked_rows(path, &SCAN_HEADER[..SCAN_REQUIRED])
     }
 }
 
@@ -150,19 +164,29 @@ impl ScanOutcome {
             self.slow_total += 1;
             self.slow_bytes += row.slow_bytes;
             self.slow_file_bytes += row.size;
+            match row.after_wait_slow {
+                Some(false) => self.fast_after_wait += 1,
+                Some(true) => self.still_slow_after_wait += 1,
+                None => {}
+            }
             self.slow_files.push(SlowFile {
                 path: row.path.clone(),
                 size: row.size,
                 mbps: row.mbps,
                 slow_bytes: row.slow_bytes,
+                after_wait_slow: row.after_wait_slow,
             });
-            self.slow_files.sort_by(|a, b| a.mbps.total_cmp(&b.mbps));
+            // Files that stay slow after the wait come first, so the list keeps them.
+            self.slow_files.sort_by(|a, b| {
+                let fast = |f: &SlowFile| f.after_wait_slow == Some(false);
+                fast(a).cmp(&fast(b)).then(a.mbps.total_cmp(&b.mbps))
+            });
             self.slow_files.truncate(500);
         }
     }
 }
 
-pub const SCAN_HEADER: [&str; 14] = [
+pub const SCAN_HEADER: [&str; 16] = [
     "path",
     "size",
     "kind",
@@ -177,6 +201,8 @@ pub const SCAN_HEADER: [&str; 14] = [
     "sha256",
     "status",
     "error",
+    "after_wait_slow",
+    "after_wait_min_extent_mbps",
 ];
 
 pub const REFRESH_HEADER: [&str; 19] = [
@@ -226,7 +252,7 @@ mod tests {
     fn row(path: &str, status: &str, slow: &str) -> Vec<String> {
         [
             path, "1024", "normal", "1", "1024", "1", "12.5", "12.5", slow, "1024", "1", "",
-            status, "",
+            status, "", "", "",
         ]
         .map(String::from)
         .into()
@@ -253,6 +279,55 @@ mod tests {
         let mut summary = ScanOutcome::default();
         summary.record(&records[0]);
         assert_eq!(summary.slow_total, 1);
+    }
+
+    #[test]
+    fn old_scan_report_without_after_wait_columns_is_accepted() {
+        let file = TempFile::new();
+        let mut writer = CsvWriter::create(&file.0, &SCAN_HEADER[..SCAN_REQUIRED], false).unwrap();
+        let mut values = row("synthetic.dat", "OK", "1");
+        values.truncate(SCAN_REQUIRED);
+        writer.row(values).unwrap();
+        drop(writer);
+        let records = read_scan(&file.0).unwrap();
+        assert_eq!(records[0].after_wait_slow, None);
+        assert!(read_for_verify(&file.0, false).is_ok());
+        let mut summary = ScanOutcome::default();
+        summary.record(&records[0]);
+        assert_eq!(summary.slow_total, 1);
+        assert_eq!(summary.fast_after_wait + summary.still_slow_after_wait, 0);
+    }
+
+    #[test]
+    fn after_wait_columns_are_counted_and_checked() {
+        let file = TempFile::new();
+        let mut writer = CsvWriter::create(&file.0, &SCAN_HEADER, false).unwrap();
+        for (path, after) in [
+            ("a.dat", "0"),
+            ("b.dat", "0"),
+            ("c.dat", "1"),
+            ("d.dat", ""),
+        ] {
+            let mut values = row(path, "OK", "1");
+            values[SCAN_REQUIRED] = after.into();
+            writer.row(values).unwrap();
+        }
+        drop(writer);
+        let mut summary = ScanOutcome::default();
+        for r in read_scan(&file.0).unwrap() {
+            summary.record(&r);
+        }
+        assert_eq!(summary.slow_total, 4);
+        assert_eq!(summary.fast_after_wait, 2);
+        assert_eq!(summary.still_slow_after_wait, 1);
+
+        let bad = TempFile::new();
+        let mut writer = CsvWriter::create(&bad.0, &SCAN_HEADER, false).unwrap();
+        let mut values = row("e.dat", "OK", "1");
+        values[SCAN_REQUIRED] = "yes".into();
+        writer.row(values).unwrap();
+        drop(writer);
+        assert!(read_scan(&bad.0).is_err());
     }
 
     #[test]
@@ -329,11 +404,34 @@ mod tests {
                 mbps: (700 - i) as f64,
                 slow: true,
                 slow_bytes: 1024,
+                after_wait_slow: None,
             });
         }
         assert_eq!(summary.slow_total, 700);
         assert_eq!(summary.slow_files.len(), 500);
         assert_eq!(summary.slow_files[0].mbps, 1.0);
         assert_eq!(summary.slow_bytes, 700 * 1024);
+    }
+
+    #[test]
+    fn slow_list_keeps_files_that_stay_slow_after_the_wait() {
+        let mut summary = ScanOutcome::default();
+        // 600 files fast after the wait, then 1 file that stays slow and has the highest speed.
+        for i in 0..601 {
+            summary.record(&ScanRecord {
+                path: i.to_string(),
+                size: 1024,
+                kind: "normal".into(),
+                status: "OK".into(),
+                mbps: (i + 1) as f64,
+                slow: true,
+                slow_bytes: 1024,
+                after_wait_slow: Some(i == 600),
+            });
+        }
+        assert_eq!(summary.slow_files.len(), 500);
+        assert_eq!(summary.slow_files[0].path, "600");
+        assert_eq!(summary.slow_files[0].after_wait_slow, Some(true));
+        assert_eq!(summary.slow_files[1].mbps, 1.0);
     }
 }

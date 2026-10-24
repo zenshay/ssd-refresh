@@ -18,6 +18,8 @@ pub struct SlowFile {
     pub size: u64,
     pub mbps: f64,
     pub slow_bytes: u64,
+    /// Step 3, round 3: Some(false) = fast after the wait. None = not read after the wait.
+    pub after_wait_slow: Option<bool>,
 }
 
 #[derive(Default, Debug)]
@@ -30,6 +32,10 @@ pub struct ScanOutcome {
     pub slow_total: usize,
     pub slow_file_bytes: u64,
     pub slow_bytes: u64,
+    /// Of the slow files: read again after the wait (step 3, round 3) and fast, or still slow.
+    /// Both are 0 if the scan did not wait (--after-wait 0) or the report is old.
+    pub fast_after_wait: usize,
+    pub still_slow_after_wait: usize,
     /// The 500 slowest files. The total count is separate.
     pub slow_files: Vec<SlowFile>,
 }

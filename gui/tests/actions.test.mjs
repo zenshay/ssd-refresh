@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createActions } from "../src/actions.ts";
 import { createDiagnostics } from "../src/diagnostics.ts";
-import { createStore, initialState } from "../src/store.ts";
+import { createStore, initialState, refreshAction } from "../src/store.ts";
 import { mutationStatus } from "./mutation-status.mjs";
 
 const scan = (root) => ({
   reportPath: `${root}-synthetic.csv`,
   totalFiles: 10,
   slowTotal: 2,
+  fastAfterWait: 0,
+  stillSlowAfterWait: 0,
   slowFiles: [],
   stopped: false,
 });
@@ -170,4 +172,34 @@ test("diagnostic models are independent and keep only 500 entries", () => {
   first.clear();
   assert.equal(updates, count);
   assert.equal(first.entries().length, 0);
+});
+test("refresh counts only the files that stay slow after the wait", async () => {
+  const waited = (root, fast) => ({
+    ...scan(root),
+    slowTotal: 3,
+    fastAfterWait: fast,
+    stillSlowAfterWait: 3 - fast,
+  });
+  const store = createStore({
+    ...initialState,
+    selectedRoots: ["X:", "Y:"],
+    scans: { "X:": waited("X:", 2), "Y:": waited("Y:", 3) },
+  });
+  assert.match(refreshAction(store.get()).title, /\(1 files\)/);
+  let asked;
+  await createActions(
+    store,
+    async (request) => {
+      asked = request;
+      return false;
+    },
+    backend(),
+  ).runRefresh();
+  assert.match(asked.title, /^Rewrite 1 slow files across X:\?$/u);
+  assert.match(asked.body, /2 files were fast after the wait/);
+
+  store.set({ scans: { "X:": waited("X:", 3), "Y:": waited("Y:", 3) } });
+  const locked = refreshAction(store.get());
+  assert.equal(locked.disabled, true);
+  assert.match(locked.hint, /All 6 slow files were fast after the wait/);
 });

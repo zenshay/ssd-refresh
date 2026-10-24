@@ -38,12 +38,18 @@ export interface SlowFile {
   path: string;
   size: number;
   mbps: number;
+  /** true = fast when the scan read it again after the wait. null = not read again. */
+  fastAfterWait: boolean | null;
 }
 
 export interface ScanOutcome {
   reportPath: string;
   totalFiles: number;
   slowTotal: number;
+  /** Of the slow files: fast when the scan read them again after the wait. */
+  fastAfterWait: number;
+  /** Of the slow files: still slow when the scan read them again after the wait. */
+  stillSlowAfterWait: number;
   slowFiles: SlowFile[];
   stopped: boolean;
 }

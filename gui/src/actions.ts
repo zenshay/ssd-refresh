@@ -8,6 +8,7 @@ import {
   allSelected,
   type Notice,
   type Store,
+  stillSlow,
   totalSlowAcrossSelected,
 } from "./store";
 
@@ -20,13 +21,29 @@ function scanNotice(
 ): Notice {
   const stopped = cancelled || results.some((r) => r.outcome.stopped);
   const totalFiles = results.reduce((acc, r) => acc + r.outcome.totalFiles, 0);
-  const totalSlow = results.reduce((acc, r) => acc + r.outcome.slowTotal, 0);
+  const totalSlow = results.reduce((acc, r) => acc + stillSlow(r.outcome), 0);
+  const fastAfterWait = results.reduce(
+    (acc, r) => acc + r.outcome.fastAfterWait,
+    0,
+  );
+  const waitNote =
+    fastAfterWait > 0
+      ? ` ${fmtCount(fastAfterWait)} other files were slow at first and fast after the wait.`
+      : "";
 
   if (stopped) {
     return {
       kind: "info",
       title: "Scan stopped",
       body: "Operation was cancelled. Nothing changed on the drive(s).",
+    };
+  }
+
+  if (totalSlow === 0 && fastAfterWait > 0) {
+    return {
+      kind: "ok",
+      title: "No file stays slow",
+      body: `Checked ${fmtCount(totalFiles)} files across ${results.length} drive(s).${waitNote} No file needs a rewrite.`,
     };
   }
 
@@ -41,7 +58,7 @@ function scanNotice(
   return {
     kind: "warn",
     title: `${fmtCount(totalSlow)} slow files detected`,
-    body: `Scanned ${fmtCount(totalFiles)} files across ${results.length} drive(s). Step 2 can rewrite only the slow files safely.`,
+    body: `Scanned ${fmtCount(totalFiles)} files across ${results.length} drive(s).${waitNote} Step 2 can rewrite only the slow files safely.`,
   };
 }
 
@@ -182,7 +199,11 @@ export function createActions(
     if (s.mode !== "idle" || slowCount === 0 || confirming) return;
 
     const drivesWithSlow = s.selectedRoots.filter(
-      (r) => s.scans[r] && !s.scans[r].stopped && s.scans[r].slowTotal > 0,
+      (r) => s.scans[r] && !s.scans[r].stopped && stillSlow(s.scans[r]) > 0,
+    );
+    const fastAfterWait = drivesWithSlow.reduce(
+      (acc, r) => acc + s.scans[r].fastAfterWait,
+      0,
     );
 
     const driveNames = drivesWithSlow.map((r) => r.slice(0, 2)).join(", ");
@@ -195,7 +216,11 @@ export function createActions(
     try {
       confirmed = await confirm({
         title: `Rewrite ${fmtCount(slowCount)} slow files across ${driveNames}?`,
-        body: "The file system safely moves each slow file to fresh NAND blocks. Unchanged and fast files are not touched. Programs can continue running.",
+        body:
+          "The file system safely moves each slow file to fresh NAND blocks. Unchanged and fast files are not touched. Programs can continue running." +
+          (fastAfterWait > 0
+            ? ` ${fmtCount(fastAfterWait)} files were fast after the wait. The refresh reads them again and skips them if they are fast.`
+            : ""),
         warning: hasSystem
           ? "Includes your Windows system drive. Close other apps before starting."
           : undefined,

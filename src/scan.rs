@@ -6,7 +6,9 @@
 //! 2. Read each file one time. The scan reads many files at the same time for speed. Thus a
 //!    slow file in this step goes only on the *check list*.
 //! 3. Check the files on the check list again: one at a time, two times, `RECHECK_GAP` or
-//!    more apart. A file is *slow* only if each read was slow.
+//!    more apart. A file is *slow* only if each read was slow. Then (round 3) wait
+//!    `after_wait` and read the slow files one more time. Some SSDs make data fast again
+//!    soon after a slow read. Round 3 records this. It does not change `slow`.
 
 use crate::common::{fmt_bytes, fmt_count, hex, Kind, VolumeInfo};
 use crate::control::{Control, ProgressUpdate, Stage};
@@ -30,7 +32,12 @@ pub struct ScanOptions {
     /// The number of files to read at the same time in step 2.
     pub parallel: usize,
     pub read: ReadOptions,
+    /// Step 3, round 3: the wait before the last read of the slow files. Zero = no round 3.
+    pub after_wait: Duration,
 }
+
+/// The default wait before round 3 of step 3.
+pub const DEFAULT_AFTER_WAIT: Duration = Duration::from_secs(60);
 
 pub use crate::report::SCAN_HEADER as HEADER;
 
@@ -162,6 +169,13 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
 
     let mut outcome = ScanOutcome::default();
     let mut done = HashSet::new();
+    // A report of an older version has fewer columns. --resume then writes only those columns,
+    // so that all rows have the same columns. Round 3 is then not possible.
+    let width = if o.resume && o.out.exists() {
+        crate::csv::header(&o.out)?.len().min(HEADER.len())
+    } else {
+        HEADER.len()
+    };
     if o.resume && o.out.exists() {
         // The scan reads files with status ERROR again (for example, now as administrator).
         // The new row replaces the old row.
@@ -310,7 +324,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
                     if row.status == "ERROR" {
                         prog.add_error();
                     }
-                    if let Err(e) = w.row(row.values()) {
+                    if let Err(e) = w.row(row.values(width)) {
                         write_err.get_or_insert(e);
                         ctl.request_stop();
                     } else {
@@ -325,6 +339,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
         return Err(e);
     }
     let mut stopped = ctl.stopped();
+    let mut round3_stopped = false;
     ctl.message(&format!(
         "  The scan read {} files in {}. Files on the check list: {}.",
         fmt_count(files.len() as u64),
@@ -413,6 +428,11 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
                 fmt_count(still as u64)
             ));
         }
+        if !stopped {
+            // A stop during round 3 does not lose rounds 1 and 2: the report gets their result.
+            // The run is still a stop, so the status is Stopped.
+            round3_stopped = after_wait_round(&mut to_check, &vol, o, width, &ctl);
+        }
     }
     if stopped {
         if !to_check.is_empty() {
@@ -423,7 +443,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
         }
     } else {
         for (row, _) in &to_check {
-            w.row(row.values())?;
+            w.row(row.values(width))?;
             outcome.record(&row.record());
         }
     }
@@ -432,8 +452,10 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     ctl.message("");
     if stopped {
         ctl.message("The scan stopped. To continue, run the same command with --resume.");
+    } else if round3_stopped {
+        ctl.message("The scan stopped in round 3. The report has all files. --resume does not do round 3 again. To record round 3, make a new report.");
     }
-    outcome.status = if stopped {
+    outcome.status = if stopped || round3_stopped {
         RunStatus::Stopped
     } else {
         RunStatus::Completed
@@ -469,6 +491,9 @@ struct Row {
     sha: String,
     status: String,
     error: String,
+    /// Round 3: still slow after the wait, and the slowest extent then. None = not read.
+    after_wait_slow: Option<bool>,
+    after_wait_min_mbps: Option<f64>,
 }
 
 impl Row {
@@ -481,11 +506,13 @@ impl Row {
             mbps: self.mbps,
             slow: self.slow,
             slow_bytes: self.slow_bytes,
+            after_wait_slow: self.after_wait_slow,
         }
     }
 
-    fn values(&self) -> Vec<String> {
-        vec![
+    /// The CSV values. `width` is the column count of the report (older reports have fewer).
+    fn values(&self, width: usize) -> Vec<String> {
+        let mut v = vec![
             self.path.clone(),
             self.size.to_string(),
             self.kind.clone(),
@@ -503,8 +530,130 @@ impl Row {
             self.sha.clone(),
             self.status.clone(),
             self.error.clone(),
-        ]
+            self.after_wait_slow
+                .map(|s| (s as u8).to_string())
+                .unwrap_or_default(),
+            self.after_wait_min_mbps
+                .filter(|x| x.is_finite())
+                .map(|x| format!("{x:.1}"))
+                .unwrap_or_default(),
+        ];
+        v.truncate(width);
+        v
     }
+}
+
+/// Step 3, round 3: wait, then read each slow file one more time. If the first read is slow,
+/// read it again and keep the faster time of each extent (one short pause must not decide).
+/// The result goes to `after_wait_*`. It does not change `slow`. If the user stops the scan,
+/// round 3 ends. Files that round 3 did not read keep empty `after_wait_*` values.
+/// It returns true if the user stopped the scan in round 3.
+fn after_wait_round(
+    to_check: &mut [(Row, ReadResult)],
+    vol: &VolumeInfo,
+    o: &ScanOptions,
+    width: usize,
+    ctl: &Arc<Control>,
+) -> bool {
+    let todo: Vec<usize> = (0..to_check.len())
+        .filter(|&i| to_check[i].1.is_slow())
+        .collect();
+    if o.after_wait.is_zero() || todo.is_empty() {
+        return false;
+    }
+    if width < HEADER.len() {
+        ctl.paragraph(2, "Round 3 is not possible: the report has the columns of an older version. Use a new report to record round 3.");
+        return false;
+    }
+    let stopped_msg = "  Round 3 stopped. The report has the result of rounds 1 and 2.";
+    ctl.paragraph(
+        2,
+        &format!(
+            "Round 3: the scan waits {} s. Then it reads each slow file one more time. Some SSDs make data fast again soon after a slow read. Round 3 records this in the columns after_wait_*. It does not change the column slow.",
+            o.after_wait.as_secs()
+        ),
+    );
+    let until = Instant::now() + o.after_wait;
+    while Instant::now() < until && !ctl.stopped() {
+        ctl.report_progress(ProgressUpdate {
+            stage: Stage::Settle,
+            eta_secs: Some(until.saturating_duration_since(Instant::now()).as_secs()),
+            paused: ctl.is_paused(),
+            ..Default::default()
+        });
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    if ctl.stopped() {
+        ctl.message(stopped_msg);
+        return true;
+    }
+    let bytes: u64 = todo.iter().map(|&i| to_check[i].0.size).sum();
+    ctl.message(&format!(
+        "  Round 3: {} files, {}.",
+        fmt_count(todo.len() as u64),
+        fmt_bytes(bytes)
+    ));
+    let start = Instant::now();
+    let prog = Progress::new(Phase::Recheck(3), todo.len() as u64, bytes, ctl.clone());
+    let mut q = sys::IoQueue::new(o.read.qd, o.read.chunk);
+    let (mut fast, mut still) = (0u64, 0u64);
+    for &i in &todo {
+        if ctl.stopped() {
+            prog.finish();
+            ctl.message(stopped_msg);
+            return true;
+        }
+        ctl.wait_while_paused();
+        let row = &mut to_check[i].0;
+        match read_after_wait(row, vol, o, &mut q, ctl) {
+            Ok(res) => {
+                row.after_wait_slow = Some(res.is_slow());
+                row.after_wait_min_mbps = res.min_extent_mbps();
+                if res.is_slow() {
+                    still += 1;
+                    prog.add_slow();
+                } else {
+                    fast += 1;
+                }
+            }
+            Err(e) => {
+                if !row.error.is_empty() {
+                    row.error += "; ";
+                }
+                row.error += &format!("the read after the wait failed: {e}");
+            }
+        }
+        prog.add_file(row.size);
+    }
+    prog.finish();
+    ctl.message(&format!(
+        "  Round 3 finished in {}. Fast after the wait: {}. Still slow: {}.",
+        fmt_duration(start.elapsed()),
+        fmt_count(fast),
+        fmt_count(still)
+    ));
+    false
+}
+
+fn read_after_wait(
+    row: &Row,
+    vol: &VolumeInfo,
+    o: &ScanOptions,
+    q: &mut sys::IoQueue,
+    ctl: &Control,
+) -> io::Result<ReadResult> {
+    let path = PathBuf::from(&row.path);
+    let mf = sys::open_meta(&path)?;
+    let m = sys::meta(&mf)?;
+    let l = sys::layout(&mf, &m, vol.block)?;
+    let data = sys::open_direct(&path)?;
+    sys::set_read_priority(q, &data, o.read.measure_priority);
+    let mut res = read_file(q, &data, m.size, &l, true, false, &o.read, ctl)?;
+    if res.is_slow() {
+        let second = read_file(q, &data, m.size, &l, true, false, &o.read, ctl)?;
+        res.keep_faster(&second, &o.read);
+    }
+    Ok(res)
 }
 
 fn fill_result(row: &mut Row, res: &ReadResult) {
@@ -623,6 +772,13 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
         result.slow_total,
         fmt_bytes(result.slow_file_bytes)
     ));
+    if result.fast_after_wait + result.still_slow_after_wait > 0 {
+        ctl.message(&format!(
+            "    Read again after the wait (step 3, round 3): fast {}, still slow {}",
+            fmt_count(result.fast_after_wait as u64),
+            fmt_count(result.still_slow_after_wait as u64)
+        ));
+    }
     ctl.message(&format!(
         "  Slow data: {} (slower than {threshold} MB/s)",
         fmt_bytes(result.slow_bytes)
@@ -636,5 +792,34 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
             fmt_bytes(file.slow_bytes),
             file.path
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn row_values_follow_the_report_width() {
+        let row = Row {
+            path: "synthetic.dat".into(),
+            status: "OK".into(),
+            slow: true,
+            after_wait_slow: Some(false),
+            after_wait_min_mbps: Some(512.0),
+            ..Default::default()
+        };
+        let full = row.values(HEADER.len());
+        assert_eq!(full.len(), HEADER.len());
+        assert_eq!(full[14], "0");
+        assert_eq!(full[15], "512.0");
+        // --resume of an older report: only the old columns
+        let old = row.values(crate::report::SCAN_REQUIRED);
+        assert_eq!(old.len(), crate::report::SCAN_REQUIRED);
+        assert_eq!(old[8], "1");
+        // not read after the wait: empty values
+        let none = Row::default().values(HEADER.len());
+        assert_eq!(none[14], "");
+        assert_eq!(none[15], "");
     }
 }

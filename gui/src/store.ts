@@ -76,13 +76,32 @@ export const allSelected = (s: State): boolean =>
   s.volumes.length > 0 &&
   s.volumes.every((v) => s.selectedRoots.includes(v.root));
 
-/** Slow files count across selected drives that are ready to refresh. */
+/**
+ * The slow files that were not fast after the wait.
+ * A file that was fast after the wait is not counted.
+ */
+export const stillSlow = (o: ScanOutcome): number =>
+  Math.max(0, o.slowTotal - o.fastAfterWait);
+
+/** Still-slow files across selected drives that are ready to refresh. */
 export function totalSlowAcrossSelected(s: State): number {
   let total = 0;
   for (const root of s.selectedRoots) {
     const outcome = s.scans[root];
-    if (outcome && !outcome.stopped && outcome.slowTotal > 0) {
-      total += outcome.slowTotal;
+    if (outcome && !outcome.stopped) {
+      total += stillSlow(outcome);
+    }
+  }
+  return total;
+}
+
+/** Slow files across selected drives that were fast after the wait. */
+export function totalFastAfterWait(s: State): number {
+  let total = 0;
+  for (const root of s.selectedRoots) {
+    const outcome = s.scans[root];
+    if (outcome && !outcome.stopped) {
+      total += outcome.fastAfterWait;
     }
   }
   return total;
@@ -184,12 +203,15 @@ export function refreshAction(s: State): ActionView {
   if (slowTotal === 0) {
     const hasScanned =
       s.selectedRoots.length > 0 && s.selectedRoots.every((r) => s.scans[r]);
+    const fastAfterWait = totalFastAfterWait(s);
     return {
       state: "locked",
       title,
-      hint: hasScanned
-        ? "The scan found no slow files on selected drives."
-        : "Run Safe Scan first.",
+      hint: !hasScanned
+        ? "Run Safe Scan first."
+        : fastAfterWait > 0
+          ? `All ${fastAfterWait.toLocaleString("en-US")} slow files were fast after the wait. No file needs a rewrite.`
+          : "The scan found no slow files on selected drives.",
       label: "Locked",
       disabled: true,
     };

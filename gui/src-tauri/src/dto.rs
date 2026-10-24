@@ -101,6 +101,8 @@ pub struct SlowFileDto {
     pub path: String,
     pub size: u64,
     pub mbps: f64,
+    /// true = fast when the scan read the file again after the wait. None = not read again.
+    pub fast_after_wait: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -110,6 +112,9 @@ pub struct ScanOutcome {
     pub total_files: usize,
     /// The real number of slow files.
     pub slow_total: usize,
+    /// Of the slow files: fast or still slow when the scan read them again after the wait.
+    pub fast_after_wait: usize,
+    pub still_slow_after_wait: usize,
     /// The slowest files only (see `MAX_SLOW_LISTED`).
     pub slow_files: Vec<SlowFileDto>,
     pub stopped: bool,
@@ -129,6 +134,8 @@ impl ScanOutcome {
             report_path: path.to_string_lossy().into_owned(),
             total_files: result.total_files,
             slow_total: result.slow_total,
+            fast_after_wait: result.fast_after_wait,
+            still_slow_after_wait: result.still_slow_after_wait,
             slow_files: result
                 .slow_files
                 .into_iter()
@@ -136,6 +143,7 @@ impl ScanOutcome {
                     path: file.path,
                     size: file.size,
                     mbps: file.mbps,
+                    fast_after_wait: file.after_wait_slow.map(|slow| !slow),
                 })
                 .collect(),
             stopped: result.status == ssd_refresh::outcome::RunStatus::Stopped,

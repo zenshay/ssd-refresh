@@ -147,6 +147,9 @@ fn run() -> Result<i32, String> {
                 parallel: a.num("--parallel", 8)?,
                 read: read_opts(&mut a)?,
                 out: out.clone(),
+                after_wait: std::time::Duration::from_secs(
+                    a.num("--after-wait", scan::DEFAULT_AFTER_WAIT.as_secs())?,
+                ),
             };
             a.finish()?;
             let ctl = Control::new(Some(pause_path(&out)));

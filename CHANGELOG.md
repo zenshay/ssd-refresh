@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add round 3 to scan step 3. The scan waits `--after-wait` seconds (default 60) and reads the slow files again. New columns: `after_wait_slow`, `after_wait_min_extent_mbps`. The column `slow` does not change.
+- Read older reports without the new columns. With `--resume`, write the old columns only.
+- GUI: count only the files that stay slow after the wait in the refresh button and confirmation. Show the files that are fast after the wait.
+
 ## 1.0.3-rc.2
 
 - Use macOS 15 Intel runners for checks and universal builds. Keep both output architectures.

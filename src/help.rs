@@ -54,12 +54,22 @@ Steps
       at normal priority, two more times. The two reads start 30 s or more
       apart. For each extent, the scan uses the fastest of the three reads. A
       file is SLOW only if it is slow after this step.
+      Round 3: the scan waits --after-wait seconds (default 60). Then it reads
+      each SLOW file again. If the file is slow, the scan reads it one more
+      time. The result goes in the columns after_wait_*. Round 3 does not
+      change the column slow.
 
 Why step 3 is necessary
   In step 2, many reads use the disk at the same time. Other programs also use
   the disk. Some SSDs without DRAM are slow for 10 to 20 s after a pause. Thus a
   good file can show as slow one time. Step 3 reads the file alone and at
   different times. Only a file that is slow each time is SLOW in the report.
+
+Why round 3 is in step 3
+  On one test SSD (Crucial BX500), most SLOW files were fast again 18 s after
+  the scan. We do not know why. Round 3 records how many files are fast after
+  the wait. Refresh reads each file again before it moves the file. It does
+  not move a file that is fast (SKIP_FAST).
 
 Progress line in step 2 (wide window, then narrow window)
   12.3%  35.2G of 290G  245 MB/s  check 17  errors 0  left 17m20s (done ~11:05)
@@ -79,6 +89,7 @@ Progress line in step 2 (wide window, then narrow window)
 Progress line in step 3
   Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
     slow            files in this round that are still slow
+  Round 3 shows \"Check after the wait\" in place of \"Check again\".
 
 Options
   --out FILE           The report file. Default: scan-<number>.csv here.
@@ -96,6 +107,8 @@ Options
   --priority verylow   The I/O priority of step 2: verylow, low or normal.
   --measure-priority normal
                        The I/O priority of step 3.
+  --after-wait 60      The wait (seconds) before round 3 of step 3.
+                       0 = no round 3.
 
 During the scan
   p + Enter   Pause. Push again to continue.
@@ -105,7 +118,8 @@ During the scan
 
 Report columns
   path, size, kind, extents, disk_bytes, read_ms, mbps, min_extent_mbps, slow,
-  slow_bytes, confirmed, sha256, status, error
+  slow_bytes, confirmed, sha256, status, error, after_wait_slow,
+  after_wait_min_extent_mbps
   status    OK: measured. SKIP: not measured (see kind). DUP_LINK: one more
             hard link to a file that the scan measured. ERROR: see error.
   kind      normal, sparse, encrypted: measured; refresh can move them.
@@ -114,6 +128,13 @@ Report columns
             (Windows compressed system file), shared, reparse: not measured.
   slow      1 = slow after step 3.
   confirmed 1 = the scan read the file again in step 3.
+  after_wait_slow
+            1 = still slow after the wait. 0 = fast after the wait.
+            Empty = not read in round 3.
+  after_wait_min_extent_mbps
+            The speed of the slowest extent in round 3.
+  An older report has no after_wait_* columns. With --resume, the scan
+  writes the old columns only.
 
 Examples
   ssd-refresh scan C:\\ --out C-scan.csv

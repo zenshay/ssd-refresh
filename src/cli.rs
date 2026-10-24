@@ -194,8 +194,13 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
                 c.check,
             ),
             (Phase::Recheck(r), true) => format!(
-                "{}Check again {r}/2  {f} of {} files  {} of {}  slow {}  {eta}",
+                "{}{}  {f} of {} files  {} of {}  slow {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
+                if r >= 3 {
+                    "Check after the wait".to_string()
+                } else {
+                    format!("Check again {r}/2")
+                },
                 update.total_files,
                 fmt_bytes(b),
                 fmt_bytes(update.total_bytes),
