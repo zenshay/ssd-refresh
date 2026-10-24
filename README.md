@@ -285,7 +285,7 @@ The scan has three steps. Before each step, the tool shows what it will do.
 
 1. **Find the files.** The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.
 2. **Read each file one time.** The scan reads each file directly from the disk, not from the OS cache. It measures the time for each extent. An extent is one continuous part of the file on the disk. If one extent is slower than `--threshold` (100 MB/s), the file goes on the **check list**.
-3. **Check the files on the check list again.** The scan reads each file alone, at normal I/O priority. It does this two times. Round 2 starts 30 s or more after round 1. For each extent, the scan uses the fastest of the three reads. A file is **slow** only if it is slow after this step.
+3. **Check the files on the check list again.** The scan reads each file alone, at normal I/O priority. It does this two times. Round 2 starts 30 s or more after round 1. If a read is slow, the scan reads the file again at once. For each extent, the scan uses the fastest of all reads. A file is **slow** only if it is slow after this step.
 
 #### The check list is not the result
 
@@ -359,9 +359,11 @@ Refresh needs administrator (Windows) or root (Linux).
 2. **Show and confirm.** The tool shows what it will do, how much data it will write, and the warnings (for example about Windows restore points). Type the drive letter to continue. Other text cancels. For scripts, `--confirm X:` does not ask.
 3. **Refresh**, one file at a time:
    1. Write the cached data of the file to the disk (flush, see [below](#why-the-sha-256-can-be-different)). Then read the file (not from the OS cache) at normal priority. Write the SHA-256 and the speed to the log.
-   2. If the file is not slow now, do not move it (`SKIP_FAST`). `--force` moves it.
+   2. If the first read is slow, read the file again at once with the same handle. Use the faster time of each extent. If the file is not slow now, do not move it (`SKIP_FAST`). `--force` moves it.
    3. Tell the file system to move the data to free clusters, in pieces of 16 MiB or less. The file system moves each piece fully or not at all.
-   4. Read the file again. Compare the SHA-256. Write the new speed to the log.
+   4. Read the file again (and one more time if this read is slow). Compare the SHA-256. Write the new speed to the log.
+
+Why the second read at once: when a program opens a file, an antivirus program (for example Microsoft Defender) can scan the file first. On one test SSD (Crucial BX500), the first read after a long scan was about 8 ms slower. In 12 test passes on a quiet disk, 61 first reads were slow. A second read at once was fast for all 61. A slow disk area is slow in both reads. The log columns `before_first_slow` and `after_first_slow` show if the first read was slow.
 
 Progress line:
 

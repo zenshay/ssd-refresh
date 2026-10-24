@@ -283,7 +283,7 @@ ssd-refresh scan <資料夾或檔案> [--out 報告.csv] [--resume] [--hash] [--
 
 1. **Find the files（列出檔案）**：掃描會走訪所有資料夾。它不進入符號連結、junction 和掛載點，也不跨到別的磁碟區。
 2. **Read each file one time（每個檔案讀一次）**：掃描不經系統快取，直接從磁碟讀每個檔案。它量每個 extent 的時間。extent 是檔案在磁碟上的一段連續資料。只要有一個 extent 低於 `--threshold`（100 MB/s），這個檔案就列入**待確認清單（check list）**。
-3. **Check the files on the check list again（再確認一次）**：掃描用一般 I/O 優先權，一次只讀一個檔案。它讀兩輪，第二輪在第一輪開始 30 秒以上之後才開始。每個 extent 取三次讀取中最快的一次。這樣還是慢，檔案才算**慢（slow）**。
+3. **Check the files on the check list again（再確認一次）**：掃描用一般 I/O 優先權，一次只讀一個檔案。它讀兩輪，第二輪在第一輪開始 30 秒以上之後才開始。某次讀取判慢時，掃描會立刻再讀一次。每個 extent 取所有讀取中最快的一次。這樣還是慢，檔案才算**慢（slow）**。
 
 #### 待確認清單不是結果
 
@@ -357,9 +357,11 @@ ssd-refresh refresh --from 報告.csv [--dry-run] [--allow-system-volume] [--res
 2. **What will happen（說明並確認）**：列出會發生什麼事、會寫入多少資料，以及警告（例如 Windows 還原點）。輸入磁碟代號才會開始，其他輸入都會取消。腳本可用 `--confirm X:` 略過這一步。
 3. **Refresh（刷新）**，一次一個檔案：
    1. 不經快取、用一般優先權讀檔，記錄 SHA-256 與速度。
-   2. 已經不慢就跳過（`SKIP_FAST`），除非加 `--force`。
+   2. 第一次讀判慢時，用同一個 handle 立刻再讀一次，每個 extent 取比較快的時間。已經不慢就跳過（`SKIP_FAST`），除非加 `--force`。
    3. 請檔案系統把資料搬到空的叢集，每次最多 16 MiB。每次搬移都是原子操作：要嘛整段搬好，要嘛完全沒動。
-   4. 再讀一次，比對 SHA-256，記錄新的速度。
+   4. 再讀一次（判慢就再多讀一次），比對 SHA-256，記錄新的速度。
+
+為什麼要立刻再讀一次：程式開檔時，防毒軟體（例如 Microsoft Defender）可能先掃描這個檔案。在一顆測試用的 SSD（Crucial BX500）上，長時間掃描之後的第一次讀，大約多了 8 ms。在磁碟安靜時的 12 次測試裡，第一次讀判慢 61 次，立刻重讀後 61 次都不慢。真正慢的磁碟區域兩次都會慢。記錄裡的 `before_first_slow`、`after_first_slow` 欄位會顯示第一次讀是否判慢。
 
 進度列：
 

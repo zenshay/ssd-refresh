@@ -52,8 +52,9 @@ Steps
       file is slower than the threshold, the scan puts it on the check list.
   3/3 Check the files on the check list again. The scan reads each file alone,
       at normal priority, two more times. The two reads start 30 s or more
-      apart. For each extent, the scan uses the fastest of the three reads. A
-      file is SLOW only if it is slow after this step.
+      apart. If a read is slow, the scan reads the file again at once. For
+      each extent, the scan uses the fastest of all reads. A file is SLOW only
+      if it is slow after this step.
       Round 3: the scan waits --after-wait seconds (default 60). Then it reads
       each SLOW file again. If the file is slow, the scan reads it one more
       time. The result goes in the columns after_wait_*. Round 3 does not
@@ -64,6 +65,13 @@ Why step 3 is necessary
   the disk. Some SSDs without DRAM are slow for 10 to 20 s after a pause. Thus a
   good file can show as slow one time. Step 3 reads the file alone and at
   different times. Only a file that is slow each time is SLOW in the report.
+
+Why a slow read is done again at once
+  When a program opens a file, an antivirus program (for example Microsoft
+  Defender) can scan the file first. On one test SSD, the first read after a
+  long scan was about 8 ms slower. A second read at once, with the same
+  handle, did not have this delay. A slow disk area is slow in both reads.
+  scan, refresh and verify all do this second read.
 
 Why round 3 is in step 3
   On one test SSD (Crucial BX500), most SLOW files were fast again 18 s after
@@ -209,10 +217,15 @@ Statuses in the log (status column)
   ERROR         The tool could not open or read the file (see detail).
 
 Log columns
-  before_mbps / before_slow  The speed of the read before the move.
+  before_mbps / before_slow  The speed of the read before the move. If the
+                             first read is slow, the tool reads the file again
+                             at once and uses the faster time of each extent.
   after_mbps / after_slow    The speed of the read right after the move. New
                              data is always fast at first. Use verify after 1
                              day or more.
+  before_first_slow          1 = the first read before the move was slow.
+  after_first_slow           1 = the first read after the move was slow.
+                             Older logs do not have these two columns.
   time                       The time when the file was finished (seconds
                              since 1970, UTC).
   meta_key                   The size, the times and the USN before the read

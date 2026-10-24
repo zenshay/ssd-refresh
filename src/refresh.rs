@@ -11,7 +11,7 @@ use crate::control::Control;
 use crate::csv::{self, CsvWriter};
 use crate::outcome::{RefreshOutcome, RunStatus};
 use crate::progress::{Phase, Progress};
-use crate::reader::{read_file, ReadOptions};
+use crate::reader::{read_file_confirmed, ReadOptions};
 use crate::sys::{self, MoveStats, RelocOptions, Relocator};
 use std::collections::HashSet;
 use std::io;
@@ -37,6 +37,9 @@ pub struct RefreshOptions {
 }
 
 pub use crate::report::REFRESH_HEADER as HEADER;
+
+/// The number of columns in the logs of version 1.0.3-rc.2 and older.
+const OLD_WIDTH: usize = 19;
 
 /// Statuses that mean "finished". --resume does not process these files again.
 const FINAL: [&str; 9] = [
@@ -141,8 +144,13 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     }
 
     let mut done = HashSet::new();
+    // A log of an older version has fewer columns. --resume then writes only those columns,
+    // so that all rows have the same columns.
+    let mut width = HEADER.len();
     if o.resume && o.out.exists() {
-        if csv::header(&o.out)? != HEADER {
+        let header = csv::header(&o.out)?;
+        let old = header.len() >= OLD_WIDTH && header.len() <= HEADER.len();
+        if !old || header[..] != HEADER[..header.len()] {
             ctl.message(&format!("  A different version of ssd-refresh wrote this log. The columns are different: {}", o.out.display()));
             ctl.message("  Use a new log file with --out.");
             return Ok(RefreshOutcome {
@@ -150,6 +158,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
                 ..Default::default()
             });
         }
+        width = header.len();
         for r in crate::report::read_refresh(&o.out)? {
             if FINAL.contains(&r["status"].as_str()) {
                 done.insert(r["path"].clone());
@@ -194,7 +203,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     } else {
         ctl.paragraph(
             4,
-            "2. If the file is not slow now, do not move it (status SKIP_FAST).",
+            "2. If the first read is slow, read the file again at once. If the file is not slow now, do not move it (status SKIP_FAST).",
         );
     }
     if o.control_fraction > 0.0 {
@@ -289,7 +298,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
         reloc,
         q: sys::IoQueue::new(o.read.qd, o.read.chunk),
     };
-    let mut w = CsvWriter::create(&o.out, &HEADER, o.resume)?;
+    let mut w = CsvWriter::create(&o.out, &HEADER[..width], o.resume)?;
     let prog = Progress::new(
         Phase::Refresh { dry_run: o.dry_run },
         todo.len() as u64,
@@ -308,7 +317,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             break;
         }
         let row = r.process(Path::new(path), &|m: &str| prog.log(m));
-        w.row(row.values())?;
+        w.row(row.values(width))?;
         outcome.record(&row.status, row.st.moved_bytes);
         prog.add_file(*size);
         match row.status.as_str() {
@@ -421,6 +430,10 @@ struct Row {
     after_mbps: f64,
     before_slow: bool,
     after_slow: bool,
+    /// The first read before the move was slow. The second read at once decides `before_slow`.
+    before_first_slow: bool,
+    /// The first read after the move was slow. The second read at once decides `after_slow`.
+    after_first_slow: bool,
     st: MoveStats,
     ext_before: usize,
     ext_after: usize,
@@ -438,8 +451,9 @@ struct Row {
 }
 
 impl Row {
-    fn values(&self) -> Vec<String> {
-        vec![
+    /// The values of the first `width` columns of the log.
+    fn values(&self, width: usize) -> Vec<String> {
+        let mut v = vec![
             self.path.clone(),
             self.size.to_string(),
             self.status.clone(),
@@ -461,7 +475,11 @@ impl Row {
             self.detail.clone(),
             self.time.to_string(),
             self.meta_key.clone(),
-        ]
+            (self.before_first_slow as u8).to_string(),
+            (self.after_first_slow as u8).to_string(),
+        ];
+        v.truncate(width);
+        v
     }
 }
 
@@ -509,7 +527,7 @@ impl Run<'_> {
 
         let data = sys::open_direct(path)?;
         sys::set_read_priority(&mut self.q, &data, self.o.read.measure_priority);
-        let pre = read_file(
+        let (pre, pre_first_slow) = read_file_confirmed(
             &mut self.q,
             &data,
             m1.size,
@@ -521,6 +539,7 @@ impl Run<'_> {
         )?;
         row.before_mbps = pre.mbps();
         row.before_slow = pre.is_slow();
+        row.before_first_slow = pre_first_slow;
         row.sha_before = pre.sha256.map(|h| hex(&h)).unwrap_or_default();
         // Without a flush, the SHA-256 can be of older data. Then verify must not use the metadata.
         row.meta_key = if flushed.is_ok() {
@@ -559,7 +578,7 @@ impl Run<'_> {
         }
         let l2 = sys::layout(&mf, &m2, self.vol_block)?;
         row.ext_after = l2.on_disk().count();
-        let post = read_file(
+        let (post, post_first_slow) = read_file_confirmed(
             &mut self.q,
             &data,
             m2.size,
@@ -571,6 +590,7 @@ impl Run<'_> {
         )?;
         row.after_mbps = post.mbps();
         row.after_slow = post.is_slow();
+        row.after_first_slow = post_first_slow;
         row.sha_after = post.sha256.map(|h| hex(&h)).unwrap_or_default();
         let writers2 = sys::has_other_writers(path);
         row.writers = match (writers1, writers2) {
@@ -607,7 +627,25 @@ impl Run<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::confirm_matches;
+    use super::{confirm_matches, Row, HEADER, OLD_WIDTH};
+
+    #[test]
+    fn row_values_follow_the_log_width() {
+        let row = Row {
+            path: "synthetic.dat".into(),
+            status: "SKIP_FAST".into(),
+            before_first_slow: true,
+            ..Default::default()
+        };
+        let full = row.values(HEADER.len());
+        assert_eq!(full.len(), HEADER.len());
+        assert_eq!(full[19], "1"); // before_first_slow
+        assert_eq!(full[20], "0"); // after_first_slow
+        assert_eq!(HEADER[19], "before_first_slow");
+        // --resume of an older log: only the old columns
+        assert_eq!(row.values(OLD_WIDTH).len(), OLD_WIDTH);
+        assert_eq!(HEADER[OLD_WIDTH - 1], "meta_key");
+    }
 
     #[test]
     fn drive_letter() {

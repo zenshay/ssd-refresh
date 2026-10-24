@@ -115,6 +115,46 @@ impl ReadResult {
     }
 }
 
+/// If `first` is slow, read the file again at once and keep the faster time of each extent.
+/// Returns true if the first read was slow.
+///
+/// Why: when a program opens a file, an antivirus program can scan the file first. After a long
+/// scan, the first read of the file can be some ms slower. A second read at once, with the same
+/// handle, does not have this delay. A slow disk area is slow in both reads, so it stays slow.
+pub fn keep_faster_if_slow(
+    first: &mut ReadResult,
+    opt: &ReadOptions,
+    read_again: impl FnOnce() -> io::Result<ReadResult>,
+) -> io::Result<bool> {
+    if !first.is_slow() {
+        return Ok(false);
+    }
+    let second = read_again()?;
+    first.keep_faster(&second, opt);
+    Ok(true)
+}
+
+/// `read_file`, then `keep_faster_if_slow` with a second read of the same handle.
+/// The second read does not calculate the SHA-256. The result keeps the SHA-256 of the first read.
+/// Returns the result and true if the first read was slow.
+#[allow(clippy::too_many_arguments)]
+pub fn read_file_confirmed(
+    q: &mut IoQueue,
+    f: &File,
+    size: u64,
+    layout: &Layout,
+    measure: bool,
+    hash: bool,
+    opt: &ReadOptions,
+    ctl: &Control,
+) -> io::Result<(ReadResult, bool)> {
+    let mut res = read_file(q, f, size, layout, measure, hash, opt, ctl)?;
+    let first_slow = keep_faster_if_slow(&mut res, opt, || {
+        read_file(q, f, size, layout, measure, false, opt, ctl)
+    })?;
+    Ok((res, first_slow))
+}
+
 fn limit_secs(bytes: u64, opt: &ReadOptions) -> f64 {
     bytes as f64 / (opt.threshold_mbps * 1e6) + opt.allowance_ms / 1000.0
 }
@@ -374,5 +414,58 @@ mod tests {
         assert!(res.extents[0].excess_secs(&opt) > 0.0);
         assert!(res.extents[2].excess_secs(&opt) < 0.0);
         assert!(ReadResult::default().worst_extent(&opt).is_none());
+    }
+
+    fn result(secs: &[f64]) -> ReadResult {
+        let opt = ReadOptions::default();
+        let extents: Vec<ExtentTiming> = secs
+            .iter()
+            .map(|&s| ExtentTiming {
+                slow: is_slow(1_000_000, s, &opt),
+                ..ext(1_000_000, s)
+            })
+            .collect();
+        ReadResult {
+            disk_bytes: 1_000_000 * secs.len() as u64,
+            disk_secs: secs.iter().sum(),
+            extents,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_file_slow_only_in_the_first_read_is_not_slow() {
+        let opt = ReadOptions::default(); // 1 MB: limit 12 ms
+                                          // The first extent has 8 ms more in the first read only, as after an antivirus scan.
+        let mut first = result(&[0.018, 0.005]);
+        assert!(first.is_slow());
+        let was_slow =
+            keep_faster_if_slow(&mut first, &opt, || Ok(result(&[0.006, 0.005]))).unwrap();
+        assert!(was_slow);
+        assert!(!first.is_slow());
+        assert!((first.disk_secs - 0.011).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_file_slow_in_both_reads_stays_slow() {
+        let opt = ReadOptions::default();
+        let mut first = result(&[0.018, 0.005]);
+        let was_slow =
+            keep_faster_if_slow(&mut first, &opt, || Ok(result(&[0.020, 0.004]))).unwrap();
+        assert!(was_slow);
+        assert!(first.is_slow());
+        assert!(first.extents[0].slow && !first.extents[1].slow);
+    }
+
+    #[test]
+    fn a_fast_file_is_read_one_time_only() {
+        let opt = ReadOptions::default();
+        let mut first = result(&[0.005]);
+        let was_slow = keep_faster_if_slow(&mut first, &opt, || -> io::Result<ReadResult> {
+            panic!("no second read for a fast file")
+        })
+        .unwrap();
+        assert!(!was_slow);
+        assert!(!first.is_slow());
     }
 }

@@ -139,6 +139,10 @@ pub fn read_refresh(path: &Path) -> io::Result<Vec<Row>> {
         if row.get("time").is_some_and(|value| !value.is_empty()) {
             integer(row, "time")?;
         }
+        // Old logs do not have these columns.
+        for key in ["before_first_slow", "after_first_slow"] {
+            optional_flag(row, key)?;
+        }
     }
     Ok(rows)
 }
@@ -205,7 +209,7 @@ pub const SCAN_HEADER: [&str; 16] = [
     "after_wait_min_extent_mbps",
 ];
 
-pub const REFRESH_HEADER: [&str; 19] = [
+pub const REFRESH_HEADER: [&str; 21] = [
     "path",
     "size",
     "status",
@@ -225,6 +229,8 @@ pub const REFRESH_HEADER: [&str; 19] = [
     "detail",
     "time",
     "meta_key",
+    "before_first_slow",
+    "after_first_slow",
 ];
 
 #[cfg(test)]

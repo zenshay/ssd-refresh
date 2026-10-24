@@ -15,7 +15,7 @@ use crate::control::{Control, ProgressUpdate, Stage};
 use crate::csv::CsvWriter;
 use crate::outcome::{RunStatus, ScanOutcome};
 use crate::progress::{Phase, Progress};
-use crate::reader::{read_file, ReadOptions, ReadResult};
+use crate::reader::{read_file, read_file_confirmed, ReadOptions, ReadResult};
 use crate::sys;
 use std::collections::HashSet;
 use std::io;
@@ -357,7 +357,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
             ctl.paragraph(
                 2,
                 &format!(
-                    "The scan reads each file again, one at a time, at {} I/O priority. No other read of this tool uses the disk at that time. The scan does this two times. Round 2 starts {} s or more after the start of round 1. Thus one short pause of the disk cannot change both rounds. For each extent, the scan uses the fastest of the three reads, with the normal extra time of {} ms. A file is SLOW only if it is slow after this step. If round 1 finds no slow file, there is no round 2.",
+                    "The scan reads each file again, one at a time, at {} I/O priority. No other read of this tool uses the disk at that time. The scan does this two times. Round 2 starts {} s or more after the start of round 1. Thus one short pause of the disk cannot change both rounds. If a read is slow, the scan reads the file again at once. For each extent, the scan uses the fastest of all reads, with the normal extra time of {} ms. A file is SLOW only if it is slow after this step. If round 1 finds no slow file, there is no round 2.",
                     priority_words(o.read.measure_priority),
                     RECHECK_GAP.as_secs(),
                     o.read.allowance_ms
@@ -648,11 +648,7 @@ fn read_after_wait(
     let l = sys::layout(&mf, &m, vol.block)?;
     let data = sys::open_direct(&path)?;
     sys::set_read_priority(q, &data, o.read.measure_priority);
-    let mut res = read_file(q, &data, m.size, &l, true, false, &o.read, ctl)?;
-    if res.is_slow() {
-        let second = read_file(q, &data, m.size, &l, true, false, &o.read, ctl)?;
-        res.keep_faster(&second, &o.read);
-    }
+    let (res, _) = read_file_confirmed(q, &data, m.size, &l, true, false, &o.read, ctl)?;
     Ok(res)
 }
 
@@ -665,8 +661,9 @@ fn fill_result(row: &mut Row, res: &ReadResult) {
     row.slow_bytes = res.slow_bytes();
 }
 
-/// Step 3: read a file on the check list again, at the measure priority. For each extent,
-/// keep the faster time of the two results. Then decide again if the file is slow.
+/// Step 3: read a file on the check list again, at the measure priority. If this read is slow,
+/// read the file again at once (see `keep_faster_if_slow`). For each extent, keep the fastest
+/// time of all reads. Then decide again if the file is slow.
 fn recheck(
     row: &mut Row,
     first: &mut ReadResult,
@@ -682,7 +679,7 @@ fn recheck(
         let l = sys::layout(&mf, &m, vol.block)?;
         let data = sys::open_direct(&path)?;
         sys::set_read_priority(q, &data, o.read.measure_priority);
-        read_file(q, &data, m.size, &l, true, false, &o.read, ctl)
+        read_file_confirmed(q, &data, m.size, &l, true, false, &o.read, ctl).map(|(r, _)| r)
     })();
     match r {
         Ok(second) => {
