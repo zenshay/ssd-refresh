@@ -207,6 +207,8 @@ Linux ARM64 可以從原始碼建置；上述 Linux 發行檔只有 x64。
 
 CLI 原始碼需要 Rust 1.83 以上。
 GUI 目前的相依套件需要 Rust 1.90 以上。
+開發與發佈使用 Rust 1.99.0。在專案目錄執行指令時，`rust-toolchain.toml` 會選用此版本。
+日常檢查使用 `--locked`，不會自動更新依賴版本。
 GUI 建置還需要 Node.js 24 與 pnpm 12.14.0。
 Windows 需要 MSVC C++ Build Tools、Windows SDK 與 WebView2 Runtime。
 其他平台建置工具見 [Tauri 前置需求](https://v2.tauri.app/start/prerequisites/)。

@@ -12,7 +12,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-15-intel]
+        rust: ["1.99.0"]
+        include:
+          - os: windows-latest
+            rust: "1.90.0"
     runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -20,7 +26,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: ${{ runner.os == 'Windows' && '1.90.0' || 'stable' }}
+          toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
@@ -63,7 +69,7 @@ jobs:
         with:
           toolchain: 1.83.0
       - name: Check CLI minimum Rust version
-        run: cargo check --locked -p ssd-refresh --all-targets
+        run: cargo +1.83.0 check --locked -p ssd-refresh --all-targets
 
   secrets:
     runs-on: ubuntu-latest

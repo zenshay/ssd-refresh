@@ -42,6 +42,7 @@ const scope = options.has("--core-only")
   : ["--workspace"];
 run("Rust tests", "cargo", [
   "test",
+  "--locked",
   ...manifest,
   ...offline,
   ...scope,
@@ -49,6 +50,7 @@ run("Rust tests", "cargo", [
 ]);
 run("Rust lint", "cargo", [
   "clippy",
+  "--locked",
   ...manifest,
   ...offline,
   ...scope,
@@ -60,6 +62,7 @@ run("Rust lint", "cargo", [
 run("CLI help", "cargo", [
   "run",
   ...manifest,
+  "--locked",
   ...offline,
   "-p",
   "ssd-refresh",

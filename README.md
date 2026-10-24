@@ -209,6 +209,8 @@ Cross-compilation does not confirm operation on a physical device.
 
 CLI source requires Rust 1.83 or newer.
 The current GUI dependency set requires Rust 1.90 or newer.
+Development and release builds use Rust 1.99.0. `rust-toolchain.toml` selects it when commands run from the repository folder.
+Normal checks keep dependency versions fixed with `--locked`.
 GUI builds also need Node.js 24 and pnpm 12.14.0.
 On Windows, install MSVC C++ Build Tools, a Windows SDK, and WebView2 Runtime.
 See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for platform build tools.
