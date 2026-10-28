@@ -27,6 +27,8 @@ assert.ok(
   executablePath,
   "Set SSD_REFRESH_BROWSER to a Chrome or Edge executable path.",
 );
+// The end of the path has a character with two UTF-16 units. A bad cut breaks it.
+const longSlowPath = `X:\\${"synthetic-folder\\".repeat(5)}😀-synthetic.dat`;
 const vite = await createServer({
   root,
   configFile: false,
@@ -50,12 +52,25 @@ try {
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error)));
-  await page.evaluateOnNewDocument(() => {
+  await page.evaluateOnNewDocument((slowPath) => {
     const callbacks = new Map();
     const listeners = new Map();
     let id = 0;
     const calls = [];
     const requests = [];
+    // Synthetic clipboard. The test does not write to the system clipboard.
+    const copied = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        async writeText(text) {
+          if (window.__mockRejectCopy) {
+            throw new Error("Synthetic copy failure.");
+          }
+          copied.push(text);
+        },
+      },
+    });
     const emit = (event, payload) =>
       callbacks.get(listeners.get(event))?.({ event, id: 1, payload });
     window.__TAURI_INTERNALS__ = {
@@ -109,7 +124,7 @@ try {
             stillSlowAfterWait: 1,
             slowFiles: [
               {
-                path: "X:\\synthetic.dat",
+                path: slowPath,
                 size: 1024,
                 mbps: 12,
                 fastAfterWait: false,
@@ -134,7 +149,9 @@ try {
     window.__mockCalls = calls;
     window.__mockRequests = requests;
     window.__mockRejectOpen = false;
-  });
+    window.__mockCopied = copied;
+    window.__mockRejectCopy = false;
+  }, longSlowPath);
   await page.goto(`http://127.0.0.1:${address.port}`, {
     waitUntil: "networkidle0",
   });
@@ -149,6 +166,67 @@ try {
     await page.$eval("#console-log-view", (node) => node.textContent),
     /Synthetic core message/,
   );
+
+  // Slow files card: cut the path in the middle and keep the file name.
+  await page.waitForFunction(
+    () => !document.querySelector("#slow-files-card").hidden,
+  );
+  const cell = await page.$eval(".slow-cell-path", (node) => ({
+    text: node.textContent,
+    title: node.title,
+  }));
+  assert.equal(Array.from(cell.text).length, 50);
+  assert.ok(cell.text.includes("…"));
+  assert.ok(cell.text.endsWith("😀-synthetic.dat"));
+  assert.ok(cell.text.isWellFormed());
+  assert.equal(cell.title, longSlowPath);
+
+  // Slow files card: copy the report path with the mouse and the keyboard.
+  const reportPath = "#slow-report-path";
+  const labelIs = (text) =>
+    page.waitForFunction(
+      (selector, expected) =>
+        document.querySelector(selector).textContent === expected,
+      { timeout: 5000 },
+      reportPath,
+      text,
+    );
+  const copiedCount = () => page.evaluate(() => window.__mockCopied.length);
+  assert.deepEqual(
+    await page.$eval(reportPath, (node) => [
+      node.getAttribute("role"),
+      node.tabIndex,
+    ]),
+    ["button", 0],
+  );
+  await page.click(reportPath);
+  await labelIs("Copied ✓");
+  assert.deepEqual(await page.evaluate(() => window.__mockCopied), [
+    "synthetic.csv",
+  ]);
+  await labelIs("synthetic.csv");
+  // A second click while "Copied" shows must not keep "Copied" on the screen.
+  await page.click(reportPath);
+  await labelIs("Copied ✓");
+  await page.click(reportPath);
+  await labelIs("synthetic.csv");
+  assert.equal(await copiedCount(), 3);
+  await page.focus(reportPath);
+  await page.keyboard.press("Enter");
+  await labelIs("Copied ✓");
+  assert.equal(await copiedCount(), 4);
+  await labelIs("synthetic.csv");
+  await page.evaluate(() => {
+    window.__mockRejectCopy = true;
+  });
+  await page.click(reportPath);
+  await labelIs("Cannot copy the report path");
+  assert.equal(await copiedCount(), 4);
+  await labelIs("synthetic.csv");
+  await page.evaluate(() => {
+    window.__mockRejectCopy = false;
+  });
+
   await page.click("#btn-refresh");
   await page.waitForFunction(
     () => document.querySelector("#confirm-modal").open,
@@ -227,7 +305,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "RESULT: YES (scan, messages, cancel, confirm, refresh, report privacy, report failure)",
+    "RESULT: YES (scan, messages, slow path, copy, copy failure, cancel, confirm, refresh, report privacy, report failure)",
   );
 } finally {
   await browser?.close();
