@@ -1,5 +1,6 @@
 // One source of truth. Views read this state and never keep a second copy.
 import type { Progress, ScanOutcome, Volume } from "./api";
+import { countOf, fmtCount } from "./format";
 
 export type Mode = "idle" | "scanning" | "refreshing";
 export type NoticeKind = "ok" | "info" | "warn" | "error";
@@ -210,7 +211,7 @@ export function refreshAction(s: State): ActionView {
       hint: !hasScanned
         ? "Run Safe Scan first."
         : fastAfterWait > 0
-          ? `All ${fastAfterWait.toLocaleString("en-US")} slow files were fast after the wait. No file needs a rewrite.`
+          ? `${fastAfterWait === 1 ? "The slow file was" : `All ${fmtCount(fastAfterWait)} slow files were`} fast after the wait. No file needs a rewrite.`
           : "The scan found no slow files on selected drives.",
       label: "Locked",
       disabled: true,
@@ -219,8 +220,8 @@ export function refreshAction(s: State): ActionView {
 
   return {
     state: "ready",
-    title: `Selective Refresh (${slowTotal.toLocaleString("en-US")} files)`,
-    hint: `Rewrites ${slowTotal.toLocaleString("en-US")} slow files safely. You confirm first.`,
+    title: `Selective Refresh (${countOf(slowTotal, "file")})`,
+    hint: `Rewrites ${countOf(slowTotal, "slow file")} safely. You confirm first.`,
     label: "Ready",
     disabled: false,
   };

@@ -1,7 +1,7 @@
 import type { Actions } from "../actions";
 import type { Stage } from "../api";
 import { $ } from "../dom";
-import { fmtBytes, fmtCount, fmtDuration, fmtRate } from "../format";
+import { countOf, fmtBytes, fmtCount, fmtDuration, fmtRate } from "../format";
 import { setIcon } from "../icons";
 import type { Store } from "../store";
 
@@ -162,8 +162,8 @@ export function mountProgress(store: Store, actions: Actions): void {
     if (info.indeterminate) {
       track.classList.add("indeterminate");
       bar.style.width = "0%";
-      subtitleEl.textContent = `${drivePrefix}${fmtCount(p.filesDone)} files found so far…`;
-      statFiles.textContent = `${fmtCount(p.filesDone)} files`;
+      subtitleEl.textContent = `${drivePrefix}${countOf(p.filesDone, "file")} found so far…`;
+      statFiles.textContent = countOf(p.filesDone, "file");
       statBytes.textContent = fmtBytes(p.bytesDone);
       statSpeed.textContent = fmtRate(p.mbps);
       statEta.textContent = "--";

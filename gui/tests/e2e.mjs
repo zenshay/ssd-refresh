@@ -171,6 +171,10 @@ try {
   await page.waitForFunction(
     () => !document.querySelector("#slow-files-card").hidden,
   );
+  assert.equal(
+    await page.$eval("#slow-files-count", (node) => node.textContent),
+    "1 slow file detected",
+  );
   const cell = await page.$eval(".slow-cell-path", (node) => ({
     text: node.textContent,
     title: node.title,

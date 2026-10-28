@@ -11,6 +11,8 @@
 - Dependabot: ignore TypeScript 7. TypeScript 7 removes the JavaScript API that the test loader uses.
 - GUI slow files: cut long paths in the middle to 50 characters. The end keeps the file name. The full path shows on hover.
 - GUI slow files: click the report path, or press Enter, to copy the report paths. The label shows "Copied ✓" for 1.5 s.
+- GUI: use the singular for a count of 1, for example "1 slow file detected" and "1 drive". Use "was" or "were" to agree with the count.
+- GUI lint: use `"preset": "recommended"` in `biome.json`. Biome 2.6 deprecates `"recommended": true`.
 
 ## 1.0.3-rc.3
 
