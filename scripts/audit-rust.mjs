@@ -13,6 +13,19 @@ export const targets = [
   "aarch64-apple-darwin",
 ];
 const roots = ["ssd-refresh", "ssd-refresh-gui"];
+// Each entry accepts one advisory for one package version and listed roots.
+// After the "until" date, the entry stops working and the audit fails again.
+export const accepted = [
+  {
+    id: "GHSA-qwgh-2vcv-g2f7",
+    name: "block-buffer",
+    version: "0.10.4",
+    roots: ["ssd-refresh-gui"],
+    until: "2027-01-31",
+    reason:
+      "Only tauri-codegen uses it, at build time. It does not catch panics. No tauri-codegen release uses sha2 0.11.",
+  },
+];
 const registries = new Set([
   "registry+https://github.com/rust-lang/crates.io-index",
   "registry+https://index.crates.io/",
@@ -188,10 +201,35 @@ export async function queryOsv(packages, fetcher = fetch) {
   return findings;
 }
 
+// Return the matching entry, or a text that tells why the finding is not accepted.
+export function acceptance(finding, scope, list, today) {
+  const entry = list.find(
+    (item) =>
+      item.id === finding.id &&
+      item.name === finding.name &&
+      item.version === finding.version,
+  );
+  if (!entry) return { entry: null, problem: "no entry" };
+  if (today > entry.until) {
+    return { entry: null, problem: `entry expired on ${entry.until}` };
+  }
+  const roots = [...scope].map((item) => item.split(":")[0]);
+  const other = roots.filter((root) => !entry.roots.includes(root));
+  if (other.length) {
+    return {
+      entry: null,
+      problem: `not accepted for ${[...new Set(other)].join(", ")}`,
+    };
+  }
+  return { entry, problem: null };
+}
+
 export async function audit(args, dependencies = {}) {
   const readMetadata = dependencies.readMetadata ?? readCargoMetadata;
   const query = dependencies.query ?? queryOsv;
   const log = dependencies.log ?? console.log;
+  const list = dependencies.accepted ?? accepted;
+  const today = dependencies.today ?? new Date().toISOString().slice(0, 10);
   const plan = auditPlan(args);
   const identities = new Map();
   const scopes = new Map();
@@ -213,14 +251,38 @@ export async function audit(args, dependencies = {}) {
     ),
   );
   const findings = await query(packages);
+  const used = new Set();
+  let open = 0;
   for (const finding of findings) {
     const key = `${finding.name}@${finding.version}`;
     log(`FOUND: ${key} ${finding.id}`);
     log(`TARGETS: ${[...scopes.get(key)].join(", ")}`);
+    const { entry, problem } = acceptance(
+      finding,
+      scopes.get(key),
+      list,
+      today,
+    );
+    if (entry) {
+      used.add(entry);
+      log(`ACCEPTED UNTIL ${entry.until}: ${entry.reason}`);
+    } else {
+      open++;
+      if (problem !== "no entry") log(`NOT ACCEPTED: ${problem}.`);
+    }
   }
-  log(`PACKAGES: ${packages.length}. FINDINGS: ${findings.length}.`);
-  log(`RESULT: ${findings.length ? "NO" : "YES"}`);
-  return findings.length ? 1 : 0;
+  for (const entry of list) {
+    if (!used.has(entry)) {
+      log(
+        `UNUSED ENTRY: ${entry.name}@${entry.version} ${entry.id}. Remove it.`,
+      );
+    }
+  }
+  log(
+    `PACKAGES: ${packages.length}. FINDINGS: ${findings.length}. ACCEPTED: ${findings.length - open}.`,
+  );
+  log(`RESULT: ${open ? "NO" : "YES"}`);
+  return open ? 1 : 0;
 }
 
 export async function runCli(args, dependencies = {}) {

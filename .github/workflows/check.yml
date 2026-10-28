@@ -67,9 +67,9 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: 1.83.0
+          toolchain: 1.85.0
       - name: Check CLI minimum Rust version
-        run: cargo +1.83.0 check --locked -p ssd-refresh --all-targets
+        run: cargo +1.85.0 check --locked -p ssd-refresh --all-targets
 
   secrets:
     runs-on: ubuntu-latest

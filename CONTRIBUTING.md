@@ -7,9 +7,9 @@ Use short sentences and common words. Update `README.zh-TW.md` when the user ins
 ## Build and check
 
 See the [build instructions](README.md#build) for dependencies and GUI asset generation.
-The CLI requires Rust 1.83 or newer. The current GUI dependencies require Rust 1.90 or newer.
+The CLI requires Rust 1.85 or newer. The current GUI dependencies require Rust 1.90 or newer.
 Development and release builds use Rust 1.99.0 from `rust-toolchain.toml`.
-CI also checks CLI support with Rust 1.83.0 and Windows GUI support with Rust 1.90.0.
+CI also checks CLI support with Rust 1.85.0 and Windows GUI support with Rust 1.90.0.
 Keep both lock files in Git. Normal checks must not change them.
 Update dependencies in a separate change. Run the full check before you commit the updated lock files.
 Use Node.js 24 and pnpm 12.14.0 for frontend work.

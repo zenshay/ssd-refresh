@@ -106,7 +106,7 @@ Missing metadata, incomplete responses, network errors, and reported issues fail
 The lock file can also contain packages for GUI platforms that this project does not release.
 Those entries are not evidence that a Windows program contains them.
 
-CI checks CLI builds with Rust 1.83 on Windows and Linux.
+CI checks CLI builds with Rust 1.85 on Windows and Linux.
 The Windows workspace check uses Rust 1.90, which current Tauri packages require.
 The other platform checks and release builds use stable Rust.
 Dependabot opens weekly dependency update requests. It does not merge or publish them.

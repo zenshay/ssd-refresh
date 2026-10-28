@@ -2,7 +2,7 @@
 name = "ssd-refresh"
 version = "1.0.3-rc.3"
 edition = "2021"
-rust-version = "1.83"
+rust-version = "1.85"
 description = "File-level SSD refresh: find files whose old data reads slowly and let the file system rewrite them safely"
 readme = "README.md"
 license = "MIT OR Apache-2.0"
@@ -22,7 +22,7 @@ name = "refresh-test"
 path = "src/bin/refresh-test.rs"
 
 [dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 ctrlc = "3"
 
 [target.'cfg(unix)'.dependencies]

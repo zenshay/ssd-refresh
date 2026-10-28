@@ -1,5 +1,12 @@
 # Changes
 
+## Unreleased
+
+- Update `sha2` to 0.11. The CLI no longer uses `block-buffer` 0.10.4 (GHSA-qwgh-2vcv-g2f7).
+- The CLI now requires Rust 1.85 or newer. `sha2` 0.11 and its dependencies require Rust 1.85.
+- Rust audit: add a list of accepted advisories. Each entry names one advisory, one package version, the roots, a reason, and a review date. After the review date, the audit fails again.
+- Accept GHSA-qwgh-2vcv-g2f7 for the GUI until 2027-01-31. Only `tauri-codegen` uses `block-buffer` 0.10.4, at build time. It does not catch panics. No `tauri-codegen` release uses `sha2` 0.11.
+
 ## 1.0.3-rc.3
 
 - If a read is slow, read the file again at once with the same handle. Use the faster time of each extent. Scan step 3 rounds 1 and 2 and refresh (before and after the move) do this now. Verify and round 3 did this already. Reason: an antivirus scan when a file opens can make the first read about 8 ms slower. Refresh then moved files that were not slow.

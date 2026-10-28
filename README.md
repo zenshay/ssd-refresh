@@ -4,7 +4,7 @@
 
 [![Release: v1.0.2](https://img.shields.io/badge/release-v1.0.2-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
-[![CLI Rust 1.83+](https://img.shields.io/badge/CLI_Rust-1.83%2B-orange?logo=rust)](#build)
+[![CLI Rust 1.85+](https://img.shields.io/badge/CLI_Rust-1.85%2B-orange?logo=rust)](#build)
 [![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#platforms)
 [![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#platforms)
 [![Recorded VHDX test: 28/28](https://img.shields.io/badge/recorded_VHDX_test-28%2F28-blue)](#safety-test-windows)
@@ -207,7 +207,7 @@ Cross-compilation does not confirm operation on a physical device.
 
 ### Build
 
-CLI source requires Rust 1.83 or newer.
+CLI source requires Rust 1.85 or newer.
 The current GUI dependency set requires Rust 1.90 or newer.
 Development and release builds use Rust 1.99.0. `rust-toolchain.toml` selects it when commands run from the repository folder.
 Normal checks keep dependency versions fixed with `--locked`.

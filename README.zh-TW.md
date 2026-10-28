@@ -4,7 +4,7 @@
 
 [![Release: v1.0.2](https://img.shields.io/badge/release-v1.0.2-brightgreen)](https://github.com/zenshay/ssd-refresh/releases)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#授權)
-[![CLI Rust 1.83+](https://img.shields.io/badge/CLI_Rust-1.83%2B-orange?logo=rust)](#建置)
+[![CLI Rust 1.85+](https://img.shields.io/badge/CLI_Rust-1.85%2B-orange?logo=rust)](#建置)
 [![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#支援的平台與架構)
 [![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#支援的平台與架構)
 [![VHDX 測試紀錄：28/28](https://img.shields.io/badge/recorded_VHDX_test-28%2F28-blue)](#安全測試windows)
@@ -205,7 +205,7 @@ Linux ARM64 可以從原始碼建置；上述 Linux 發行檔只有 x64。
 
 ### 建置
 
-CLI 原始碼需要 Rust 1.83 以上。
+CLI 原始碼需要 Rust 1.85 以上。
 GUI 目前的相依套件需要 Rust 1.90 以上。
 開發與發佈使用 Rust 1.99.0。在專案目錄執行指令時，`rust-toolchain.toml` 會選用此版本。
 日常檢查使用 `--locked`，不會自動更新依賴版本。

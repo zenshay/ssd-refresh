@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  accepted,
   audit,
   auditPlan,
   queryOsv,
@@ -197,6 +198,94 @@ test("OSV batches all packages and preserves result order", async () => {
   assert.deepEqual(findings, [
     { name: "crate-500", version: "1", id: "TEST-1" },
   ]);
+});
+
+function acceptedRun(entry, { today = "2026-01-01", gui = true } = {}) {
+  const lines = [];
+  const metadata = fixture();
+  if (gui) {
+    // Put "glib" only below the GUI root.
+    metadata.resolve.nodes
+      .find((item) => item.id === "gui")
+      .deps.push(edge("glib"));
+  } else {
+    metadata.resolve.nodes
+      .find((item) => item.id === "cli")
+      .deps.push(edge("glib"));
+  }
+  const code = audit(["--target", windows], {
+    readMetadata: () => metadata,
+    query: async (packages) =>
+      packages.some((item) => item.name === "glib")
+        ? [{ name: "glib", version: "1.0.0", id: "TEST-1" }]
+        : [],
+    accepted: entry ? [entry] : [],
+    today,
+    log: (line) => lines.push(line),
+  });
+  return code.then((value) => ({ code: value, lines }));
+}
+const guiEntry = {
+  id: "TEST-1",
+  name: "glib",
+  version: "1.0.0",
+  roots: ["ssd-refresh-gui"],
+  until: "2026-06-30",
+  reason: "Test reason.",
+};
+
+test("An accepted finding in its listed root passes", async () => {
+  const { code, lines } = await acceptedRun(guiEntry);
+  assert.equal(code, 0);
+  assert.ok(lines.includes("ACCEPTED UNTIL 2026-06-30: Test reason."));
+  assert.ok(lines.includes("PACKAGES: 3. FINDINGS: 1. ACCEPTED: 1."));
+  assert.ok(lines.includes("RESULT: YES"));
+});
+
+test("An accepted finding fails after the date or in another root", async () => {
+  const expired = await acceptedRun(guiEntry, { today: "2026-07-01" });
+  assert.equal(expired.code, 1);
+  assert.ok(
+    expired.lines.includes("NOT ACCEPTED: entry expired on 2026-06-30."),
+  );
+  const cli = await acceptedRun(guiEntry, { gui: false });
+  assert.equal(cli.code, 1);
+  assert.ok(cli.lines.includes("NOT ACCEPTED: not accepted for ssd-refresh."));
+  for (const change of [
+    { id: "TEST-2" },
+    { version: "1.0.1" },
+    { name: "other" },
+  ]) {
+    const other = await acceptedRun({ ...guiEntry, ...change });
+    assert.equal(other.code, 1);
+  }
+  assert.equal((await acceptedRun(null)).code, 1);
+});
+
+test("An entry without a finding is reported but does not fail", async () => {
+  const clean = [];
+  assert.equal(
+    await audit(["--target", windows], {
+      readMetadata: fixture,
+      query: async () => [],
+      accepted: [guiEntry],
+      log: (line) => clean.push(line),
+    }),
+    0,
+  );
+  assert.ok(clean.includes("UNUSED ENTRY: glib@1.0.0 TEST-1. Remove it."));
+});
+
+test("Each accepted entry has a reason and a review date", () => {
+  for (const entry of accepted) {
+    for (const field of ["id", "name", "version", "reason"]) {
+      assert.equal(typeof entry[field], "string");
+      assert.ok(entry[field].length > 0);
+    }
+    assert.match(entry.until, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(Array.isArray(entry.roots) && entry.roots.length > 0);
+    assert.ok(entry.roots.every((root) => root === "ssd-refresh-gui"));
+  }
 });
 
 test("Findings and Cargo failures return a nonzero CLI result", async () => {
