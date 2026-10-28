@@ -10,7 +10,7 @@
 //!    `after_wait` and read the slow files one more time. Some SSDs make data fast again
 //!    soon after a slow read. Round 3 records this. It does not change `slow`.
 
-use crate::common::{fmt_bytes, fmt_count, hex, Kind, VolumeInfo};
+use crate::common::{agree, count_of, fmt_bytes, fmt_count, hex, Kind, VolumeInfo};
 use crate::control::{Control, ProgressUpdate, Stage};
 use crate::csv::CsvWriter;
 use crate::outcome::{RunStatus, ScanOutcome};
@@ -115,8 +115,8 @@ fn enumerate_with_progress(root: &Path, ctl: &Arc<Control>) -> Vec<(PathBuf, u64
     let bytes = progress.byte_counter().load(Ordering::Relaxed);
     progress.finish();
     ctl.message(&format!(
-        "  Found {} files, {} ({} s)",
-        files.len(),
+        "  Found {}, {} ({} s)",
+        count_of(files.len() as u64, "file"),
         fmt_bytes(bytes),
         start.elapsed().as_secs()
     ));
@@ -190,13 +190,15 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
         }
         if retry > 0 {
             ctl.message(&format!(
-                "  Again:   the scan reads {} files with status ERROR again.",
-                fmt_count(retry)
+                "  Again:   the scan reads {} with status ERROR again.",
+                count_of(retry, "file")
             ));
         }
         ctl.message(&format!(
-            "  Resume:  {} files are in the report. The scan does not read them again.",
-            fmt_count(done.len() as u64)
+            "  Resume:  {} {} in the report. The scan does not read {} again.",
+            count_of(done.len() as u64, "file"),
+            agree(done.len() as u64, "is", "are"),
+            agree(done.len() as u64, "it", "them")
         ));
     }
 
@@ -238,9 +240,9 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
         ctl.paragraph(
             2,
             &format!(
-                "The scan reads {parallel} files at the same time. It reads files of {} MiB or more one at a time, with {} requests at the same time. It reads smaller files {} at a time.",
+                "The scan reads {parallel} files at the same time. It reads files of {} MiB or more one at a time, with {} at the same time. It reads smaller files {} at a time.",
                 LARGE_FILE >> 20,
-                o.read.qd,
+                count_of(o.read.qd as u64, "request"),
                 parallel - 1
             ),
         );
@@ -255,8 +257,12 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     ctl.paragraph(
         2,
         &format!(
-            "If one extent is slower than {} MB/s, the file goes on the CHECK LIST. In this step, {parallel} files use the disk at the same time. Thus each extent gets {} ms of extra time (step 3: {} ms). A file on the check list is NOT slow yet. Other reads, other programs and the SSD itself can make a good file slow for a short time. Step 3 decides.",
-            o.read.threshold_mbps, first_pass.allowance_ms, o.read.allowance_ms
+            "If one extent is slower than {} MB/s, the file goes on the CHECK LIST. In this step, {} {} the disk at the same time. Thus each extent gets {} ms of extra time (step 3: {} ms). A file on the check list is NOT slow yet. Other reads, other programs and the SSD itself can make a good file slow for a short time. Step 3 decides.",
+            o.read.threshold_mbps,
+            count_of(parallel as u64, "file"),
+            agree(parallel as u64, "uses", "use"),
+            first_pass.allowance_ms,
+            o.read.allowance_ms
         ),
     );
     ctl.paragraph(
@@ -341,8 +347,8 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     let mut stopped = ctl.stopped();
     let mut round3_stopped = false;
     ctl.message(&format!(
-        "  The scan read {} files in {}. Files on the check list: {}.",
-        fmt_count(files.len() as u64),
+        "  The scan read {} in {}. Files on the check list: {}.",
+        count_of(files.len() as u64, "file"),
         fmt_duration(step2.elapsed()),
         fmt_count(to_check.len() as u64)
     ));
@@ -400,8 +406,8 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
             }
             let bytes: u64 = todo.iter().map(|&i| to_check[i].0.size).sum();
             ctl.message(&format!(
-                "  Round {round}: {} files, {}.",
-                fmt_count(todo.len() as u64),
+                "  Round {round}: {}, {}.",
+                count_of(todo.len() as u64, "file"),
                 fmt_bytes(bytes)
             ));
             round_start = Instant::now();
@@ -437,8 +443,10 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     if stopped {
         if !to_check.is_empty() {
             ctl.message(&format!(
-                "  The check of {} files did not finish. These files are not in the report. --resume reads them again.",
-                fmt_count(to_check.len() as u64)
+                "  The check of {} did not finish. {} not in the report. --resume reads {} again.",
+                count_of(to_check.len() as u64, "file"),
+                agree(to_check.len() as u64, "This file is", "These files are"),
+                agree(to_check.len() as u64, "it", "them")
             ));
         }
     } else {
@@ -589,8 +597,8 @@ fn after_wait_round(
     }
     let bytes: u64 = todo.iter().map(|&i| to_check[i].0.size).sum();
     ctl.message(&format!(
-        "  Round 3: {} files, {}.",
-        fmt_count(todo.len() as u64),
+        "  Round 3: {}, {}.",
+        count_of(todo.len() as u64, "file"),
         fmt_bytes(bytes)
     ));
     let start = Instant::now();

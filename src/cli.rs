@@ -1,5 +1,5 @@
 //! Terminal input, output and exit codes.
-use ssd_refresh::common::fmt_bytes;
+use ssd_refresh::common::{fmt_bytes, noun};
 use ssd_refresh::control::{Control, ProgressUpdate, Stage};
 use ssd_refresh::outcome::RunStatus;
 use ssd_refresh::progress::Phase;
@@ -154,8 +154,9 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
     let c = update;
     let (b, f, rate) = (update.bytes_done, update.files_done, update.mbps);
     if update.stage == Stage::Find {
-        return format!("Found {f} files, {}", fmt_bytes(b));
+        return format!("Found {f} {}, {}", noun(f, "file"), fmt_bytes(b));
     }
+    let of_files = noun(update.total_files, "file");
     if update.stage == Stage::Settle {
         return format!("Wait {} s", update.eta_secs.unwrap_or(0));
     }
@@ -177,7 +178,7 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
     let eta = eta(update.eta_secs, verbose);
     let paused = update.paused;
     match (phase, verbose) {
-            (Phase::Find, _) => format!("Found {f} files, {}", fmt_bytes(b)),
+            (Phase::Find, _) => format!("Found {f} {}, {}", noun(f, "file"), fmt_bytes(b)),
             (Phase::Scan, true) => format!(
                 "{}{pct:5.1}%  {} of {}  {rate:.0} MB/s  check {}  errors {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
@@ -194,7 +195,7 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
                 c.check,
             ),
             (Phase::Recheck(r), true) => format!(
-                "{}{}  {f} of {} files  {} of {}  slow {}  {eta}",
+                "{}{}  {f} of {} {of_files}  {} of {}  slow {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
                 if r >= 3 {
                     "Check after the wait".to_string()
@@ -215,7 +216,7 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
                 c.slow,
             ),
             (Phase::Refresh { dry_run }, true) => format!(
-                "{}{} {f} of {} files  {} of {}  {rate:.0} MB/s  moved {}  changed {}  skipped {}  failed {}  {eta}",
+                "{}{} {f} of {} {of_files}  {} of {}  {rate:.0} MB/s  moved {}  changed {}  skipped {}  failed {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
                 if dry_run { "Dry run" } else { "Refresh" },
                 update.total_files,
@@ -237,7 +238,7 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
                 c.failed,
             ),
             (Phase::Verify, true) => format!(
-                "{}Verify {f} of {} files  {} of {}  {rate:.0} MB/s  slow {}  changed {}  errors {}  {eta}",
+                "{}Verify {f} of {} {of_files}  {} of {}  {rate:.0} MB/s  slow {}  changed {}  errors {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
                 update.total_files,
                 fmt_bytes(b),

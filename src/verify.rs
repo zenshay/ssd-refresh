@@ -11,7 +11,7 @@
 //! files that the refresh only read. On some SSDs, reading only is enough: the SSD rewrites
 //! data by itself when the data is hard to read.
 
-use crate::common::{fmt_bytes, fmt_count, hex, path_rank, unix_now, Kind};
+use crate::common::{agree, count_of, fmt_bytes, fmt_count, hex, path_rank, unix_now, Kind};
 use crate::control::Control;
 use crate::csv::{self, CsvWriter};
 use crate::outcome::{RunStatus, VerifyOutcome};
@@ -210,19 +210,22 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         ctl.paragraph(
             2,
             &format!(
-                "This is a refresh log. Rewritten group: {} files that the refresh moved (OK, CHANGED). Read-only group: {} files that the refresh read but did not move (CONTROL, DRYRUN). The tool does not use {} files with other statuses.",
-                fmt_count(groups_seen[0]),
-                fmt_count(groups_seen[1]),
-                fmt_count(other)
+                "This is a refresh log. Rewritten group: {} that the refresh moved (OK, CHANGED). Read-only group: {} that the refresh read but did not move (CONTROL, DRYRUN). The tool does not use {} with other statuses.",
+                count_of(groups_seen[0], "file"),
+                count_of(groups_seen[1], "file"),
+                count_of(other, "file")
             ),
         );
     } else {
         ctl.paragraph(
             2,
             &format!(
-                "This is a scan report. The tool uses {} files ({}). The scan read these files but did not move them. They are the read-only group.",
-                fmt_count(groups_seen[1]),
-                if o.select_all { "all measured files, --select all" } else { "the slow files" }
+                "This is a scan report. The tool uses {} ({}). The scan read {} but did not move {}. {} the read-only group.",
+                count_of(groups_seen[1], "file"),
+                if o.select_all { "all measured files, --select all" } else { "the slow files" },
+                agree(groups_seen[1], "this file", "these files"),
+                agree(groups_seen[1], "it", "them"),
+                agree(groups_seen[1], "It is", "They are")
             ),
         );
     }
@@ -270,7 +273,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
                 !cut.contains(&(i - 1))
             });
         }
-        ctl.paragraph(2, &format!("--sample {}: the tool reads a maximum of {} files per group. The same path always gets the same choice, so the next run reads the same files.", o.sample, o.sample));
+        ctl.paragraph(2, &format!("--sample {}: the tool reads a maximum of {} per group. The same path always gets the same choice, so the next run reads the same files.", o.sample, count_of(o.sample as u64, "file")));
     } else if items.len() > 10_000 {
         ctl.paragraph(
             2,

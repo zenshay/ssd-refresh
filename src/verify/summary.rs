@@ -1,6 +1,6 @@
 //! Pure verification summaries and their tests.
 use super::{fmt_time, Group, Item, Outcome, MIN_AGE_HOURS, MIN_SLOW_FILES, RECOVERED_SHARE};
-use crate::common::fmt_count;
+use crate::common::{agree, count_of, fmt_count};
 use crate::text::paragraph as para_string;
 
 fn median(mut v: Vec<f64>) -> Option<f64> {
@@ -170,7 +170,9 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
     let modified = all("MODIFIED");
     let changed_note = if modified > 0 {
         format!(
-            " {modified} files were changed by other programs after the refresh. This is normal."
+            " {} {} changed by other programs after the refresh. This is normal.",
+            count_of(modified as u64, "file"),
+            agree(modified as u64, "was", "were")
         )
     } else {
         String::new()
@@ -185,7 +187,13 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         t += &result_line(
             "Data safe:",
             "NO",
-            &format!("{} files have a different SHA-256, but no program changed them. Keep the logs. Report this problem. The files:", bad.len()),
+            &format!(
+                "{} {} a different SHA-256, but no program changed {}. Keep the logs. Report this problem. {}:",
+                count_of(bad.len() as u64, "file"),
+                agree(bad.len() as u64, "has", "have"),
+                agree(bad.len() as u64, "it", "them"),
+                agree(bad.len() as u64, "The file", "The files")
+            ),
         );
         for p in bad.iter().take(20) {
             t += &format!("{:27}{p}\n", "");
@@ -201,13 +209,23 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         t += &result_line(
             "Data safe:",
             "UNKNOWN",
-            &format!("{matched} files have the same SHA-256 as at refresh. {modified} files have a different SHA-256. This log is from an older version. It does not show if a program changed these files."),
+            &format!(
+                "{} {} the same SHA-256 as at refresh. {} {} a different SHA-256. This log is from an older version. It does not show if a program changed these files.",
+                count_of(matched as u64, "file"),
+                agree(matched as u64, "has", "have"),
+                count_of(modified as u64, "file"),
+                agree(modified as u64, "has", "have")
+            ),
         );
     } else {
         t += &result_line(
             "Data safe:",
             "YES",
-            &format!("{matched} of {} files that no program changed have the same SHA-256 as at refresh.{changed_note}", matched + bad.len()),
+            &format!(
+                "{matched} of {} that no program changed {} the same SHA-256 as at refresh.{changed_note}",
+                count_of((matched + bad.len()) as u64, "file"),
+                agree(matched as u64, "has", "have")
+            ),
         );
     }
 
@@ -241,7 +259,12 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         fmt_time(s.age),
         if is_log { "refresh" } else { "scan" }
     );
-    let few_reason = |n: usize| format!("Only {n} slow files. Need {MIN_SLOW_FILES} or more.");
+    let few_reason = |n: usize| {
+        format!(
+            "Only {}. Need {MIN_SLOW_FILES} or more.",
+            count_of(n as u64, "slow file")
+        )
+    };
     for (g, sp) in &speeds {
         let name = if groups.len() == 1 {
             "Faster:".to_string()
@@ -253,9 +276,11 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
             continue;
         }
         let numbers = format!(
-            "{} files were slow before. {} files are slow now. Read speed: {:.0} MB/s before, {:.0} MB/s now ({}).",
-            fmt_count(sp.n as u64),
-            fmt_count(sp.still as u64),
+            "{} {} slow before. {} {} slow now. Read speed: {:.0} MB/s before, {:.0} MB/s now ({}).",
+            count_of(sp.n as u64, "file"),
+            agree(sp.n as u64, "was", "were"),
+            count_of(sp.still as u64, "file"),
+            agree(sp.still as u64, "is", "are"),
             sp.then_bps / 1e6,
             sp.now_bps / 1e6,
             times(sp.factor())
@@ -282,8 +307,8 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         for (sp, name) in [(rw, "rewritten"), (ro, label(Group::ReadOnly))] {
             if sp.n < MIN_SLOW_FILES {
                 reasons.push(format!(
-                    "Only {} slow files in the {} group. Need {MIN_SLOW_FILES} or more.",
-                    sp.n,
+                    "Only {} in the {} group. Need {MIN_SLOW_FILES} or more.",
+                    count_of(sp.n as u64, "slow file"),
                     name.to_lowercase()
                 ));
             }
@@ -391,7 +416,7 @@ mod tests {
         );
         assert!(
             s.text.contains(
-                "Faster:             YES  10 files were slow before. 1 files are slow now."
+                "Faster:             YES  10 files were slow before. 1 file is slow now."
             ),
             "{}",
             s.text
@@ -449,7 +474,7 @@ mod tests {
         assert!(s.data_not_safe);
         assert!(
             s.text
-                .contains("Data safe:          NO   1 files have a different SHA-256"),
+                .contains("Data safe:          NO   1 file has a different SHA-256"),
             "{}",
             s.text
         );
