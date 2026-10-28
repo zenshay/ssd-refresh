@@ -16,7 +16,7 @@
     "test:e2e": "node tests/e2e.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.15",
+    "@biomejs/biome": "2.6.3",
     "@tauri-apps/cli": "^2.1.0",
     "puppeteer-core": "^25.14.0",
     "typescript": "^5.0.0",
