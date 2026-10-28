@@ -1,5 +1,5 @@
 import type { Progress } from "./api";
-import { fmtBytes, fmtCount, fmtDuration, fmtRate } from "./format";
+import { countOf, fmtBytes, fmtDuration, fmtRate } from "./format";
 import type { Store } from "./store";
 
 export interface LogEntry {
@@ -40,7 +40,7 @@ export function createDiagnostics() {
       } else if (p.stage === "read") {
         logMessage(
           "info",
-          `[Step 2/3] Measuring read speeds on ${currentRoot}... (${fmtCount(p.totalFiles)} files, ${fmtBytes(p.totalBytes)})`,
+          `[Step 2/3] Measuring read speeds on ${currentRoot}... (${countOf(p.totalFiles, "file")}, ${fmtBytes(p.totalBytes)})`,
         );
       } else if (p.stage === "settle") {
         logMessage(
@@ -63,7 +63,7 @@ export function createDiagnostics() {
     // Live stream logs during find (every 25,000 files)
     if (p.stage === "find" && p.filesDone >= lastCatalogedCount + 25000) {
       lastCatalogedCount = Math.floor(p.filesDone / 25000) * 25000;
-      logMessage("cmd", `Cataloged ${fmtCount(p.filesDone)} files so far...`);
+      logMessage("cmd", `Cataloged ${countOf(p.filesDone, "file")} so far...`);
     }
 
     // Live stream logs during read (every 10%)

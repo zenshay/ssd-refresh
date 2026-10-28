@@ -1,6 +1,6 @@
 import type { SlowFile } from "../api";
 import { $, el } from "../dom";
-import { fmtBytes, fmtCount, fmtRate, truncatePath } from "../format";
+import { countOf, fmtBytes, fmtCount, fmtRate, truncatePath } from "../format";
 import { type Store, stillSlow } from "../store";
 
 export function mountSlowFiles(store: Store): void {
@@ -69,7 +69,7 @@ export function mountSlowFiles(store: Store): void {
 
     card.hidden = false;
     countEl.textContent =
-      `${fmtCount(slowCount)} slow files detected` +
+      `${countOf(slowCount, "slow file")} detected` +
       (fastAfterWait > 0
         ? ` · ${fmtCount(fastAfterWait)} fast after the wait`
         : "");

@@ -2,7 +2,7 @@
 
 import type { Api } from "./api";
 import { api, type ScanOutcome } from "./api";
-import { fmtCount } from "./format";
+import { countOf, wasWere } from "./format";
 import type { Confirm } from "./interactions";
 import {
   allSelected,
@@ -28,7 +28,7 @@ function scanNotice(
   );
   const waitNote =
     fastAfterWait > 0
-      ? ` ${fmtCount(fastAfterWait)} other files were slow at first and fast after the wait.`
+      ? ` ${countOf(fastAfterWait, "other file")} ${wasWere(fastAfterWait)} slow at first and fast after the wait.`
       : "";
 
   if (stopped) {
@@ -43,7 +43,7 @@ function scanNotice(
     return {
       kind: "ok",
       title: "No file stays slow",
-      body: `Checked ${fmtCount(totalFiles)} files across ${results.length} drive(s).${waitNote} No file needs a rewrite.`,
+      body: `Checked ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")}.${waitNote} No file needs a rewrite.`,
     };
   }
 
@@ -51,14 +51,14 @@ function scanNotice(
     return {
       kind: "ok",
       title: "No slow files detected",
-      body: `Checked ${fmtCount(totalFiles)} files across ${results.length} drive(s) with normal read speeds.`,
+      body: `Checked ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")} with normal read speeds.`,
     };
   }
 
   return {
     kind: "warn",
-    title: `${fmtCount(totalSlow)} slow files detected`,
-    body: `Scanned ${fmtCount(totalFiles)} files across ${results.length} drive(s).${waitNote} Step 2 can rewrite only the slow files safely.`,
+    title: `${countOf(totalSlow, "slow file")} detected`,
+    body: `Scanned ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")}.${waitNote} Step 2 can rewrite only the slow files safely.`,
   };
 }
 
@@ -215,11 +215,11 @@ export function createActions(
     let confirmed: boolean;
     try {
       confirmed = await confirm({
-        title: `Rewrite ${fmtCount(slowCount)} slow files across ${driveNames}?`,
+        title: `Rewrite ${countOf(slowCount, "slow file")} across ${driveNames}?`,
         body:
           "The file system safely moves each slow file to fresh NAND blocks. Unchanged and fast files are not touched. Programs can continue running." +
           (fastAfterWait > 0
-            ? ` ${fmtCount(fastAfterWait)} files were fast after the wait. The refresh reads them again and skips them if they are fast.`
+            ? ` ${countOf(fastAfterWait, "file")} ${wasWere(fastAfterWait)} fast after the wait. The refresh reads each one again and skips it if it is fast.`
             : ""),
         warning: hasSystem
           ? "Includes your Windows system drive. Close other apps before starting."
@@ -298,11 +298,11 @@ export function createActions(
         ? {
             kind: "info",
             title: "Refresh stopped",
-            body: `${fmtCount(totalMoved)} files were moved before the stop. Scan again to check remaining files.`,
+            body: `${countOf(totalMoved, "file")} ${wasWere(totalMoved)} moved before the stop. Scan again to check remaining files.`,
           }
         : {
             kind: "ok",
-            title: `${fmtCount(totalMoved)} files rewritten successfully`,
+            title: `${countOf(totalMoved, "file")} rewritten successfully`,
             body: "Run Safe Scan to verify new read speeds.",
           },
     });

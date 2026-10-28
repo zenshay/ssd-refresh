@@ -1,6 +1,7 @@
 import { createActions } from "./actions";
 import { api } from "./api";
 import { createDiagnostics } from "./diagnostics";
+import { countOf } from "./format";
 import { createStore, initialState } from "./store";
 import { askConfirm, mountConfirm } from "./views/confirm";
 import { mountConsole } from "./views/console";
@@ -89,6 +90,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   const currentVols = store.get().volumes;
   logMessage(
     "info",
-    `Storage inventory: ${currentVols.length} drives detected (${currentVols.map((v) => v.root.slice(0, 2)).join(", ")})`,
+    `Storage inventory: ${countOf(currentVols.length, "drive")} detected (${currentVols.map((v) => v.root.slice(0, 2)).join(", ")})`,
   );
 });

@@ -2,6 +2,15 @@
 
 export const fmtCount = (n: number): string => n.toLocaleString("en-US");
 
+// "1 file", "2 files". Give the plural only when it is not the singular plus "s".
+export const countOf = (
+  n: number,
+  singular: string,
+  plural = `${singular}s`,
+): string => `${fmtCount(n)} ${n === 1 ? singular : plural}`;
+
+export const wasWere = (n: number): string => (n === 1 ? "was" : "were");
+
 export function fmtBytes(bytes: number): string {
   const gb = bytes / 1e9;
   if (gb >= 100) return `${gb.toFixed(0)} GB`;

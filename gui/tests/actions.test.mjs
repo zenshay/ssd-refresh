@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createActions } from "../src/actions.ts";
 import { createDiagnostics } from "../src/diagnostics.ts";
-import { truncatePath } from "../src/format.ts";
+import { countOf, truncatePath, wasWere } from "../src/format.ts";
 import { createStore, initialState, refreshAction } from "../src/store.ts";
 import { mutationStatus } from "./mutation-status.mjs";
 
@@ -159,6 +159,17 @@ test("stop between scan drives is reported as stopped", async () => {
   ).runScan();
   assert.match(store.get().notice.title, /stopped/);
 });
+test("countOf and wasWere use the singular only for 1", () => {
+  assert.equal(countOf(0, "file"), "0 files");
+  assert.equal(countOf(1, "slow file"), "1 slow file");
+  assert.equal(countOf(2, "drive"), "2 drives");
+  assert.equal(countOf(1234, "file"), "1,234 files");
+  assert.equal(countOf(3, "entry", "entries"), "3 entries");
+  assert.equal(wasWere(1), "was");
+  assert.equal(wasWere(0), "were");
+  assert.equal(wasWere(2), "were");
+});
+
 test("truncatePath keeps short paths and cuts long paths in the middle", () => {
   assert.equal(truncatePath("C:\\a\\b.txt", 50), "C:\\a\\b.txt");
   const long = `C:\\${"d".repeat(80)}\\file-name.bin`;
@@ -200,7 +211,7 @@ test("refresh counts only the files that stay slow after the wait", async () => 
     selectedRoots: ["X:", "Y:"],
     scans: { "X:": waited("X:", 2), "Y:": waited("Y:", 3) },
   });
-  assert.match(refreshAction(store.get()).title, /\(1 files\)/);
+  assert.match(refreshAction(store.get()).title, /\(1 file\)/);
   let asked;
   await createActions(
     store,
@@ -210,7 +221,7 @@ test("refresh counts only the files that stay slow after the wait", async () => 
     },
     backend(),
   ).runRefresh();
-  assert.match(asked.title, /^Rewrite 1 slow files across X:\?$/u);
+  assert.match(asked.title, /^Rewrite 1 slow file across X:\?$/u);
   assert.match(asked.body, /2 files were fast after the wait/);
 
   store.set({ scans: { "X:": waited("X:", 3), "Y:": waited("Y:", 3) } });
