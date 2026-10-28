@@ -91,13 +91,14 @@ ssd-refresh finds only the slow files and tells the operating system to rewrite 
 
 | Feature | ssd-refresh | DiskFresh / Sector Tools | Windows Optimize (TRIM) |
 |---|---|---|---|
-| **Approach** | File-level (only slow files) | Raw disk sectors (entire drive) | Free space TRIM only |
-| **Rewrite empty space?** | **NO** (saves SSD lifespan) | YES (wastes SSD TBW) | NO |
+| **Approach** | File level. Refresh moves only slow files | Disk sectors (the full drive) | TRIM of free space only |
+| **Writes empty space?** | **NO** | YES (refresh mode writes all sectors) | NO |
 | **Concurrent access** | OS coordinates moves; failures remain possible | Depends on tool and mode | Managed by Windows |
-| **Execution speed** | **Fast** (minutes: only slow files) | Slow (hours: reads all sectors) | Seconds |
-| **Read-only wakeup mode?**| **YES** (scan without writes) | Needs manual sector setup | NO |
-| **Target identification** | Shows exact slow file paths | None (sector numbers only) | None |
-| **Open source & modern** | **YES** (Rust, 600 KB binary) | NO (abandoned freeware) | Built-in |
+| **Run time** | Not measured. Scan reads all files. Refresh writes only slow files | Not measured. Reads all sectors | Not measured |
+| **Read-only mode?** | **YES** (`scan` does not write file data) | YES (read-only mode) | NO |
+| **Shows slow files?** | **YES** (file paths) | NO (works on sectors) | NO |
+| **Source code** | Open (MIT OR Apache-2.0) | Closed (freeware) | Part of Windows |
+| **Program size** | CLI 855 KB, GUI 8.4 MB (v1.0.2, Windows x64) | Not measured | Part of Windows |
 
 ---
 
