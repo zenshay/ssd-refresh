@@ -3,17 +3,16 @@
 ## Private reports
 
 Do not publish exploit steps, private paths, or sensitive reports in an issue.
-Use GitHub private vulnerability reporting if this repository offers it:
+Use GitHub private vulnerability reporting:
 
 1. Open the repository [Security page](https://github.com/zenshay/ssd-refresh/security).
-2. Select **Report a vulnerability**, if that button is available.
+2. Select **Report a vulnerability**.
 3. Describe the affected version and a reproduction with synthetic files.
 
-Private reporting is not confirmed as enabled for this repository.
-The current configuration check did not establish that the feature is available.
-If the button is absent, a private reporting channel is not established here.
-Do not post vulnerability details in a public issue as a substitute.
-You may request a private channel without disclosing the vulnerability.
+Private vulnerability reporting is enabled for this repository.
+Only you and the maintainers can see the report.
+If the button is absent, do not post vulnerability details in a public issue.
+Open an issue that asks for a private channel, without vulnerability details.
 This project does not publish a security email address.
 
 Keep original reports on your computer.
