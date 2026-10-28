@@ -19,7 +19,7 @@
     "@biomejs/biome": "2.6.3",
     "@tauri-apps/cli": "^2.12.4",
     "puppeteer-core": "^25.16.0",
-    "typescript": "^5.0.0",
+    "typescript": "^6.0.3",
     "vite": "~8.3.5",
     "yaml": "^2.9.1"
   },
