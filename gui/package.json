@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "@tauri-apps/cli": "^2.1.0",
+    "@tauri-apps/cli": "^2.12.4",
     "puppeteer-core": "^25.14.0",
     "typescript": "^5.0.0",
     "vite": "~6.4.4",
