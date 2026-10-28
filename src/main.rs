@@ -1,4 +1,4 @@
-use ssd_refresh::common::{fmt_bytes, Kind, Priority};
+use ssd_refresh::common::{fmt_bytes, noun, Kind, Priority};
 mod cli;
 use ssd_refresh::control::Control;
 use ssd_refresh::reader::ReadOptions;
@@ -234,11 +234,13 @@ fn run() -> Result<i32, String> {
             let m = sys::meta(&f).map_err(|e| e.to_string())?;
             let l = sys::layout(&f, &m, vol.block).map_err(|e| e.to_string())?;
             println!(
-                "{} bytes, kind {}, {}-byte clusters, {} extents (offsets in bytes):",
+                "{} {}, kind {}, {}-byte clusters, {} {} (offsets in bytes):",
                 m.size,
+                noun(m.size, "byte"),
                 Kind::classify(&m, &l).name(),
                 vol.block,
-                l.extents.len()
+                l.extents.len(),
+                noun(l.extents.len() as u64, "extent")
             );
             for e in &l.extents {
                 let phys = e

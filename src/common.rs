@@ -271,3 +271,44 @@ pub fn fmt_count(n: u64) -> String {
     }
     out
 }
+
+/// The noun for a count: (1, "file") → "file", (2, "file") → "files".
+pub fn noun(n: u64, one: &str) -> String {
+    if n == 1 {
+        one.to_string()
+    } else {
+        format!("{one}s")
+    }
+}
+
+/// (1, "file") → "1 file", (1295988, "file") → "1,295,988 files"
+pub fn count_of(n: u64, one: &str) -> String {
+    format!("{} {}", fmt_count(n), noun(n, one))
+}
+
+/// The verb form for a count: (1, "is", "are") → "is".
+pub fn agree(n: u64, one: &'static str, many: &'static str) -> &'static str {
+    if n == 1 {
+        one
+    } else {
+        many
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_words_use_the_singular_only_for_one() {
+        assert_eq!(noun(0, "file"), "files");
+        assert_eq!(noun(1, "file"), "file");
+        assert_eq!(noun(2, "extent"), "extents");
+        assert_eq!(count_of(1, "slow file"), "1 slow file");
+        assert_eq!(count_of(0, "file"), "0 files");
+        assert_eq!(count_of(1_295_988, "file"), "1,295,988 files");
+        assert_eq!(agree(1, "is", "are"), "is");
+        assert_eq!(agree(0, "is", "are"), "are");
+        assert_eq!(agree(2, "it", "them"), "them");
+    }
+}

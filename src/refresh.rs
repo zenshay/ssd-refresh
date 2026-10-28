@@ -6,7 +6,9 @@
 //! map of the file in one step. During this step, it keeps the reads and writes of other
 //! programs on the same file correct.
 
-use crate::common::{fmt_bytes, fmt_count, hex, path_rank, unix_now, Kind, Priority};
+use crate::common::{
+    agree, count_of, fmt_bytes, fmt_count, hex, path_rank, unix_now, Kind, Priority,
+};
 use crate::control::Control;
 use crate::csv::{self, CsvWriter};
 use crate::outcome::{RefreshOutcome, RunStatus};
@@ -165,8 +167,10 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             }
         }
         ctl.message(&format!(
-            "  Resume: {} files are finished in the log. The tool does not process them again.",
-            fmt_count(done.len() as u64)
+            "  Resume: {} {} finished in the log. The tool does not process {} again.",
+            count_of(done.len() as u64, "file"),
+            agree(done.len() as u64, "is", "are"),
+            agree(done.len() as u64, "it", "them")
         ));
     } else if o.out.exists() {
         ctl.message(&format!("  The log exists already: {}", o.out.display()));
@@ -339,8 +343,8 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
         }
         if o.stop_after > 0 && i + 1 >= o.stop_after {
             prog.log(&format!(
-                "The tool processed {} files (--stop-after). It stops now.",
-                i + 1
+                "The tool processed {} (--stop-after). It stops now.",
+                count_of((i + 1) as u64, "file")
             ));
             outcome.status = RunStatus::Stopped;
             break;
