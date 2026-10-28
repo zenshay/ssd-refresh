@@ -6,6 +6,9 @@
 - The CLI now requires Rust 1.85 or newer. `sha2` 0.11 and its dependencies require Rust 1.85.
 - Rust audit: add a list of accepted advisories. Each entry names one advisory, one package version, the roots, a reason, and a review date. After the review date, the audit fails again.
 - Accept GHSA-qwgh-2vcv-g2f7 for the GUI until 2027-01-31. Only `tauri-codegen` uses `block-buffer` 0.10.4, at build time. It does not catch panics. No `tauri-codegen` release uses `sha2` 0.11.
+- GUI build: update Vite from 6.4 to 8.3. Vite 8 does not include esbuild, so the build uses the default minifier.
+- CI and release workflows: update `actions/checkout` to v7, `actions/setup-node` to v7, `pnpm/action-setup` to v6, and `softprops/action-gh-release` to v3. These actions use the Node 24 runtime.
+- Dependabot: ignore TypeScript 7. TypeScript 7 removes the JavaScript API that the test loader uses.
 
 ## 1.0.3-rc.3
 
