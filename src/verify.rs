@@ -462,6 +462,8 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         },
         processed_files: results.len(),
         summary: text,
+        faster: s.faster,
+        age_secs: age,
     })
 }
 

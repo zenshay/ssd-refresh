@@ -45,8 +45,8 @@ function inspectStage(stage: Stage): StageInfo {
       };
     case "verify":
       return {
-        step: "Step 3/3",
-        title: "Verify read speeds",
+        step: "Step 2/2",
+        title: "Read the refreshed files again",
         indeterminate: false,
       };
     default:
@@ -134,7 +134,9 @@ export function mountProgress(store: Store, actions: Actions): void {
       titleEl.textContent =
         s.mode === "scanning"
           ? "Starting safe scan…"
-          : "Starting selective refresh…";
+          : s.mode === "verifying"
+            ? "Starting verify…"
+            : "Starting selective refresh…";
       subtitleEl.textContent = "Checking disk...";
       track.classList.add("indeterminate");
       bar.style.width = "0%";

@@ -3,7 +3,12 @@ import test from "node:test";
 import { createActions } from "../src/actions.ts";
 import { createDiagnostics } from "../src/diagnostics.ts";
 import { countOf, truncatePath, wasWere } from "../src/format.ts";
-import { createStore, initialState, refreshAction } from "../src/store.ts";
+import {
+  createStore,
+  initialState,
+  refreshAction,
+  verifyAction,
+} from "../src/store.ts";
 import { mutationStatus } from "./mutation-status.mjs";
 
 const scan = (root) => ({
@@ -71,6 +76,7 @@ const backend = (overrides = {}) => ({
   listVolumes: async () => [],
   startScan: async (root) => scan(root),
   startRefresh: async () => ({ movedFiles: 2, stopped: false }),
+  startVerify: async () => ({}),
   togglePause: async () => true,
   stop: async () => {},
   ...overrides,
@@ -228,4 +234,123 @@ test("refresh counts only the files that stay slow after the wait", async () => 
   const locked = refreshAction(store.get());
   assert.equal(locked.disabled, true);
   assert.match(locked.hint, /All 6 slow files were fast after the wait/);
+});
+
+const volume = (root, lastRefresh = null) => ({
+  root,
+  fs: "NTFS",
+  totalBytes: 1,
+  freeBytes: 1,
+  isSystem: false,
+  model: null,
+  smart: { level: "healthy", detail: null },
+  lastRefresh,
+});
+const verified = (overrides = {}) => ({
+  logPath: "synthetic.verify.log",
+  processedFiles: 3,
+  dataSafe: true,
+  faster: "YES",
+  ageSecs: 2 * 86400,
+  stopped: false,
+  ...overrides,
+});
+
+test("verify is locked until a selected drive has a refresh log", () => {
+  const store = createStore({
+    ...initialState,
+    volumes: [
+      volume("X:"),
+      volume("Y:", { logPath: "y.refresh.csv", unixSecs: 1000 }),
+    ],
+    selectedRoots: ["X:"],
+  });
+  assert.equal(verifyAction(store.get()).disabled, true);
+  store.set({ selectedRoots: ["X:", "Y:"] });
+  const ready = verifyAction(store.get(), 1000 + 3600);
+  assert.equal(ready.disabled, false);
+  assert.match(
+    ready.hint,
+    /Refreshed 1 hour ago\. Speed result after 12 hours/,
+  );
+  assert.match(verifyAction(store.get(), 1000 + 3 * 86400).hint, /3 days ago/);
+  store.set({ mode: "refreshing" });
+  assert.equal(verifyAction(store.get()).disabled, true);
+});
+
+test("verify reads only the drives with a refresh log", async () => {
+  const store = createStore({
+    ...initialState,
+    volumes: [
+      volume("X:"),
+      volume("Y:", { logPath: "y.refresh.csv", unixSecs: 1 }),
+    ],
+    selectedRoots: ["X:", "Y:"],
+  });
+  const calls = [];
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startVerify: async (logPath) => {
+        calls.push(logPath);
+        return verified({ faster: "NOT DECIDED", ageSecs: 3600 });
+      },
+    }),
+  ).runVerify();
+  assert.deepEqual(calls, ["y.refresh.csv"]);
+  assert.equal(store.get().mode, "idle");
+  assert.equal(store.get().notice.kind, "info");
+  assert.equal(store.get().notice.title, "Data safe: YES. Faster: NOT DECIDED");
+  assert.match(store.get().notice.body, /1 hour after the refresh/);
+  assert.match(store.get().notice.body, /Verify again after 1 day/);
+});
+
+test("verify reports changed data as an error and stops", async () => {
+  const store = createStore({
+    ...initialState,
+    volumes: [
+      volume("X:", { logPath: "x.refresh.csv", unixSecs: 1 }),
+      volume("Y:", { logPath: "y.refresh.csv", unixSecs: 1 }),
+    ],
+    selectedRoots: ["X:", "Y:"],
+  });
+  const calls = [];
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startVerify: async (logPath) => {
+        calls.push(logPath);
+        return verified({ dataSafe: false });
+      },
+    }),
+  ).runVerify();
+  assert.deepEqual(calls, ["x.refresh.csv"]);
+  assert.equal(store.get().notice.kind, "error");
+  assert.match(store.get().notice.body, /Data safe: NO on X:/);
+});
+
+test("refresh makes its log the newest refresh of the drive", async () => {
+  const store = createStore({
+    ...initialState,
+    volumes: [volume("X:"), volume("Y:")],
+    selectedRoots: ["X:"],
+    scans: { "X:": scan("X:") },
+  });
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startRefresh: async () => ({
+        logPath: "x.refresh.csv",
+        movedFiles: 2,
+        stopped: false,
+      }),
+    }),
+  ).runRefresh();
+  assert.equal(store.get().volumes[0].lastRefresh.logPath, "x.refresh.csv");
+  assert.equal(store.get().volumes[1].lastRefresh, null);
+  assert.equal(verifyAction(store.get()).disabled, false);
+  assert.match(store.get().notice.body, /Run Verify after 1, 7 and 30 days/);
 });

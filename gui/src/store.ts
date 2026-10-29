@@ -1,8 +1,8 @@
 // One source of truth. Views read this state and never keep a second copy.
 import type { Progress, ScanOutcome, Volume } from "./api";
-import { countOf, fmtCount } from "./format";
+import { countOf, fmtAge, fmtCount } from "./format";
 
-export type Mode = "idle" | "scanning" | "refreshing";
+export type Mode = "idle" | "scanning" | "refreshing" | "verifying";
 export type NoticeKind = "ok" | "info" | "warn" | "error";
 
 export interface Notice {
@@ -108,6 +108,13 @@ export function totalFastAfterWait(s: State): number {
   return total;
 }
 
+/** Before this age, verify shows the speed result as NOT DECIDED. The core uses the same limit. */
+export const MIN_VERIFY_AGE_SECS = 12 * 3600;
+
+/** The selected drives that have a refresh log. */
+export const verifyTargets = (s: State): Volume[] =>
+  selectedVolumes(s).filter((v) => v.lastRefresh !== null);
+
 export type ActionState = "ready" | "running" | "done" | "waiting" | "locked";
 
 export interface ActionView {
@@ -132,7 +139,7 @@ export function scanAction(s: State): ActionView {
       disabled: true,
     };
   }
-  if (s.mode === "refreshing") {
+  if (s.mode === "refreshing" || s.mode === "verifying") {
     return {
       state: "waiting",
       title: "Safe Scan",
@@ -167,6 +174,15 @@ export function scanAction(s: State): ActionView {
 
 export function refreshAction(s: State): ActionView {
   const title = "Selective Refresh";
+  if (s.mode === "verifying") {
+    return {
+      state: "waiting",
+      title,
+      hint: "Wait for the verify to end.",
+      label: "Waiting",
+      disabled: true,
+    };
+  }
   if (s.mode === "refreshing") {
     return {
       state: "running",
@@ -222,6 +238,56 @@ export function refreshAction(s: State): ActionView {
     state: "ready",
     title: `Selective Refresh (${countOf(slowTotal, "file")})`,
     hint: `Rewrites ${countOf(slowTotal, "slow file")} safely. You confirm first.`,
+    label: "Ready",
+    disabled: false,
+  };
+}
+
+export function verifyAction(
+  s: State,
+  nowSecs: number = Date.now() / 1000,
+): ActionView {
+  const title = "Verify";
+  if (s.mode === "verifying") {
+    return {
+      state: "running",
+      title: "Verifying…",
+      hint: "Reads the refreshed files again. Changes nothing.",
+      label: "Running",
+      disabled: true,
+    };
+  }
+  if (s.mode !== "idle") {
+    return {
+      state: "waiting",
+      title,
+      hint: "Wait for the current operation to end.",
+      label: "Waiting",
+      disabled: true,
+    };
+  }
+  const targets = verifyTargets(s);
+  if (targets.length === 0) {
+    return {
+      state: "locked",
+      title,
+      hint: "Run Selective Refresh first.",
+      label: "Locked",
+      disabled: true,
+    };
+  }
+  const newest = Math.max(...targets.map((v) => v.lastRefresh?.unixSecs ?? 0));
+  const age = Math.max(0, nowSecs - newest);
+  return {
+    state: "ready",
+    title:
+      targets.length > 1
+        ? `Verify (${countOf(targets.length, "drive")})`
+        : title,
+    hint:
+      age < MIN_VERIFY_AGE_SECS
+        ? `Refreshed ${fmtAge(age)} ago. Speed result after 12 hours.`
+        : `Refreshed ${fmtAge(age)} ago. Read-only. Changes nothing.`,
     label: "Ready",
     disabled: false,
   };

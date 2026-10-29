@@ -50,6 +50,16 @@ pub struct VolumeDto {
     pub is_system: bool,
     pub model: Option<String>,
     pub smart: SmartDto,
+    /// The newest refresh log of this drive in the report folder. None = no refresh yet.
+    pub last_refresh: Option<LastRefreshDto>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastRefreshDto {
+    pub log_path: String,
+    /// The time of the last change to the log, in Unix seconds.
+    pub unix_secs: u64,
 }
 
 impl From<VolumeInfo> for VolumeDto {
@@ -62,6 +72,7 @@ impl From<VolumeInfo> for VolumeDto {
             is_system: v.is_system,
             smart: SmartDto::from(&v.health.status),
             model: v.health.model,
+            last_refresh: None,
         }
     }
 }
@@ -128,6 +139,35 @@ pub struct RefreshOutcome {
     pub stopped: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyOutcome {
+    /// The text log. Each verify run adds its summary to the end.
+    pub log_path: String,
+    pub processed_files: usize,
+    /// false = the data of a file changed, but no program changed the file.
+    pub data_safe: bool,
+    /// `YES`, `NO`, `NOT DECIDED`, `n/a`, or empty when no file was measured.
+    pub faster: &'static str,
+    /// The time since the refresh, in seconds.
+    pub age_secs: u64,
+    pub stopped: bool,
+}
+
+impl VerifyOutcome {
+    pub fn from_core(path: &std::path::Path, result: ssd_refresh::outcome::VerifyOutcome) -> Self {
+        use ssd_refresh::outcome::RunStatus;
+        Self {
+            log_path: path.to_string_lossy().into_owned(),
+            processed_files: result.processed_files,
+            data_safe: result.status != RunStatus::DataMismatch,
+            faster: result.faster,
+            age_secs: result.age_secs,
+            stopped: result.status == RunStatus::Stopped,
+        }
+    }
+}
+
 impl ScanOutcome {
     pub fn from_core(path: &std::path::Path, result: ssd_refresh::outcome::ScanOutcome) -> Self {
         Self {
@@ -182,5 +222,17 @@ mod tests {
         refresh.record("OK", 10);
         refresh.record("CHANGED", 20);
         assert_eq!(RefreshOutcome::from_core(missing, refresh).moved_files, 2);
+        let verify = VerifyOutcome::from_core(
+            missing,
+            ssd_refresh::outcome::VerifyOutcome {
+                status: ssd_refresh::outcome::RunStatus::DataMismatch,
+                faster: "NOT DECIDED",
+                age_secs: 60,
+                ..Default::default()
+            },
+        );
+        assert!(!verify.data_safe);
+        assert!(!verify.stopped);
+        assert_eq!(verify.faster, "NOT DECIDED");
     }
 }

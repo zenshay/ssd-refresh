@@ -44,3 +44,11 @@ export function truncatePath(path: string, maxLen = 60): string {
   const tail = keep - head;
   return `${chars.slice(0, head).join("")}…${chars.slice(-tail).join("")}`;
 }
+
+// "5 minutes", "3 hours", "2 days": the largest whole unit, like the verify summary.
+export function fmtAge(secs: number): string {
+  const s = Math.max(0, Math.floor(secs));
+  if (s >= 86400) return countOf(Math.floor(s / 86400), "day");
+  if (s >= 3600) return countOf(Math.floor(s / 3600), "hour");
+  return countOf(Math.floor(s / 60), "minute");
+}

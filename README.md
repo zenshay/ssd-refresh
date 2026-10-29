@@ -109,6 +109,7 @@ ssd-refresh finds only the slow files and tells the operating system to rewrite 
 1. **Step 1: Scan (Read-only)**. Run `scan` on the drive. The scan measures file reads. Some drives may restore speed after reads. Measure your own drive.
 2. **Step 2: Check after 1 day**. Run `scan` again (or `verify --from`). If the slow files are fast now, you are done! The tool did not rewrite file data. The SSD may have written internally.
 3. **Step 3: Refresh (Only if still slow)**. Read the risks before you use `refresh`. It asks the file system to move slow files.
+4. **Step 4: Verify after 1, 7 and 30 days**. Run `verify` with the refresh log. In the desktop app, click **Verify**. It reads the refreshed files again and changes nothing.
 
 ---
 

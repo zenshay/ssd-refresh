@@ -12,6 +12,7 @@ pub fn run() {
             commands::list_volumes,
             commands::start_scan,
             commands::start_refresh,
+            commands::start_verify,
             commands::toggle_pause,
             commands::stop_operation,
             commands::window_minimize,

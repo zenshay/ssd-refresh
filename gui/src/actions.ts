@@ -1,8 +1,8 @@
 // What happens when the user interacts. Views only call these actions.
 
 import type { Api } from "./api";
-import { api, type ScanOutcome } from "./api";
-import { countOf, wasWere } from "./format";
+import { api, type ScanOutcome, type Verdict, type VerifyOutcome } from "./api";
+import { countOf, fmtAge, wasWere } from "./format";
 import type { Confirm } from "./interactions";
 import {
   allSelected,
@@ -10,6 +10,7 @@ import {
   type Store,
   stillSlow,
   totalSlowAcrossSelected,
+  verifyTargets,
 } from "./store";
 
 const errorText = (e: unknown): string =>
@@ -62,9 +63,57 @@ function scanNotice(
   };
 }
 
+function verifyNotice(
+  results: { root: string; outcome: VerifyOutcome }[],
+  cancelled: boolean,
+): Notice {
+  const drive = (root: string) => root.slice(0, 2);
+  const unsafe = results.filter((r) => !r.outcome.dataSafe);
+  if (unsafe.length > 0) {
+    return {
+      kind: "error",
+      title: "Data changed without a program",
+      body: `Data safe: NO on ${unsafe.map((r) => drive(r.root)).join(", ")}. Keep the logs and report this error.`,
+    };
+  }
+  if (cancelled || results.some((r) => r.outcome.stopped)) {
+    return {
+      kind: "info",
+      title: "Verify stopped",
+      body: "The log has the summary of the files read until the stop. Nothing changed on the drive(s).",
+    };
+  }
+  const line = ({ root, outcome }: { root: string; outcome: VerifyOutcome }) =>
+    `${drive(root)} faster: ${outcome.faster || "n/a"} (${countOf(outcome.processedFiles, "file")}, ${fmtAge(outcome.ageSecs)} after the refresh).`;
+  const verdicts = results.map((r) => r.outcome.faster);
+  const all = (v: Verdict) =>
+    verdicts.length > 0 && verdicts.every((x) => x === v);
+  const kind = verdicts.includes("NO") ? "warn" : all("YES") ? "ok" : "info";
+  const title =
+    results.length === 1
+      ? `Data safe: YES. Faster: ${results[0].outcome.faster || "n/a"}`
+      : "Data safe: YES on all drives";
+  const soon = results.some(
+    (r) => r.outcome.faster === "NOT DECIDED" && r.outcome.ageSecs < 12 * 3600,
+  );
+  return {
+    kind,
+    title,
+    body:
+      results.map(line).join(" ") +
+      (soon ? " Verify again after 1 day or more." : "") +
+      " The log has the full summary.",
+  };
+}
+
 type Operations = Pick<
   Api,
-  "listVolumes" | "startScan" | "startRefresh" | "togglePause" | "stop"
+  | "listVolumes"
+  | "startScan"
+  | "startRefresh"
+  | "startVerify"
+  | "togglePause"
+  | "stop"
 >;
 
 export function createActions(
@@ -261,6 +310,16 @@ export function createActions(
         store.set({ scans: nextScans });
         const outcome = await backend.startRefresh(scanResult.reportPath, root);
         totalMoved += outcome.movedFiles;
+        // The new log is now the newest refresh of this drive. Verify reads it.
+        const lastRefresh = {
+          logPath: outcome.logPath,
+          unixSecs: Math.floor(Date.now() / 1000),
+        };
+        store.set({
+          volumes: store
+            .get()
+            .volumes.map((v) => (v.root === root ? { ...v, lastRefresh } : v)),
+        });
         if (outcome.stopped) {
           wasStopped = true;
           break;
@@ -303,8 +362,57 @@ export function createActions(
         : {
             kind: "ok",
             title: `${countOf(totalMoved, "file")} rewritten successfully`,
-            body: "Run Safe Scan to verify new read speeds.",
+            body: "New data always reads fast at first. Run Verify after 1, 7 and 30 days.",
           },
+    });
+  }
+
+  async function runVerify(): Promise<void> {
+    const s = store.get();
+    const targets = verifyTargets(s);
+    if (s.mode !== "idle" || targets.length === 0) return;
+
+    store.set({
+      mode: "verifying",
+      paused: false,
+      stopping: false,
+      progress: null,
+      notice: null,
+    });
+
+    const finished: { root: string; outcome: VerifyOutcome }[] = [];
+    for (const volume of targets) {
+      if (store.get().stopping) break;
+      const logPath = volume.lastRefresh?.logPath;
+      if (!logPath) continue;
+      store.set({ activeRoot: volume.root, progress: null });
+      try {
+        const outcome = await backend.startVerify(logPath);
+        finished.push({ root: volume.root, outcome });
+        if (outcome.stopped || !outcome.dataSafe) break;
+      } catch (e) {
+        store.set({
+          paused: false,
+          stopping: false,
+          mode: "idle",
+          activeRoot: null,
+          progress: null,
+          notice: {
+            kind: "error",
+            title: `Verify failed on ${volume.root.slice(0, 2)}`,
+            body: errorText(e),
+          },
+        });
+        return;
+      }
+    }
+
+    store.set({
+      mode: "idle",
+      activeRoot: null,
+      progress: null,
+      stopping: false,
+      notice: verifyNotice(finished, store.get().stopping),
     });
   }
 
@@ -338,6 +446,7 @@ export function createActions(
     toggleSelectAll,
     runScan,
     runRefresh,
+    runVerify,
     togglePause,
     stop,
   };

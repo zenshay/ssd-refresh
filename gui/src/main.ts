@@ -56,7 +56,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (s.mode !== "idle" && s.mode !== prev?.mode) {
       resetProgressLogState();
       const roots = s.selectedRoots.map((r) => r.slice(0, 2)).join(", ");
-      const opName = s.mode === "scanning" ? "Safe Scan" : "Selective Refresh";
+      const opName = {
+        scanning: "Safe Scan",
+        refreshing: "Selective Refresh",
+        verifying: "Verify",
+      }[s.mode];
       logMessage("info", `Starting ${opName} on target storage [${roots}]...`);
     }
 
