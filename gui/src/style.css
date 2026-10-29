@@ -258,7 +258,8 @@ body {
 }
 
 .chip[data-tone="scanning"],
-.chip[data-tone="refreshing"] {
+.chip[data-tone="refreshing"],
+.chip[data-tone="verifying"] {
   background: rgba(127, 134, 234, 0.15);
   border-color: rgba(127, 134, 234, 0.4);
   color: #a5b4fc;
@@ -535,7 +536,7 @@ body {
 /* Workflow Actions Grid */
 .workflow-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 

@@ -60,7 +60,7 @@ export function createDiagnostics() {
       } else if (p.stage === "verify") {
         logMessage(
           "info",
-          `[Verify] Reading the files of the refresh log again on ${currentRoot}.`,
+          `[Step 2/2] Reading the files of the refresh log again on ${currentRoot}.`,
         );
       }
     }

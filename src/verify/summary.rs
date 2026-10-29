@@ -46,6 +46,8 @@ pub(super) struct Summary {
     pub(super) text: String,
     /// The data of some file changed, but no program changed the file
     pub(super) data_not_safe: bool,
+    /// The result of the first Faster line: the rewritten group, or the only group.
+    pub(super) faster: &'static str,
 }
 
 /// "  Label:            YES  text": a label, a result (YES, NO, n/a, UNKNOWN, NOT DECIDED) or
@@ -265,14 +267,22 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
             count_of(n as u64, "slow file")
         )
     };
+    let mut faster = "";
     for (g, sp) in &speeds {
+        let first = faster.is_empty();
+        let mut verdict = |v: &'static str| {
+            if first {
+                faster = v;
+            }
+            v
+        };
         let name = if groups.len() == 1 {
             "Faster:".to_string()
         } else {
             format!("Faster ({}):", label(*g).to_lowercase())
         };
         if sp.n == 0 {
-            t += &result_line(&name, "n/a", "No measured file was slow before.");
+            t += &result_line(&name, verdict("n/a"), "No measured file was slow before.");
             continue;
         }
         let numbers = format!(
@@ -293,11 +303,12 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
             reasons.push(soon_reason.clone());
         }
         if reasons.is_empty() {
-            t += &result_line(&name, if sp.recovered() { "YES" } else { "NO" }, &numbers);
+            let v = verdict(if sp.recovered() { "YES" } else { "NO" });
+            t += &result_line(&name, v, &numbers);
         } else {
             t += &result_line(
                 &name,
-                "NOT DECIDED",
+                verdict("NOT DECIDED"),
                 &format!("{} {numbers}", reasons.join(" ")),
             );
         }
@@ -347,6 +358,7 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
     Summary {
         text: t,
         data_not_safe: !bad.is_empty() && is_log,
+        faster,
     }
 }
 
@@ -449,9 +461,9 @@ mod tests {
         let results: Vec<(usize, Outcome)> = (0..10)
             .map(|i| (i, measured(i < 3, if i < 3 { 10.0 } else { 500.0 })))
             .collect();
-        assert!(summary(&items, &results)
-            .text
-            .contains("Faster:             NO   10 files"));
+        let s = summary(&items, &results);
+        assert!(s.text.contains("Faster:             NO   10 files"));
+        assert_eq!(s.faster, "NO");
     }
 
     #[test]
@@ -515,6 +527,8 @@ mod tests {
             s.text
         );
         assert!(!s.text.contains("NOT DECIDED"), "{}", s.text);
+        // The read-only group is NO. The result field keeps the rewritten group.
+        assert_eq!(s.faster, "YES");
     }
 
     #[test]
@@ -531,6 +545,7 @@ mod tests {
         );
         assert!(!s.text.contains("Rewriting made"), "{}", s.text);
         assert!(!s.data_not_safe);
+        assert_eq!(s.faster, "NOT DECIDED");
     }
 
     #[test]

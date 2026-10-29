@@ -65,6 +65,11 @@ pub struct VerifyOutcome {
     pub status: RunStatus,
     pub processed_files: usize,
     pub summary: String,
+    /// The result of the Faster line of the rewritten group (or of the only group):
+    /// `YES`, `NO`, `NOT DECIDED` or `n/a`. Empty when no group has a Faster line.
+    pub faster: &'static str,
+    /// The time since the refresh (or the scan), in seconds.
+    pub age_secs: u64,
 }
 
 #[cfg(test)]

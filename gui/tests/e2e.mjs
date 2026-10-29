@@ -99,6 +99,7 @@ try {
               isSystem: false,
               model: "Synthetic",
               smart: { level: "healthy", detail: null },
+              lastRefresh: null,
             },
           ];
         if (command === "start_scan") {
@@ -139,6 +140,25 @@ try {
             movedFiles: 1,
             stopped: false,
           };
+        if (command === "start_verify") {
+          emit("progress", {
+            stage: "verify",
+            filesDone: 1,
+            totalFiles: 1,
+            bytesDone: 1024,
+            totalBytes: 1024,
+            mbps: 400,
+            etaSecs: 0,
+          });
+          return {
+            logPath: "synthetic-refresh.verify.log",
+            processedFiles: 1,
+            dataSafe: true,
+            faster: "NOT DECIDED",
+            ageSecs: 60,
+            stopped: false,
+          };
+        }
         if (command === "toggle_pause") return true;
         if (command === "open_url" && window.__mockRejectOpen) {
           throw new Error("Synthetic browser failure.");
@@ -158,6 +178,8 @@ try {
   await page.waitForFunction(
     () => !document.querySelector("#btn-scan").disabled,
   );
+  // Before a refresh, the drive has no refresh log. Verify is locked.
+  assert.equal(await page.$eval("#btn-verify", (node) => node.disabled), true);
   await page.click("#btn-scan");
   await page.waitForFunction(
     () => !document.querySelector("#btn-refresh").disabled,
@@ -267,6 +289,37 @@ try {
     await page.$eval("#console-log-view", (node) => node.textContent),
     /synthetic-secret/,
   );
+
+  // Verify reads the log of the refresh that just ran.
+  await page.waitForFunction(
+    () => !document.querySelector("#btn-verify").disabled,
+  );
+  assert.match(
+    await page.$eval("#btn-verify .action-hint", (node) => node.textContent),
+    /Speed result after 12 hours/,
+  );
+  await page.click("#btn-verify");
+  await page.waitForFunction(() =>
+    document
+      .querySelector("#notice-title")
+      .textContent.includes("Data safe: YES. Faster: NOT DECIDED"),
+  );
+  assert.deepEqual(
+    await page.evaluate(() =>
+      window.__mockRequests
+        .filter((request) => request.command === "start_verify")
+        .map((request) => request.args),
+    ),
+    [{ logPath: "synthetic-refresh.csv" }],
+  );
+  assert.match(
+    await page.$eval("#notice-body", (node) => node.textContent),
+    /X: faster: NOT DECIDED \(1 file, 1 minute after the refresh\)/,
+  );
+  assert.equal(
+    await page.$eval("#mode-chip", (node) => node.textContent),
+    "Ready",
+  );
   await page.click("#btn-report-issue");
   await page.waitForFunction(() =>
     document
@@ -309,7 +362,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "RESULT: YES (scan, messages, slow path, copy, copy failure, cancel, confirm, refresh, report privacy, report failure)",
+    "RESULT: YES (scan, messages, slow path, copy, copy failure, cancel, confirm, refresh, verify, report privacy, report failure)",
   );
 } finally {
   await browser?.close();

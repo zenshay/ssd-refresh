@@ -12,6 +12,14 @@ export interface Volume {
   isSystem: boolean;
   model: string | null;
   smart: { level: SmartLevel; detail: string | null };
+  /** The newest refresh log of this drive. null = no refresh yet. */
+  lastRefresh: LastRefresh | null;
+}
+
+export interface LastRefresh {
+  logPath: string;
+  /** The time of the last change to the log, in Unix seconds. */
+  unixSecs: number;
 }
 
 export type Stage =
@@ -60,12 +68,28 @@ export interface RefreshOutcome {
   stopped: boolean;
 }
 
+export type Verdict = "YES" | "NO" | "NOT DECIDED" | "n/a" | "";
+
+export interface VerifyOutcome {
+  logPath: string;
+  processedFiles: number;
+  /** false = the data of a file changed, but no program changed the file. */
+  dataSafe: boolean;
+  /** The Faster result of the rewritten files. Empty when no file was measured. */
+  faster: Verdict;
+  /** The time since the refresh, in seconds. */
+  ageSecs: number;
+  stopped: boolean;
+}
+
 export const api = {
   environment: () => invoke<{ elevated: boolean }>("environment"),
   listVolumes: () => invoke<Volume[]>("list_volumes"),
   startScan: (root: string) => invoke<ScanOutcome>("start_scan", { root }),
   startRefresh: (reportPath: string, root: string) =>
     invoke<RefreshOutcome>("start_refresh", { reportPath, root }),
+  startVerify: (logPath: string) =>
+    invoke<VerifyOutcome>("start_verify", { logPath }),
   /** Returns the new state: true means paused. */
   togglePause: () => invoke<boolean>("toggle_pause"),
   stop: () => invoke<void>("stop_operation"),
