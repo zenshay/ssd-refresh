@@ -115,10 +115,9 @@ fn run_all(cli: bool) -> Runs {
         eprintln!(
             "Refresh and verify do not run: the scan found {movable} movable files: {kinds:?}"
         );
-        assert!(
-            !cfg!(windows),
-            "On Windows, the temporary files must be movable"
-        );
+        if cfg!(windows) {
+            panic!("On Windows, the temporary files must be movable");
+        }
         return Runs {
             lines: collected(&lines),
             refreshed: false,
