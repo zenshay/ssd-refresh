@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 1.0.3
 
 - Update `sha2` to 0.11. The CLI no longer uses `block-buffer` 0.10.4 (GHSA-qwgh-2vcv-g2f7).
 - The CLI now requires Rust 1.85 or newer. `sha2` 0.11 and its dependencies require Rust 1.85.
