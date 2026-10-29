@@ -24,4 +24,6 @@ pub mod report;
 pub mod text;
 
 #[cfg(test)]
+mod gui_messages_tests;
+#[cfg(test)]
 mod lifecycle_tests;
