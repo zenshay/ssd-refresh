@@ -1,5 +1,9 @@
 # Changes
 
+## Unreleased
+
+- Checks: a new push to a pull request stops the older check run of that pull request. Pushes to `main` and release calls do not change.
+
 ## 1.0.4
 
 - GUI: add step 3, Verify. It reads the files of the newest refresh log of each selected drive again. It does not write to the drive. The notice shows "Data safe" and "Faster" (YES, NO, NOT DECIDED or n/a). The full summary is in the window log and in a `.verify.log` file next to the refresh log.

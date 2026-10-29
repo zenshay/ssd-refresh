@@ -6,6 +6,11 @@ on:
   pull_request:
 permissions:
   contents: read
+# A new push to a pull request stops the older run of that pull request.
+# Other events use the run ID. Thus pushes to main and release calls run as before.
+concurrency:
+  group: check-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
     strategy:
