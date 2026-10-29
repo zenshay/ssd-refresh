@@ -1,13 +1,13 @@
 # Changes
 
-## Unreleased
+## 1.0.4
 
 - GUI: add step 3, Verify. It reads the files of the newest refresh log of each selected drive again. It does not write to the drive. The notice shows "Data safe" and "Faster" (YES, NO, NOT DECIDED or n/a). The full summary is in the window log and in a `.verify.log` file next to the refresh log.
 - GUI: after a refresh, the notice tells you to run Verify after 1, 7 and 30 days. Before, it told you to scan again.
-
 - GUI log: do not show command line notes. The GUI does not show keys (`p + Enter`, `q + Enter`), `--resume`, `--threshold`, or "run the same command". The command line shows them as before.
 - GUI log: step 3 of a scan shows "Checking the files on the check list again". Verify shows its own line.
 - Checks: run the macOS checks on ARM64 (`macos-15`) and on Intel (`macos-15-intel`). Before, only Intel ran them.
+- README: the badges show the latest release, the check status on `main` and the star count. Before, the release badge showed a fixed v1.0.2. The package names in the README now use v1.0.4.
 
 ## 1.0.3
 
