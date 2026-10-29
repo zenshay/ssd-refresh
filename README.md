@@ -41,8 +41,8 @@ Results depend on the drive. The diagram shows a possible result.
 ## Download and start
 
 Get the Windows desktop app from [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases).
-Choose `ssd-refresh-gui-v1.0.2-windows-x64.zip` for Windows 10/11.
-The ARM64 package is `ssd-refresh-gui-v1.0.2-windows-arm64.zip`.
+Choose `ssd-refresh-gui-v1.0.4-windows-x64.zip` for Windows 10/11.
+The ARM64 package is `ssd-refresh-gui-v1.0.4-windows-arm64.zip`.
 Extract the ZIP file and run the app. The app uses English.
 The desktop app needs Microsoft Edge WebView2 Runtime.
 The Windows app is not signed. Windows or your security software may show a warning.
@@ -184,14 +184,14 @@ Get pre-compiled binaries from [GitHub Releases](https://github.com/zenshay/ssd-
 
 | Package | Platform & Architecture | Description |
 |---|---|---|
-| **`ssd-refresh-gui-v1.0.2-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Desktop GUI; needs WebView2. |
-| **`ssd-refresh-gui-v1.0.2-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled GUI; ARM hardware operation is not confirmed here. |
-| **`ssd-refresh-cli-v1.0.2-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Command-line tool. |
-| **`ssd-refresh-cli-v1.0.2-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled CLI; ARM hardware operation is not confirmed here. |
-| **`ssd-refresh-cli-v1.0.2-linux-x64.tar.gz`** | Linux (`x86_64`) | Command-line tool. |
-| **`ssd-refresh-cli-v1.0.2-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | CLI; scan and verify only. |
+| **`ssd-refresh-gui-v1.0.4-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Desktop GUI; needs WebView2. |
+| **`ssd-refresh-gui-v1.0.4-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled GUI; ARM hardware operation is not confirmed here. |
+| **`ssd-refresh-cli-v1.0.4-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Command-line tool. |
+| **`ssd-refresh-cli-v1.0.4-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled CLI; ARM hardware operation is not confirmed here. |
+| **`ssd-refresh-cli-v1.0.4-linux-x64.tar.gz`** | Linux (`x86_64`) | Command-line tool. |
+| **`ssd-refresh-cli-v1.0.4-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | CLI; scan and verify only. |
 
-These names apply to v1.0.2. Check the asset list for another version.
+These names apply to v1.0.4. Check the asset list for another version.
 
 <a id="platforms"></a>
 

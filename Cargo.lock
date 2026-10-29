@@ -2963,7 +2963,7 @@ dependencies = [
 
 [[package]]
 name = "ssd-refresh"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "ctrlc",
  "libc",
@@ -2972,7 +2972,7 @@ dependencies = [
 
 [[package]]
 name = "ssd-refresh-gui"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "rfd",
  "serde",
