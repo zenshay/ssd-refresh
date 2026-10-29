@@ -70,7 +70,8 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     ctl.message(&format!("ssd-refresh refresh ({title})"));
     ctl.message(&format!("  Report:  {}", o.from.display()));
     ctl.message(&format!("  Log:     {}", o.out.display()));
-    ctl.message("           The tool saves each row immediately. If the run stops, --resume can continue it.");
+    ctl.paragraph(11, "The tool saves each row immediately.");
+    ctl.cli_note(11, "If the run stops, --resume can continue it.");
 
     // ---------- Step 1: choose files ----------
     ctl.message("");
@@ -257,7 +258,8 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             ctl.paragraph(2, &format!("Warning: {w}"));
         }
     }
-    ctl.paragraph(2, "Keys: p + Enter = pause or continue. q + Enter = stop after this file (use --resume later). You can stop at any time. This does not damage files.");
+    ctl.cli_note(2, "Keys: p + Enter = pause or continue. q + Enter = stop after this file (use --resume later).");
+    ctl.paragraph(2, "You can stop at any time. This does not damage files.");
 
     if !o.dry_run {
         let typed = match &o.confirm {
@@ -366,9 +368,11 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     if !o.dry_run {
         ctl.message(&format!("  Data moved: {}", fmt_bytes(outcome.moved_bytes)));
     }
-    ctl.message("  The statuses: see the README or `ssd-refresh help refresh`.");
+    ctl.message("  The statuses: see the README.");
+    ctl.cli_note(2, "Or run `ssd-refresh help refresh`.");
     if outcome.status == RunStatus::Stopped {
-        ctl.message("  The run stopped early. To continue, run the same command with --resume.");
+        ctl.message("  The run stopped early.");
+        ctl.cli_note(2, "To continue, run the same command with --resume.");
     }
     if !o.dry_run && outcome.moved_bytes > 0 {
         let hint = sys::retrim_hint(&vol);

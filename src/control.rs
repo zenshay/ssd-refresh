@@ -84,6 +84,7 @@ pub struct Control {
     log: Mutex<Option<Logger>>,
     reporter: Mutex<Option<ProgressReporter>>,
     confirmer: Mutex<Option<Confirmer>>,
+    cli: AtomicBool,
 }
 
 impl Control {
@@ -98,7 +99,20 @@ impl Control {
             log: Mutex::new(None),
             reporter: Mutex::new(None),
             confirmer: Mutex::new(None),
+            cli: AtomicBool::new(false),
         })
+    }
+
+    /// The command line calls this. Then `cli_note` shows its text.
+    pub fn set_cli(&self) {
+        self.cli.store(true, Ordering::Relaxed);
+    }
+
+    /// A note about keys and options. Only the command line shows it. The GUI has other controls.
+    pub fn cli_note(&self, indent: usize, text: &str) {
+        if self.cli.load(Ordering::Relaxed) {
+            self.paragraph(indent, text);
+        }
     }
 
     /// Where messages go (the progress display sets this so they appear above its line).
@@ -176,5 +190,35 @@ impl Control {
 
     pub fn request_stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn collect(ctl: &Control) -> Arc<Mutex<Vec<String>>> {
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let sink = lines.clone();
+        ctl.set_logger(Arc::new(move |m| sink.lock().unwrap().push(m.to_string())));
+        lines
+    }
+
+    #[test]
+    fn cli_notes_show_only_on_the_command_line() {
+        let gui = Control::new(None);
+        let gui_lines = collect(&gui);
+        gui.message("fact");
+        gui.cli_note(2, "Keys: q + Enter = stop.");
+        assert_eq!(*gui_lines.lock().unwrap(), vec!["fact"]);
+
+        let cli = Control::new(None);
+        let cli_lines = collect(&cli);
+        cli.set_cli();
+        cli.cli_note(2, "Keys: q + Enter = stop.");
+        assert_eq!(
+            *cli_lines.lock().unwrap(),
+            vec!["  Keys: q + Enter = stop."]
+        );
     }
 }

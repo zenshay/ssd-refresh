@@ -157,10 +157,8 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
         ));
     }
     ctl.message(&format!("  Report:  {}", o.out.display()));
-    ctl.paragraph(
-        11,
-        "The scan saves each row immediately. If the scan stops, --resume can continue it.",
-    );
+    ctl.paragraph(11, "The scan saves each row immediately.");
+    ctl.cli_note(11, "If the scan stops, --resume can continue it.");
     if sys::is_elevated() {
         sys::enable_privileges();
     } else {
@@ -208,7 +206,8 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     ctl.paragraph(2, "The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.");
     let found = enumerate_with_progress(&o.root, &ctl);
     if ctl.stopped() {
-        ctl.message("The scan stopped. No file was read. To start again, run the same command.");
+        ctl.message("The scan stopped. No file was read.");
+        ctl.cli_note(0, "To start again, run the same command.");
         return Ok(ScanOutcome {
             status: RunStatus::Stopped,
             ..Default::default()
@@ -265,7 +264,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
             o.read.allowance_ms
         ),
     );
-    ctl.paragraph(
+    ctl.cli_note(
         2,
         "Keys: p + Enter = pause or continue. q + Enter = stop (use --resume later).",
     );
@@ -443,11 +442,17 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     if stopped {
         if !to_check.is_empty() {
             ctl.message(&format!(
-                "  The check of {} did not finish. {} not in the report. --resume reads {} again.",
+                "  The check of {} did not finish. {} not in the report.",
                 count_of(to_check.len() as u64, "file"),
                 agree(to_check.len() as u64, "This file is", "These files are"),
-                agree(to_check.len() as u64, "it", "them")
             ));
+            ctl.cli_note(
+                2,
+                &format!(
+                    "--resume reads {} again.",
+                    agree(to_check.len() as u64, "it", "them")
+                ),
+            );
         }
     } else {
         for (row, _) in &to_check {
@@ -459,9 +464,11 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
 
     ctl.message("");
     if stopped {
-        ctl.message("The scan stopped. To continue, run the same command with --resume.");
+        ctl.message("The scan stopped.");
+        ctl.cli_note(0, "To continue, run the same command with --resume.");
     } else if round3_stopped {
-        ctl.message("The scan stopped in round 3. The report has all files. --resume does not do round 3 again. To record round 3, make a new report.");
+        ctl.message("The scan stopped in round 3. The report has all files. To record round 3, make a new report.");
+        ctl.cli_note(0, "--resume does not do round 3 again.");
     }
     outcome.status = if stopped || round3_stopped {
         RunStatus::Stopped
