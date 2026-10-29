@@ -52,10 +52,15 @@ export function createDiagnostics() {
           "info",
           `[Step 2/3] Rewriting slow files on ${currentRoot} via safe relocation.`,
         );
-      } else if (p.stage === "recheck" || p.stage === "verify") {
+      } else if (p.stage === "recheck") {
         logMessage(
           "info",
-          `[Step 3/3] Rechecking read speeds to verify improvements.`,
+          `[Step 3/3] Checking the files on the check list again on ${currentRoot}.`,
+        );
+      } else if (p.stage === "verify") {
+        logMessage(
+          "info",
+          `[Verify] Reading the files of the refresh log again on ${currentRoot}.`,
         );
       }
     }

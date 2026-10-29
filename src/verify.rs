@@ -297,11 +297,13 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
     ctl.paragraph(
         2,
         &format!(
-            "A file is slow if one extent is slower than {} MB/s. Use the same --threshold as for the scan. If a program changed a file, the file has new data. The tool does not count it (status MODIFIED).",
+            "A file is slow if one extent is slower than {} MB/s.",
             o.read.threshold_mbps
         ),
     );
-    ctl.paragraph(2, "Keys: p + Enter = pause or continue. q + Enter = stop. The summary then shows the files read until that time.");
+    ctl.cli_note(2, "Use the same --threshold as for the scan.");
+    ctl.paragraph(2, "If a program changed a file, the file has new data. The tool does not count it (status MODIFIED).");
+    ctl.cli_note(2, "Keys: p + Enter = pause or continue. q + Enter = stop. The summary then shows the files read until that time.");
 
     let mut w = match &o.out {
         Some(out) => Some(CsvWriter::create(out, &HEADER, false)?),

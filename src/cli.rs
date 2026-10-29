@@ -24,6 +24,7 @@ pub fn exit_code(status: RunStatus) -> i32 {
 }
 
 pub fn install(control: &Arc<Control>) {
+    control.set_cli();
     let display = Arc::new(Mutex::new((Instant::now(), false)));
     let output = display.clone();
     control.set_logger(Arc::new(move |message| {
