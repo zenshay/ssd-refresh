@@ -4,6 +4,7 @@
 
 - GUI log: do not show command line notes. The GUI does not show keys (`p + Enter`, `q + Enter`), `--resume`, `--threshold`, or "run the same command". The command line shows them as before.
 - GUI log: step 3 of a scan shows "Checking the files on the check list again". Verify shows its own line.
+- Checks: run the macOS checks on ARM64 (`macos-15`) and on Intel (`macos-15-intel`). Before, only Intel ran them.
 
 ## 1.0.3
 
