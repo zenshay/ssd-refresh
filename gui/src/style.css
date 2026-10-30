@@ -82,7 +82,7 @@ body {
 
 /* App Container */
 .app-container {
-  max-width: 1040px;
+  max-width: 1280px;
   width: 100%;
   margin: 0 auto;
   display: flex;
@@ -122,6 +122,8 @@ body {
   min-width: 0;
   height: 100%;
   min-height: 0;
+  /* Fallback for a very small window: scroll, do not cut the cards. */
+  overflow-y: auto;
 }
 
 /* Typography Utilities */
@@ -656,10 +658,16 @@ body {
   transition: all 0.25s ease;
 }
 
+/* Idle: show only the header line. The bar, metrics and controls come back
+   when an operation starts. This gives the space to the console and the
+   slow files. */
 .progress-card.is-idle {
   border-color: var(--border-subtle);
   background: rgba(17, 24, 39, 0.45);
   box-shadow: none;
+  gap: 0;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .progress-card.is-idle .progress-title {
@@ -676,23 +684,10 @@ body {
   border-color: transparent;
 }
 
-.progress-card.is-idle .metric-tile {
-  background: rgba(255, 255, 255, 0.015);
-  border-color: rgba(255, 255, 255, 0.04);
-}
-
-.progress-card.is-idle .metric-label,
-.progress-card.is-idle .metric-value {
-  color: #475569;
-}
-
-.progress-card.is-idle .progress-track {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.progress-card.is-idle .progress-controls .btn {
-  opacity: 0.3;
-  pointer-events: none;
+.progress-card.is-idle .progress-track,
+.progress-card.is-idle .metrics-grid,
+.progress-card.is-idle .progress-controls {
+  display: none;
 }
 
 .progress-header {
@@ -952,9 +947,24 @@ body {
   color: var(--text-muted);
 }
 
-/* Slow Files Table */
+/* Slow Files Table
+   The card takes the height of its rows first. When the window is too short,
+   it shrinks to its minimum and the table scrolls. The console gets the rest. */
+.slow-files-card {
+  flex: 0 1 auto;
+  min-height: 170px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* After a scan, the slow files are more important than the console. */
+.layout-content:has(#slow-files-card:not([hidden])) .console-card {
+  min-height: 90px;
+}
+
 .table-container {
-  max-height: 220px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -1109,8 +1119,8 @@ body {
 .console-card {
   padding: 0 !important;
   overflow: hidden;
-  flex: 1;
-  min-height: 160px;
+  flex: 1 1 0;
+  min-height: 120px;
   background: var(--bg-card);
   border: 1px solid rgba(127, 134, 234, 0.25);
   display: flex;
@@ -1252,4 +1262,45 @@ body {
 
 .log-text {
   color: var(--text-main);
+}
+
+/* Short windows (for example a laptop at 125% scale): use less space
+   around the cards, so all areas show without a scroll. */
+@media (max-height: 820px) {
+  body {
+    padding-bottom: 12px;
+  }
+
+  .app-container,
+  .layout-content {
+    gap: 10px;
+  }
+
+  .app-header {
+    padding-bottom: 10px;
+  }
+
+  .header-brand {
+    padding-top: 10px;
+  }
+
+  .card {
+    padding: 12px 16px;
+  }
+
+  .card-header {
+    margin-bottom: 8px;
+  }
+
+  .action-card {
+    padding: 12px 16px;
+  }
+
+  .action-top {
+    margin-bottom: 8px;
+  }
+
+  .notice-card {
+    padding: 10px 14px;
+  }
 }

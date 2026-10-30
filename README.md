@@ -41,7 +41,7 @@ Results depend on the drive. The diagram shows a possible result.
 ## Download and start
 
 <p align="center">
-  <img src="docs/images/gui-scan.png" width="720" alt="The ssd-refresh desktop app after a scan of drive D:. The Step 2 card shows Selective Refresh (5 files). The table lists 5 slow files with path, size and speed from 6.2 to 21.3 MB/s.">
+  <img src="docs/images/gui-scan.png" width="720" alt="The ssd-refresh desktop app after a scan of drive D:. The Step 2 card shows Selective Refresh (5 files). The table shows the slow files with path, size and speed.">
 </p>
 <p align="center"><sub>The desktop app after a scan. The drives and files are demo data.</sub></p>
 

@@ -12,11 +12,9 @@ import { createServer } from "vite";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = resolve(root, "../docs/images/gui-scan.png");
-// The width of the window in gui/src-tauri/tauri.conf.json.
-// The height is more than the default 780 px, so the slow files card shows
-// without a scroll. A user can make the window this tall.
+// The default window size in gui/src-tauri/tauri.conf.json.
 const width = 1080;
-const height = 1140;
+const height = 780;
 const candidates = [
   process.env.SSD_REFRESH_BROWSER,
   process.env.ProgramFiles &&
