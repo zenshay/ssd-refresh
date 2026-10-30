@@ -1,7 +1,7 @@
 import type { Actions } from "../actions";
 import type { Volume } from "../api";
 import { $, el } from "../dom";
-import { fmtBytes } from "../format";
+import { fmtAge, fmtBytes } from "../format";
 import { allSelected, isSelected, type Store } from "../store";
 
 const SMART_TEXT = {
@@ -10,11 +10,18 @@ const SMART_TEXT = {
   unknown: "SMART unknown",
 } as const;
 
+function refreshedText(ageSecs: number): string {
+  return ageSecs < 60
+    ? "Refreshed just now"
+    : `Refreshed ${fmtAge(ageSecs)} ago`;
+}
+
 function card(
   v: Volume,
   selected: boolean,
   active: boolean,
   disabled: boolean,
+  nowSecs: number,
 ): HTMLButtonElement {
   const used = Math.max(0, v.totalBytes - v.freeBytes);
   const usedPct =
@@ -62,7 +69,12 @@ function card(
       }),
       active
         ? el("span", { class: "drive-status-active", text: "Scanning…" })
-        : "",
+        : v.lastRefresh
+          ? el("span", {
+              class: "drive-refreshed",
+              text: refreshedText(nowSecs - v.lastRefresh.unixSecs),
+            })
+          : "",
     ),
   );
 
@@ -119,9 +131,16 @@ export function mountDrives(store: Store, actions: Actions): void {
       return;
     }
 
+    const nowSecs = Date.now() / 1000;
     host.replaceChildren(
       ...s.volumes.map((v) =>
-        card(v, isSelected(s, v.root), s.activeRoot === v.root, isRunning),
+        card(
+          v,
+          isSelected(s, v.root),
+          s.activeRoot === v.root,
+          isRunning,
+          nowSecs,
+        ),
       ),
     );
   });

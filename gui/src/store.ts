@@ -268,10 +268,19 @@ export function verifyAction(
   }
   const targets = verifyTargets(s);
   if (targets.length === 0) {
+    // A drive that is not selected can have a refresh log. Name it, so the user selects it.
+    const others = s.volumes
+      .filter((v) => v.lastRefresh !== null)
+      .map((v) => v.root.slice(0, 2));
     return {
       state: "locked",
       title,
-      hint: "Run Selective Refresh first.",
+      hint:
+        others.length === 0
+          ? "Run Selective Refresh first."
+          : others.length === 1
+            ? `${others[0]} has a refresh log. Select it to verify.`
+            : `${others.join(", ")} have a refresh log. Select them to verify.`,
       label: "Locked",
       disabled: true,
     };

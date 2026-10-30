@@ -6,6 +6,7 @@
 - Release workflow: the steps call `node scripts/release.mjs` instead of PowerShell. Windows ZIP files use `/` in entry names. Before, `Compress-Archive` could write `\`. Release tests now run on Windows, Linux, and macOS. Tags must start with a lowercase `v`.
 - Scripts: remove `scripts/test-architecture.ps1` and `scripts/test-paths.ps1`. Both ran `node scripts/test-common.mjs`, which `node check.mjs` runs.
 - README: package names use `<version>` instead of a fixed version. Download links open the latest release. A new release does not need a README change.
+- GUI: at start, the app selects the drives that have a refresh log. Before, it selected the first drive. When you refreshed another drive and opened the app later, Verify said "Run Selective Refresh first". Now Verify is ready. When the selected drives have no refresh log, Verify names the drives that have one. Each drive card shows the time since its last refresh.
 
 ## 1.0.5
 
