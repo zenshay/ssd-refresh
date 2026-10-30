@@ -289,6 +289,13 @@ test("the verify notice puts the speed first, one fact per line", () => {
     waitSecs: 0,
   });
   assert.match(nextStep([mixed]), /all must have the same result/);
+  // Enough time, the measured files agree, but one file had no measurement.
+  const partial = verified({
+    faster: "NOT DECIDED",
+    speed: { beforeMbps: 10, nowMbps: 90, slowBefore: 2, slowNow: 0 },
+    waitSecs: 0,
+  });
+  assert.match(nextStep([partial]), /could not measure all slow files/);
   // Too soon: give the time to verify again.
   const now = new Date(2026, 9, 31, 0, 8).getTime();
   const soon = verified({ faster: "NOT DECIDED", waitSecs: 12 * 3600 });
