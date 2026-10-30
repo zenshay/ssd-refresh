@@ -1,3 +1,5 @@
+// Windows package step tests. They run on Windows, Linux, and macOS.
+// A stub replaces package-notices.mjs. The tests read each ZIP file back.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -7,210 +9,225 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, join } from "node:path";
+import { crc32, inflateRawSync } from "node:zlib";
+import { packageWindows, writeZip } from "./release.mjs";
+import { root } from "./tools.mjs";
 
-const scriptRoot = fileURLToPath(new URL("../", import.meta.url));
-const args = process.argv.slice(2);
-assert.ok(
-  !args.length || (args.length === 2 && args[0] === "--root"),
-  "Use test-release-packages.mjs [--root project].",
+// Read a ZIP file without extra packages. Returns { name: Buffer }.
+function readZip(path) {
+  const data = readFileSync(path);
+  const end = data.length - 22;
+  assert.equal(data.readUInt32LE(end), 0x06054b50, "ZIP end record");
+  const total = data.readUInt16LE(end + 10);
+  let position = data.readUInt32LE(end + 16);
+  const entries = {};
+  for (let index = 0; index < total; index += 1) {
+    assert.equal(data.readUInt32LE(position), 0x02014b50, "ZIP central record");
+    const flags = data.readUInt16LE(position + 8);
+    const method = data.readUInt16LE(position + 10);
+    const checksum = data.readUInt32LE(position + 16);
+    const packedSize = data.readUInt32LE(position + 20);
+    const size = data.readUInt32LE(position + 24);
+    const nameLength = data.readUInt16LE(position + 28);
+    const extraLength = data.readUInt16LE(position + 30);
+    const commentLength = data.readUInt16LE(position + 32);
+    const offset = data.readUInt32LE(position + 42);
+    const name = data.toString(
+      "utf8",
+      position + 46,
+      position + 46 + nameLength,
+    );
+    assert.equal(flags & 0x0800, 0x0800, `${name}: UTF-8 flag`);
+    assert.ok(!name.includes("\\"), `${name}: use / in names`);
+    assert.equal(data.readUInt32LE(offset), 0x04034b50, "ZIP local record");
+    const localName = data.readUInt16LE(offset + 26);
+    const localExtra = data.readUInt16LE(offset + 28);
+    const start = offset + 30 + localName + localExtra;
+    const body = data.subarray(start, start + packedSize);
+    const content = method === 8 ? inflateRawSync(body) : Buffer.from(body);
+    assert.ok(method === 0 || method === 8, `${name}: method ${method}`);
+    assert.equal(content.length, size, `${name}: size`);
+    assert.equal(crc32(content), checksum, `${name}: CRC-32`);
+    entries[name] = content;
+    position += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+// A second reader that this project did not write: bsdtar on Windows and macOS,
+// Python zipfile on Linux. Returns [command, args before the ZIP, args after the ZIP].
+function systemReader() {
+  if (process.platform === "win32")
+    return [
+      join(process.env.SystemRoot ?? "C:\\Windows", "System32/tar.exe"),
+      ["-xf"],
+      ["-C"],
+    ];
+  if (process.platform === "darwin") return ["/usr/bin/tar", ["-xf"], ["-C"]];
+  return ["python3", ["-m", "zipfile", "-e"], []];
+}
+
+const output = join(root, "scratch");
+mkdirSync(output, { recursive: true });
+const fixtureRoot = mkdtempSync(join(output, "release packages & test-"));
+
+// ZIP writer edge cases: empty file, Unicode name, nested folder, and data that does not compress.
+const edge = join(fixtureRoot, "zip-edge");
+const edgeFiles = {
+  "empty.txt": Buffer.alloc(0),
+  "docs/中文 name.md": Buffer.from("text\n".repeat(200)),
+  "random.bin": Buffer.from(
+    Array.from({ length: 4096 }, (_, index) => (index * 7919) % 251),
+  ),
+};
+for (const [name, content] of Object.entries(edgeFiles)) {
+  mkdirSync(dirname(join(edge, "in", name)), { recursive: true });
+  writeFileSync(join(edge, "in", name), content);
+}
+writeZip(join(edge, "edge.zip"), join(edge, "in"));
+const edgeEntries = readZip(join(edge, "edge.zip"));
+assert.deepEqual(
+  Object.keys(edgeEntries).sort(),
+  Object.keys(edgeFiles).sort(),
 );
-if (process.platform !== "win32") {
-  console.log("RELEASE PACKAGES: NOT RUN (Windows only).");
-} else {
-  const root = args.length ? resolve(args[1]) : scriptRoot;
-  const require = createRequire(join(root, "gui/package.json"));
-  const { parse } = require("yaml");
-  const workflow = parse(
-    readFileSync(join(root, ".github/workflows/release.yml"), "utf8"),
-  );
-  const steps = workflow.jobs?.["build-windows"]?.steps;
-  assert.ok(Array.isArray(steps), "The Windows build job is missing.");
-  const matches = steps.filter(
-    (step) => step.name === "Package Windows Artifacts",
-  );
-  assert.equal(matches.length, 1, "Use one Windows package step.");
-  assert.equal(matches[0].shell, "pwsh");
-  assert.equal(typeof matches[0].run, "string");
-  const target = "synthetic-windows-target";
-  const arch = "synthetic64";
-  const tag = "v0.0.0-test";
-  const step = matches[0].run
-    .replaceAll(/\$\{\{ matrix\.target \}\}/g, target)
-    .replaceAll(/\$\{\{ matrix\.arch \}\}/g, arch);
-  assert.ok(
-    !step.includes("${{"),
-    "An unresolved workflow expression remains.",
-  );
-  const files = [
-    "README.md",
-    "README.zh-TW.md",
-    "LICENSE-MIT",
-    "LICENSE-APACHE",
-    "SECURITY.md",
-    "SUPPORT.md",
-    "CONTRIBUTING.md",
-    "docs/security.md",
-    "docs/architecture.md",
-  ];
-  const output = join(scriptRoot, "scratch");
-  mkdirSync(output, { recursive: true });
-  const fixtureRoot = mkdtempSync(join(output, "release packages & test-"));
-  for (const failure of ["none", "ssd-refresh-gui", "ssd-refresh"]) {
-    const fixture = join(fixtureRoot, failure);
-    mkdirSync(fixture);
-    for (const file of files) {
-      const path = join(fixture, file);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, `fixture:${file}\n`);
-    }
-    for (const kind of ["gui", "cli"]) {
-      const name = kind === "gui" ? "ssd-refresh-gui" : "ssd-refresh";
-      const path = join(fixture, "target", target, "release", `${name}.exe`);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, `binary:${kind}\n`);
-    }
-    const powershell = `
-$ErrorActionPreference = 'Stop'
-function global:node {
-  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$NodeArgs)
-  if ($NodeArgs.Count -ne 7 -or $NodeArgs[0] -ne 'scripts/package-notices.mjs' -or $NodeArgs[1] -ne '--target' -or $NodeArgs[3] -ne '--package' -or $NodeArgs[5] -ne '--output') {
-    throw 'Only the notice command can use the node stub.'
-  }
-  $call = @{ target = $NodeArgs[2]; package = $NodeArgs[4]; output = $NodeArgs[6] }
-  Add-Content -LiteralPath 'notice-calls.jsonl' -Value ($call | ConvertTo-Json -Compress) -Encoding utf8
-  if ($NodeArgs[4] -eq $env:NOTICE_FAILURE) {
-    $global:LASTEXITCODE = 17
-    return
-  }
-  [IO.File]::WriteAllText($NodeArgs[6], "NOTICE $($NodeArgs[4]) $($NodeArgs[2])")
-  $global:LASTEXITCODE = 0
-}
-`;
-    const inspection = String.raw`
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$archives = @{}
-foreach ($file in Get-Item -Path 'dist-out/*.zip') {
-  $archive = [IO.Compression.ZipFile]::OpenRead($file.FullName)
-  try {
-    $entries = @{}
-    foreach ($entry in $archive.Entries) {
-      if ($entry.Name -eq '') { continue }
-      $reader = [IO.StreamReader]::new($entry.Open())
-      try { $entries[$entry.FullName.Replace('\', '/')] = $reader.ReadToEnd() }
-      finally { $reader.Dispose() }
-    }
-    $archives[$file.Name] = $entries
-  } finally { $archive.Dispose() }
-}
-[IO.File]::WriteAllText('archives.json', ($archives | ConvertTo-Json -Depth 5))
-`;
-    const script = join(fixture, "package.ps1");
-    writeFileSync(script, `${powershell}\n${step}\n${inspection}`, "utf8");
-    const result = spawnSync(
-      "pwsh",
-      ["-NoProfile", "-NonInteractive", "-File", script],
-      {
-        cwd: fixture,
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: 60000,
-        env: {
-          ...process.env,
-          RELEASE_TAG: tag,
-          NOTICE_FAILURE: failure,
-        },
-      },
+for (const [name, content] of Object.entries(edgeFiles))
+  assert.ok(edgeEntries[name].equals(content), name);
+const [reader, before, after] = systemReader();
+const extracted = join(edge, "reader-out");
+mkdirSync(extracted);
+const readerResult = spawnSync(
+  reader,
+  [...before, join(edge, "edge.zip"), ...after, extracted],
+  { encoding: "utf8", windowsHide: true },
+);
+let independent = `NOT RUN (${basename(reader)} is not available)`;
+if (!readerResult.error) {
+  assert.equal(readerResult.status, 0, readerResult.stderr);
+  for (const [name, content] of Object.entries(edgeFiles))
+    assert.ok(
+      readFileSync(join(extracted, name)).equals(content),
+      `${basename(reader)}: ${name}`,
     );
-    if (result.error) throw result.error;
-    writeFileSync(
-      join(fixture, "powershell.log"),
-      `${result.stdout}\n${result.stderr}`,
+  independent = `YES (${basename(reader)})`;
+}
+
+const target = "synthetic-windows-target";
+const arch = "synthetic64";
+const tag = "v0.0.0-test";
+const files = [
+  "README.md",
+  "README.zh-TW.md",
+  "LICENSE-MIT",
+  "LICENSE-APACHE",
+  "SECURITY.md",
+  "SUPPORT.md",
+  "CONTRIBUTING.md",
+  "docs/security.md",
+  "docs/architecture.md",
+];
+const filename = (kind, extension) =>
+  `ssd-refresh-${kind}-${tag}-windows-${arch}.${extension}`;
+
+for (const failure of ["none", "ssd-refresh-gui", "ssd-refresh"]) {
+  const fixture = join(fixtureRoot, failure);
+  mkdirSync(fixture);
+  for (const file of files) {
+    const path = join(fixture, file);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `fixture:${file}\n`);
+  }
+  for (const kind of ["gui", "cli"]) {
+    const name = kind === "gui" ? "ssd-refresh-gui" : "ssd-refresh";
+    const path = join(fixture, "target", target, "release", `${name}.exe`);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `binary:${kind}\n`);
+  }
+  const calls = [];
+  const exec = (command, args, options) => {
+    assert.equal(command, process.execPath);
+    assert.equal(basename(args[0]), "package-notices.mjs");
+    assert.deepEqual(
+      [args[1], args[3], args[5], args.length],
+      ["--target", "--package", "--output", 7],
     );
-    const calls = readFileSync(join(fixture, "notice-calls.jsonl"), "utf8")
-      .trim()
-      .split(/\r?\n/)
-      .map((line) => JSON.parse(line.replace(/^\uFEFF/, "")));
-    const expectedPackages =
-      failure === "ssd-refresh-gui"
-        ? ["ssd-refresh-gui"]
-        : ["ssd-refresh-gui", "ssd-refresh"];
+    assert.equal(options.cwd, fixture);
+    calls.push({ target: args[2], package: args[4], output: args[6] });
+    if (args[4] === failure) return { status: 17, stdout: "" };
+    writeFileSync(args[6], `NOTICE ${args[4]} ${args[2]}`);
+    return { status: 0, stdout: "" };
+  };
+  const run = () =>
+    packageWindows(target, arch, {
+      env: { RELEASE_TAG: tag },
+      cwd: fixture,
+      exec,
+    });
+  const expectedPackages =
+    failure === "ssd-refresh-gui"
+      ? ["ssd-refresh-gui"]
+      : ["ssd-refresh-gui", "ssd-refresh"];
+  if (failure !== "none") {
+    assert.throws(run, { message: `Cannot collect notices for ${failure}.` });
     assert.deepEqual(
       calls.map((call) => call.package),
       expectedPackages,
     );
-    for (const call of calls) {
-      assert.equal(call.target, target);
-      const kind = call.package === "ssd-refresh-gui" ? "gui" : "cli";
-      assert.equal(
-        call.output,
-        `dist-out/staging/${kind}/THIRD-PARTY-NOTICES.txt`,
-      );
-    }
-    const filename = (kind, extension) =>
-      `ssd-refresh-${kind}-${tag}-windows-${arch}.${extension}`;
-    if (failure !== "none") {
-      assert.ok(
-        result.stderr.includes(`Cannot collect notices for ${failure}.`),
-        "The notice error must cause the failure.",
-      );
-      assert.notEqual(
-        result.status,
-        0,
-        "A notice failure must stop packaging.",
-      );
-      const failedKind = failure === "ssd-refresh-gui" ? "gui" : "cli";
-      assert.ok(
-        !existsSync(join(fixture, "dist-out", filename(failedKind, "zip"))),
-        "A failed package must not produce a ZIP.",
-      );
-      assert.ok(
-        !existsSync(join(fixture, "dist-out", filename("gui", "exe"))),
-        "A notice failure must stop the bare executable copy.",
-      );
-      continue;
-    }
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    const archives = JSON.parse(
-      readFileSync(join(fixture, "archives.json"), "utf8"),
+    const failedKind = failure === "ssd-refresh-gui" ? "gui" : "cli";
+    assert.ok(
+      !existsSync(join(fixture, "dist-out", filename(failedKind, "zip"))),
+      "A failed package must not produce a ZIP.",
     );
-    assert.deepEqual(
-      Object.keys(archives).sort(),
-      [filename("gui", "zip"), filename("cli", "zip")].sort(),
+    assert.ok(
+      !existsSync(join(fixture, "dist-out", filename("gui", "exe"))),
+      "A notice failure must stop the bare executable copy.",
     );
-    for (const kind of ["gui", "cli"]) {
-      const name = kind === "gui" ? "ssd-refresh-gui" : "ssd-refresh";
-      const entries = archives[filename(kind, "zip")];
-      assert.deepEqual(
-        Object.keys(entries).sort(),
-        [...files, `${name}.exe`, "THIRD-PARTY-NOTICES.txt"].sort(),
-      );
-      for (const file of files)
-        assert.equal(entries[file], `fixture:${file}\n`);
-      assert.equal(entries[`${name}.exe`], `binary:${kind}\n`);
-      assert.equal(
-        entries["THIRD-PARTY-NOTICES.txt"],
-        `NOTICE ${name} ${target}`,
-      );
-    }
+    continue;
+  }
+  run();
+  assert.deepEqual(
+    calls.map((call) => call.package),
+    expectedPackages,
+  );
+  for (const call of calls) {
+    assert.equal(call.target, target);
+    const kind = call.package === "ssd-refresh-gui" ? "gui" : "cli";
     assert.equal(
-      readFileSync(join(fixture, "dist-out", filename("gui", "exe")), "utf8"),
-      "binary:gui\n",
-    );
-    assert.equal(
-      readFileSync(
-        join(
-          fixture,
-          "dist-out",
-          `ssd-refresh-gui-${tag}-windows-${arch}-NOTICES.txt`,
-        ),
-        "utf8",
-      ),
-      `NOTICE ssd-refresh-gui ${target}`,
+      call.output,
+      join(fixture, "dist-out", "staging", kind, "THIRD-PARTY-NOTICES.txt"),
     );
   }
-  console.log("RELEASE PACKAGES: YES (2 ZIP files, 2 notice failures).");
-  console.log(`FIXTURES: ${fixtureRoot}`);
+  for (const kind of ["gui", "cli"]) {
+    const name = kind === "gui" ? "ssd-refresh-gui" : "ssd-refresh";
+    const entries = readZip(join(fixture, "dist-out", filename(kind, "zip")));
+    assert.deepEqual(
+      Object.keys(entries).sort(),
+      [...files, `${name}.exe`, "THIRD-PARTY-NOTICES.txt"].sort(),
+    );
+    for (const file of files)
+      assert.equal(entries[file].toString("utf8"), `fixture:${file}\n`);
+    assert.equal(entries[`${name}.exe`].toString("utf8"), `binary:${kind}\n`);
+    assert.equal(
+      entries["THIRD-PARTY-NOTICES.txt"].toString("utf8"),
+      `NOTICE ${name} ${target}`,
+    );
+  }
+  assert.equal(
+    readFileSync(join(fixture, "dist-out", filename("gui", "exe")), "utf8"),
+    "binary:gui\n",
+  );
+  assert.equal(
+    readFileSync(
+      join(
+        fixture,
+        "dist-out",
+        `ssd-refresh-gui-${tag}-windows-${arch}-NOTICES.txt`,
+      ),
+      "utf8",
+    ),
+    `NOTICE ssd-refresh-gui ${target}`,
+  );
 }
+console.log("RELEASE PACKAGES: YES (2 ZIP files, 2 notice failures).");
+console.log(`ZIP EDGE CASES: YES. SYSTEM READER: ${independent}.`);
+console.log(`FIXTURES: ${fixtureRoot}`);

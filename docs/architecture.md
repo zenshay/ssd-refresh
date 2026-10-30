@@ -88,6 +88,9 @@ It checks package names and sizes, then creates `SHA256SUMS` and `release-metada
 After upload, it compares every remote asset name, size, and SHA-256 digest with the local files.
 Unexpected files from an older draft fail this check. The workflow does not delete them.
 The metadata records the commit, workflow run, check scope, package sizes, and hashes.
+The workflow steps call `node scripts/release.mjs <command>`. No step needs PowerShell.
+The Windows ZIP files come from a small writer in that script. It uses UTF-8 names and `/` separators.
+It has no ZIP64 support, so it stops when a file or an archive is 4 GiB or larger.
 The workflow creates a draft. A version with a suffix also marks the draft as a prerelease.
 Review its files and check results before you publish it.
 You can repeat a failed run while the release remains a draft.
@@ -127,8 +130,10 @@ The Windows workspace check uses Rust 1.90, which current Tauri packages require
 The other platform checks and release builds use stable Rust.
 Dependabot opens weekly dependency update requests. It does not merge or publish them.
 
-Windows checks also run synthetic release guard and remote asset tests.
+Checks on Windows, Linux, and macOS also run synthetic release guard, package, and remote asset tests.
 These tests do not create a tag, upload a file, or publish a release.
+The package tests read each ZIP file back. A second reader also opens a test ZIP file:
+`tar` on Windows and macOS, Python `zipfile` on Linux.
 
 ## Windows security smoke result: 2026-10-21
 
