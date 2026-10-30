@@ -3,6 +3,10 @@
 ## Unreleased
 
 - Checks: a new push to a pull request stops the older check run of that pull request. Pushes to `main` and release calls do not change.
+- GUI on Windows: when WebView2 Runtime is missing, a message shows the download page and asks to open it. Before, the app stopped and showed nothing. Other start errors also show a message now.
+- GUI layout: all areas show at the default window size (1080 x 780). Before, the window cut 339 px of the slow files card after a scan, and the card did not scroll. The idle progress card shows only its header line. The slow files table scrolls when the window is short.
+- GUI source: `pnpm --dir gui run app` builds the frontend and opens a debug build. `pnpm --dir gui run screenshot` makes the README screenshot with demo data.
+- README: add a GUI screenshot. The stars badge links to the repository page, because GitHub shows 404 for the stargazers page.
 
 ## 1.0.4
 
