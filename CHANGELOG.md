@@ -1,6 +1,6 @@
 # Changes
 
-## Unreleased
+## 1.0.6
 
 - Verify: with fewer than 10 slow files, Faster can show YES or NO. Verify must measure all these files (no `--sample`, no error, no changed file), and all must have the same result: all not slow is YES, all slow is NO. Before, Faster was always NOT DECIDED for these drives. Verify reads all slow files of the refresh log, so a few files are all the slow files of the drive.
 - Verify summary: the speed and the slow file count have their own lines (`Speed:`, `Slow files:`), before the `Faster:` line. Before, they were at the end of the Faster text. Less than 12 hours after the refresh, a `Verify again:` line tells the wait. Before, the text said "after 1 day or more", but the rule is 12 hours.
