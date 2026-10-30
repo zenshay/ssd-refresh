@@ -258,6 +258,13 @@ Replace that path with your checkout path. The commands do not run scan or refre
    ```
 
 The executables are in `target\release` under the checkout.
+To open the desktop app from the source after a change, run one command.
+It builds the frontend assets, then compiles and opens a debug build:
+
+```powershell
+pnpm --dir C:\src\ssd-refresh\gui run app
+```
+
 On Linux or macOS, build the CLI from the repository root with `cargo build --locked --release --bin ssd-refresh`.
 
 ### Quick start (Windows)

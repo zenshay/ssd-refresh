@@ -256,6 +256,12 @@ Windows 需要 MSVC C++ Build Tools、Windows SDK 與 WebView2 Runtime。
    ```
 
 執行檔位於專案的 `target\release`。
+修改後要從原始碼開啟桌面程式，執行一條指令即可。它會先建置前端資源，再編譯並開啟除錯版：
+
+```powershell
+pnpm --dir C:\src\ssd-refresh\gui run app
+```
+
 Linux 與 macOS 可在專案根目錄用 `cargo build --locked --release --bin ssd-refresh` 建置 CLI。
 
 程式的畫面與說明都是英文。`ssd-refresh help scan`、`ssd-refresh help refresh` 有每個選項、進度欄位與狀態的完整說明。

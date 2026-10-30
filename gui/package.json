@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "app": "pnpm run build && tauri dev",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src tests test-cdp.js",
     "lint:fix": "biome check --write src tests test-cdp.js",
