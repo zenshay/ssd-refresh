@@ -8,6 +8,7 @@ import {
   createStore,
   initialState,
   refreshAction,
+  STANDARD_USER_NOTICE,
   verifyAction,
 } from "../src/store.ts";
 import { mutationStatus } from "./mutation-status.mjs";
@@ -235,6 +236,18 @@ test("refresh counts only the files that stay slow after the wait", async () => 
   const locked = refreshAction(store.get());
   assert.equal(locked.disabled, true);
   assert.match(locked.hint, /All 6 slow files were fast after the wait/);
+});
+
+test("refresh is locked for a standard user, also with slow files", () => {
+  const slow = { ...scan("X:"), slowTotal: 2, stillSlowAfterWait: 2 };
+  const s = { ...initialState, selectedRoots: ["X:"], scans: { "X:": slow } };
+  const locked = refreshAction({ ...s, elevated: false });
+  assert.equal(locked.disabled, true);
+  assert.match(locked.hint, /administrator/);
+  // Unknown (before the app asks) and administrator do not lock it.
+  assert.equal(refreshAction({ ...s, elevated: null }).disabled, false);
+  assert.equal(refreshAction({ ...s, elevated: true }).disabled, false);
+  assert.equal(STANDARD_USER_NOTICE.kind, "warn");
 });
 
 const volume = (root, lastRefresh = null) => ({

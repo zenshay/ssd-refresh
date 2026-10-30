@@ -11,6 +11,13 @@ export interface Notice {
   body?: string;
 }
 
+/** The notice at start when the app does not run as administrator. */
+export const STANDARD_USER_NOTICE: Notice = {
+  kind: "warn",
+  title: "Not running as administrator",
+  body: 'Safe Scan and Verify work. Selective Refresh needs administrator rights. To refresh, close the app. Right-click it and select "Run as administrator".',
+};
+
 export interface State {
   elevated: boolean | null;
   volumes: Volume[];
@@ -220,6 +227,18 @@ export function refreshAction(s: State): ActionView {
       title,
       hint: `SMART says ${failingVolume.root.slice(0, 2)} is failing. Refresh is locked for safety.`,
       label: "Blocked",
+      disabled: true,
+    };
+  }
+
+  // Refresh moves clusters. Windows allows this only for administrators.
+  // Tell the user before a long scan, not after it.
+  if (s.elevated === false) {
+    return {
+      state: "locked",
+      title,
+      hint: "Needs administrator rights. Open the app as administrator.",
+      label: "Locked",
       disabled: true,
     };
   }

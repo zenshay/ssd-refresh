@@ -2,7 +2,7 @@ import { createActions } from "./actions";
 import { api } from "./api";
 import { createDiagnostics } from "./diagnostics";
 import { countOf } from "./format";
-import { createStore, initialState } from "./store";
+import { createStore, initialState, STANDARD_USER_NOTICE } from "./store";
 import { askConfirm, mountConfirm } from "./views/confirm";
 import { mountConsole } from "./views/console";
 import { mountDrives } from "./views/drives";
@@ -85,6 +85,9 @@ window.addEventListener("DOMContentLoaded", async () => {
       "info",
       `User privilege detected: ${env.elevated ? "Administrator" : "Standard user"}`,
     );
+    if (!env.elevated) {
+      store.set({ notice: STANDARD_USER_NOTICE });
+    }
   } catch (err) {
     console.warn("Could not query user privilege:", err);
   }

@@ -91,7 +91,8 @@ try {
           listeners.set(args.event, args.handler);
           return id;
         }
-        if (command === "environment") return { elevated: false };
+        if (command === "environment")
+          return { elevated: !window.__mockStandardUser };
         if (command === "list_volumes")
           return [
             {
@@ -391,9 +392,32 @@ try {
       url: "https://github.com/zenshay/ssd-refresh/issues/new",
     })),
   );
+
+  // A standard user sees a notice at start, and Selective Refresh is locked after a scan.
+  await page.evaluateOnNewDocument(() => {
+    window.__mockStandardUser = true;
+  });
+  await page.reload({ waitUntil: "networkidle0" });
+  await page.waitForFunction(
+    () => !document.querySelector("#btn-scan").disabled,
+  );
+  assert.equal(
+    await page.$eval("#notice-title", (node) => node.textContent),
+    "Not running as administrator",
+  );
+  await page.click("#btn-scan");
+  await page.waitForFunction(
+    () => !document.querySelector("#slow-files-card").hidden,
+  );
+  assert.equal(await page.$eval("#btn-refresh", (node) => node.disabled), true);
+  assert.match(
+    await page.$eval("#btn-refresh .action-hint", (node) => node.textContent),
+    /administrator/,
+  );
+
   assert.deepEqual(errors, []);
   console.log(
-    "RESULT: YES (scan, messages, slow path, copy, copy failure, cancel, confirm, refresh, verify, report privacy, report failure)",
+    "RESULT: YES (scan, messages, slow path, copy, copy failure, cancel, confirm, refresh, verify, report privacy, report failure, standard user)",
   );
 } finally {
   await browser?.close();
