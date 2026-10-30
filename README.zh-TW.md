@@ -46,8 +46,8 @@ ssd-refresh 找出慢檔案，並讀取檔案。
 <p align="center"><sub>桌面版掃描完成後的畫面。磁碟與檔案都是示範資料。介面只有英文。</sub></p>
 
 從 [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases) 下載 Windows 桌面版。
-Windows 10/11 選 `ssd-refresh-gui-v1.0.4-windows-x64.zip`。
-Windows on ARM 的檔案是 `ssd-refresh-gui-v1.0.4-windows-arm64.zip`。
+Windows 10/11 選 `ssd-refresh-gui-v1.0.5-windows-x64.zip`。
+Windows on ARM 的檔案是 `ssd-refresh-gui-v1.0.5-windows-arm64.zip`。
 解壓縮 ZIP 檔案，再執行程式。程式介面使用英文。
 桌面版需要 Microsoft Edge WebView2 Runtime。
 Windows 程式尚未簽署，Windows 或安全軟體可能顯示警告。
@@ -189,14 +189,14 @@ ssd-refresh 以檔案為單位，預設只搬移仍然慢的檔案。
 
 | 套件檔名 | 適用平台與架構 | 說明 |
 |---|---|---|
-| **`ssd-refresh-gui-v1.0.4-windows-x64.zip`** | Windows 10/11 (`x86_64`) | 桌面 GUI；需要 WebView2。 |
-| **`ssd-refresh-gui-v1.0.4-windows-arm64.zip`** | Windows on ARM (`aarch64`) | 交叉編譯 GUI；此處沒有 ARM 實機執行證據。 |
-| **`ssd-refresh-cli-v1.0.4-windows-x64.zip`** | Windows 10/11 (`x86_64`) | 命令列工具。 |
-| **`ssd-refresh-cli-v1.0.4-windows-arm64.zip`** | Windows on ARM (`aarch64`) | 交叉編譯 CLI；此處沒有 ARM 實機執行證據。 |
-| **`ssd-refresh-cli-v1.0.4-linux-x64.tar.gz`** | Linux (`x86_64`) | 命令列工具。 |
-| **`ssd-refresh-cli-v1.0.4-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | 通用版 CLI；支援掃描與驗證。 |
+| **`ssd-refresh-gui-v1.0.5-windows-x64.zip`** | Windows 10/11 (`x86_64`) | 桌面 GUI；需要 WebView2。 |
+| **`ssd-refresh-gui-v1.0.5-windows-arm64.zip`** | Windows on ARM (`aarch64`) | 交叉編譯 GUI；此處沒有 ARM 實機執行證據。 |
+| **`ssd-refresh-cli-v1.0.5-windows-x64.zip`** | Windows 10/11 (`x86_64`) | 命令列工具。 |
+| **`ssd-refresh-cli-v1.0.5-windows-arm64.zip`** | Windows on ARM (`aarch64`) | 交叉編譯 CLI；此處沒有 ARM 實機執行證據。 |
+| **`ssd-refresh-cli-v1.0.5-linux-x64.tar.gz`** | Linux (`x86_64`) | 命令列工具。 |
+| **`ssd-refresh-cli-v1.0.5-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | 通用版 CLI；支援掃描與驗證。 |
 
-這些檔名適用於 v1.0.4。其他版本請核對發行頁的檔案清單。
+這些檔名適用於 v1.0.5。其他版本請核對發行頁的檔案清單。
 
 ### 支援的平台與架構
 

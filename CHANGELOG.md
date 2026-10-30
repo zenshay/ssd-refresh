@@ -1,6 +1,8 @@
 # Changes
 
-## Unreleased
+## 1.0.5
+
+v1.0.4 has no release packages. v1.0.5 also includes all changes of 1.0.4.
 
 - Checks: a new push to a pull request stops the older check run of that pull request. Pushes to `main` and release calls do not change.
 - GUI on Windows: when WebView2 Runtime is missing, a message shows the download page and asks to open it. Before, the app stopped and showed nothing. Other start errors also show a message now.
@@ -10,6 +12,8 @@
 - Release workflow: use the `RELEASE_TOKEN` secret for the release draft. GitHub refused the v1.0.4 draft from `GITHUB_TOKEN` with HTTP 403, so v1.0.4 has no release. The draft job now has read-only `GITHUB_TOKEN` permissions.
 
 ## 1.0.4
+
+The release workflow failed for this tag. GitHub has no v1.0.4 release. Use v1.0.5.
 
 - GUI: add step 3, Verify. It reads the files of the newest refresh log of each selected drive again. It does not write to the drive. The notice shows "Data safe" and "Faster" (YES, NO, NOT DECIDED or n/a). The full summary is in the window log and in a `.verify.log` file next to the refresh log.
 - GUI: after a refresh, the notice tells you to run Verify after 1, 7 and 30 days. Before, it told you to scan again.
