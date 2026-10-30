@@ -27,6 +27,9 @@ struct Speed {
     /// All bytes divided by all read time, before and now (bytes per second)
     then_bps: f64,
     now_bps: f64,
+    /// The tool measured all slow files of the group in the log: no sample, no error, no
+    /// missing or changed file, no stop.
+    complete: bool,
 }
 
 impl Speed {
@@ -34,11 +37,13 @@ impl Speed {
         self.n > 0 && (self.n - self.still) as f64 >= RECOVERED_SHARE * self.n as f64
     }
     /// YES (`Some(true)`), NO (`Some(false)`) or no decision. With fewer than MIN_SLOW_FILES
-    /// files, the share can change much with one file. Then all files must have the same result.
-    /// Verify reads all slow files of the log, so the few files are all the slow files.
+    /// files, the share can change much with one file. Then the tool must have measured all slow
+    /// files of the group, and all must have the same result.
     fn decision(&self) -> Option<bool> {
         if self.n >= MIN_SLOW_FILES {
             Some(self.recovered())
+        } else if !self.complete {
+            None
         } else if self.n > 0 && self.still == 0 {
             Some(true)
         } else if self.n > 0 && self.still == self.n {
@@ -105,6 +110,8 @@ pub(super) struct SummaryInput<'a> {
     /// The refresh log has the meta_key column
     pub(super) has_meta: bool,
     pub(super) age: u64,
+    /// `--sample` removed files. Then `items` does not have all slow files.
+    pub(super) sampled: bool,
 }
 
 pub(super) fn build_summary(s: &SummaryInput) -> Summary {
@@ -276,6 +283,12 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
             sp.then_bps = bytes / then_secs;
             sp.now_bps = bytes / now_secs;
         }
+        // All slow files of the group in the log: the measured ones must be all of them.
+        let slow_in_log = items
+            .iter()
+            .filter(|it| it.group == g && it.before_slow)
+            .count();
+        sp.complete = !s.sampled && sp.n == slow_in_log;
         sp
     };
     let speeds: Vec<(Group, Speed)> = groups.iter().map(|&g| (g, speed(g))).collect();
@@ -288,10 +301,17 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         fmt_time(s.age)
     );
     let few_reason = |sp: &Speed| {
-        format!(
-            "Only {}, and they do not have the same result. With fewer than {MIN_SLOW_FILES}, all must have the same result.",
-            count_of(sp.n as u64, "slow file")
-        )
+        if sp.complete {
+            format!(
+                "Only {}, and they do not have the same result. With fewer than {MIN_SLOW_FILES}, all must have the same result.",
+                count_of(sp.n as u64, "slow file")
+            )
+        } else {
+            format!(
+                "Only {} measured. With fewer than {MIN_SLOW_FILES}, verify must measure all slow files of the log (no --sample, no error, no changed file).",
+                count_of(sp.n as u64, "slow file")
+            )
+        }
     };
     let mut faster = "";
     let mut speed: Option<SpeedFacts> = None;
@@ -474,6 +494,7 @@ mod tests {
             is_log: true,
             has_meta: true,
             age: 21 * 86400,
+            sampled: false,
         })
     }
 
@@ -674,6 +695,31 @@ mod tests {
             s.text
         );
         assert_eq!(s.faster, "NOT DECIDED");
+        // A file without a measurement: the 2 fast files are not all the slow files.
+        let partial = vec![
+            (
+                0,
+                Outcome {
+                    status: "ERROR",
+                    ..Default::default()
+                },
+            ),
+            (1, measured(false, 500.0)),
+            (2, measured(false, 500.0)),
+        ];
+        let s = summary(&items, &partial);
+        assert!(s.text.contains("Only 2 slow files measured."), "{}", s.text);
+        assert_eq!(s.faster, "NOT DECIDED");
+        // With --sample, the measured files are not all the slow files of the log.
+        let s = build_summary(&SummaryInput {
+            items: &items[1..],
+            results: &[(0, measured(false, 500.0)), (1, measured(false, 500.0))],
+            is_log: true,
+            has_meta: true,
+            age: 21 * 86400,
+            sampled: true,
+        });
+        assert_eq!(s.faster, "NOT DECIDED", "{}", s.text);
         // One file is enough when it has a result: it is all the slow files.
         let s = summary(&items[..1], &results[..1]);
         assert!(
@@ -693,6 +739,7 @@ mod tests {
             is_log: true,
             has_meta: true,
             age: 0,
+            sampled: false,
         });
         assert!(
             s.text
@@ -734,6 +781,7 @@ mod tests {
             is_log: true,
             has_meta: true,
             age: 0,
+            sampled: false,
         });
         assert_eq!(s.wait_secs, MIN_AGE_HOURS * 3600);
         assert!(s.text.contains("Verify again:"), "{}", s.text);

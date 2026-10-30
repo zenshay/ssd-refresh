@@ -315,8 +315,9 @@ Result (at the end)
                 n/a: a scan report. The scan did not move files.
   Faster        Only for files that were slow before. YES: 80% or more of
                 these files are not slow now. With fewer than 10 of these
-                files, all must have the same result: all not slow is YES,
-                all slow is NO. The speed is all bytes divided
+                files, verify must measure all of them (no --sample), and
+                all must have the same result: all not slow is YES, all
+                slow is NO. The speed is all bytes divided
                 by all read time, before and now. verify shows the result as
                 'N.N times faster' or 'N.N times slower'. With a control group,
                 there is one line for each group and a conclusion.

@@ -253,6 +253,8 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         fmt_time(age)
     ));
 
+    // True when --sample removed files. Then the summary does not have all slow files.
+    let mut sampled = false;
     if o.sample > 0 {
         for g in [Group::Rewritten, Group::ReadOnly] {
             let mut ranked: Vec<(f64, usize)> = items
@@ -267,6 +269,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
             ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
             let cut: std::collections::HashSet<usize> =
                 ranked[o.sample..].iter().map(|x| x.1).collect();
+            sampled = true;
             let mut i = 0;
             items.retain(|_| {
                 i += 1;
@@ -406,6 +409,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         is_log,
         has_meta: header.iter().any(|h| h == "meta_key"),
         age,
+        sampled,
     });
     let mut text = s.text;
     if stopped {
