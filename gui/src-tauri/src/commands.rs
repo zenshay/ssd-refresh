@@ -108,14 +108,14 @@ pub fn write_and_open_log(app: AppHandle, content: String) -> Result<(), String>
     crate::native_open::open_path(&path)
 }
 
+/// Open the data folder of the app. It has `reports` (scan reports, refresh logs, verify logs)
+/// and `logs` (diagnostic logs).
 #[tauri::command]
-pub fn open_log_folder(app: AppHandle) -> Result<(), String> {
-    let dir = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|e| e.to_string())?
-        .join("logs");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+pub fn open_data_folder(app: AppHandle) -> Result<(), String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    for sub in ["reports", "logs"] {
+        std::fs::create_dir_all(dir.join(sub)).map_err(|e| e.to_string())?;
+    }
     crate::native_open::open_path(&dir)
 }
 

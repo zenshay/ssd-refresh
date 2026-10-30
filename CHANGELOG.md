@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- GUI: the `Folder` button opens the data folder of the app (`%LOCALAPPDATA%\com.ssdrefresh.app`). It has `reports` (scan reports, refresh and verify logs) and `logs`. Before, the button opened only `logs`, so refresh logs were difficult to find. README tells where the app saves its files.
 - Checks: pushes to `main` do not start the check workflow. The ruleset requires an up-to-date pull request with passing checks, so `main` gets a tested commit. Release calls and manual runs still run the checks. The Check badge shows the latest pull request check.
 - Release workflow: the steps call `node scripts/release.mjs` instead of PowerShell. Windows ZIP files use `/` in entry names. Before, `Compress-Archive` could write `\`. Release tests now run on Windows, Linux, and macOS. Tags must start with a lowercase `v`.
 - Scripts: remove `scripts/test-architecture.ps1` and `scripts/test-paths.ps1`. Both ran `node scripts/test-common.mjs`, which `node check.mjs` runs.

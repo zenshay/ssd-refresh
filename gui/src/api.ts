@@ -99,7 +99,7 @@ export const api = {
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   writeAndOpenLog: (content: string) =>
     invoke<void>("write_and_open_log", { content }),
-  openLogFolder: () => invoke<void>("open_log_folder"),
+  openDataFolder: () => invoke<void>("open_data_folder"),
   saveLogAs: (content: string) =>
     invoke<string | null>("save_log_as", { content }),
   onProgress: (handler: (p: Progress) => void): Promise<UnlistenFn> =>
