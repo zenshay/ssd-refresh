@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Verify summary: the speed and the slow file count have their own lines (`Speed:`, `Slow files:`), before the `Faster:` line. Before, they were at the end of the Faster text. Less than 12 hours after the refresh, a `Verify again:` line tells the wait. Before, the text said "after 1 day or more", but the rule is 12 hours.
+- Verify summary: the speed and the slow file count have their own lines (`Speed:`, `Slow files:`), before the `Faster:` line. Before, they were at the end of the Faster text. Less than 12 hours after the refresh, a `Verify again:` line tells the wait. With fewer than 10 slow files, the line does not show, because a later verify cannot decide either. Before, the text said "after 1 day or more", but the rule is 12 hours.
 - GUI verify notice: one fact per line. Line 1 is the read speed before and now. Then the slow files, and the next step with a time ("verify again after Oct 31, 12:08"). With fewer than 10 slow files, the notice tells that Faster cannot decide.
-- GUI log: messages keep their line breaks and spaces. Before, the verify summary showed as one long line.
+- GUI log: messages keep their line breaks and spaces. Before, the verify summary showed as one long line. The notice line in the log starts its text on a new line after the title.
 - GUI: the `Folder` button opens the data folder of the app (`%LOCALAPPDATA%\com.ssdrefresh.app`). It has `reports` (scan reports, refresh and verify logs) and `logs`. Before, the button opened only `logs`, so refresh logs were difficult to find. README tells where the app saves its files.
 - Checks: pushes to `main` do not start the check workflow. The ruleset requires an up-to-date pull request with passing checks, so `main` gets a tested commit. Release calls and manual runs still run the checks. The Check badge shows the latest pull request check.
 - Release workflow: the steps call `node scripts/release.mjs` instead of PowerShell. Windows ZIP files use `/` in entry names. Before, `Compress-Archive` could write `\`. Release tests now run on Windows, Linux, and macOS. Tags must start with a lowercase `v`.

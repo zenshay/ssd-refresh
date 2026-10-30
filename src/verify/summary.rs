@@ -394,7 +394,8 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         "",
         &format!("{}.", fmt_time(s.age)),
     );
-    let wait_secs = if too_soon && speed.is_some() {
+    // With too few slow files, a later verify cannot decide either. Then do not ask for one.
+    let wait_secs = if too_soon && speed.is_some_and(|f| f.slow_before >= MIN_SLOW_FILES) {
         min_age - s.age
     } else {
         0
@@ -673,6 +674,22 @@ mod tests {
             "{}",
             s.text
         );
+    }
+
+    #[test]
+    fn few_slow_files_do_not_ask_to_verify_again() {
+        // Too soon and too few: a later verify cannot decide either.
+        let (items, results) = two_groups(2);
+        let s = build_summary(&SummaryInput {
+            items: &items,
+            results: &results,
+            is_log: true,
+            has_meta: true,
+            age: 0,
+        });
+        assert_eq!(s.wait_secs, 0);
+        assert!(!s.text.contains("Verify again:"), "{}", s.text);
+        assert!(s.text.contains("Need 10 or more."), "{}", s.text);
     }
 
     #[test]
