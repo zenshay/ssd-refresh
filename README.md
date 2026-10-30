@@ -66,6 +66,18 @@ The SSD may rewrite data internally after a read.
 **Does refresh write data? YES.** It moves slow files. It skips empty space.
 This tool cannot repair a failing drive.
 
+**Where does the desktop app save its files?** In `%LOCALAPPDATA%\com.ssdrefresh.app`, not next to the app.
+The `Folder` button in the app opens this folder.
+
+| Folder | Content |
+|---|---|
+| `reports` | Scan reports, refresh logs and verify logs. Verify uses the refresh logs. |
+| `logs` | Diagnostic logs |
+
+- You can move the app or replace it with a new version. The refresh logs stay, and Verify still works.
+- Each Windows user has a different folder.
+- To remove all data of the app, delete the app and this folder.
+
 ---
 
 ## For developers

@@ -64,11 +64,14 @@ export function mountConsole(
     }
   });
 
-  // 4. Open Application Logs Directory in File Explorer
+  // 4. Open the data folder of the app (reports and logs) in File Explorer
   openFolderBtn.addEventListener("click", async () => {
     try {
-      await api.openLogFolder();
-      logMessage("info", "Opened logs directory in File Explorer.");
+      await api.openDataFolder();
+      logMessage(
+        "info",
+        "Opened the data folder. Refresh logs are in reports. Diagnostic logs are in logs.",
+      );
     } catch (err) {
       logMessage("error", `Failed to open log folder: ${err}`);
     }

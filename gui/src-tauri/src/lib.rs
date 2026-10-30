@@ -25,7 +25,7 @@ pub fn run() {
             commands::window_close,
             commands::open_url,
             commands::write_and_open_log,
-            commands::open_log_folder,
+            commands::open_data_folder,
             commands::save_log_as,
         ])
         .run(tauri::generate_context!());

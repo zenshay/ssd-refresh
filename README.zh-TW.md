@@ -66,6 +66,18 @@ SSD 可能在讀取後自行重寫內部資料。
 **refresh 會寫入資料嗎？YES。** 它會搬移慢檔案，並跳過空白空間。
 這個工具不能修好故障的磁碟。
 
+**桌面 app 把檔案存在哪裡？** 存在 `%LOCALAPPDATA%\com.ssdrefresh.app`，不是 app 旁邊。
+app 裡的 `Folder` 按鈕會開啟這個資料夾。
+
+| 資料夾 | 內容 |
+|---|---|
+| `reports` | 掃描報告、refresh log 與 verify log。Verify 讀取這裡的 refresh log。 |
+| `logs` | 診斷 log |
+
+- 你可以移動 app，或用新版取代它。refresh log 會保留，Verify 仍可使用。
+- 每個 Windows 使用者有各自的資料夾。
+- 要移除 app 的所有資料，刪除 app 與這個資料夾。
+
 ---
 
 ## 給開發者
