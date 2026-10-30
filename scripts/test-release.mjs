@@ -121,13 +121,23 @@ for (const job of ["build-windows", "build-linux", "build-macos"]) {
     ),
   );
 }
-assert.equal(release.jobs.draft.permissions.contents, "write");
-assert.equal(
-  release.jobs.draft.steps.find(
-    (step) => step.name === "Create or update draft",
-  ).with.draft,
-  true,
+// The draft job writes with the RELEASE_TOKEN secret, not with GITHUB_TOKEN.
+assert.equal(release.jobs.draft.permissions.contents, "read");
+const draftStep = release.jobs.draft.steps.find(
+  (step) => step.name === "Create or update draft",
 );
+assert.equal(draftStep.with.draft, true);
+assert.equal(draftStep.with.token, `\${{ secrets.RELEASE_TOKEN }}`);
+assert.ok(
+  release.jobs.draft.steps.some((step) => step.name === "Check release token"),
+);
+for (const [name, job] of Object.entries(release.jobs))
+  if (name !== "draft")
+    assert.ok(
+      !JSON.stringify(job).includes("RELEASE_TOKEN"),
+      `Only the draft job can read RELEASE_TOKEN: ${name}`,
+    );
+assert.ok(!JSON.stringify(release.jobs.draft).includes("github.token"));
 for (const workflow of [check, release])
   for (const job of Object.values(workflow.jobs)) {
     for (const step of job.steps || [])

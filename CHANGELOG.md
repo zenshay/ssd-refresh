@@ -7,6 +7,7 @@
 - GUI layout: all areas show at the default window size (1080 x 780). Before, the window cut 339 px of the slow files card after a scan, and the card did not scroll. The idle progress card shows only its header line. The slow files table scrolls when the window is short.
 - GUI source: `pnpm --dir gui run app` builds the frontend and opens a debug build. `pnpm --dir gui run screenshot` makes the README screenshot with demo data.
 - README: add a GUI screenshot. The stars badge links to the repository page, because GitHub shows 404 for the stargazers page.
+- Release workflow: use the `RELEASE_TOKEN` secret for the release draft. GitHub refused the v1.0.4 draft from `GITHUB_TOKEN` with HTTP 403, so v1.0.4 has no release. The draft job now has read-only `GITHUB_TOKEN` permissions.
 
 ## 1.0.4
 

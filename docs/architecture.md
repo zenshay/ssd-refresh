@@ -80,7 +80,7 @@ Each build reads the event commit and uses `cargo build --locked`.
 All builds must pass before one job collects the eight product files.
 Archives include project licenses, third-party notices, and the linked safety and support documents.
 Standalone Windows programs have separate notice files. Download both project license files with them.
-Only that final job has release write permission.
+Only that final job reads the `RELEASE_TOKEN` secret. No job has release write permission through `GITHUB_TOKEN`.
 
 The final job checks that the remote tag still points to the source commit.
 It accepts lightweight and annotated tags. It rejects an already published release.
@@ -92,6 +92,22 @@ The workflow creates a draft. A version with a suffix also marks the draft as a 
 Review its files and check results before you publish it.
 You can repeat a failed run while the release remains a draft.
 Use a new version tag after publication.
+
+### Release token
+
+Since v1.0.4, GitHub refuses release writes from `GITHUB_TOKEN` in this repository.
+The error is HTTP 403 "Resource not accessible by integration", also with `contents: write`.
+The token of the repository owner can create a draft. The cause is not known.
+
+The final job uses the `RELEASE_TOKEN` repository secret for all release API calls.
+Use a fine-grained personal access token with these settings:
+
+- Repository access: only `zenshay/ssd-refresh`.
+- Repository permissions: Contents "Read and write". GitHub adds Metadata "Read-only".
+- No other permissions. Set an expiration date.
+
+Before the token expires, make a new token and replace the secret.
+When the secret is missing, the job stops before the upload with a clear message.
 
 These checks do not run VHDX, ext4 image, or physical SSD tests.
 Cross-compilation does not confirm that a package runs on the target hardware.
