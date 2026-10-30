@@ -1,11 +1,15 @@
 mod commands;
 mod dto;
 mod native_open;
+mod startup;
 mod state;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    if !startup::webview_ready() {
+        std::process::exit(1);
+    }
+    let result = tauri::Builder::default()
         .manage(state::AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::environment,
@@ -23,6 +27,9 @@ pub fn run() {
             commands::open_log_folder,
             commands::save_log_as,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+    if let Err(error) = result {
+        startup::show_start_error(&error.to_string());
+        std::process::exit(1);
+    }
 }

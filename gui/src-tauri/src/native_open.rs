@@ -17,6 +17,12 @@ fn open_issue_with(
     launcher(OsStr::new(url))
 }
 
+/// Opens a fixed address from this program. Never pass an address from the web page.
+#[cfg(windows)]
+pub fn open_url_unchecked(url: &'static str) -> Result<(), String> {
+    launch(OsStr::new(url))
+}
+
 pub fn open_path(path: &Path) -> Result<(), String> {
     open_path_with(path, launch)
 }
