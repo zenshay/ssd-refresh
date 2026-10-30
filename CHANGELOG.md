@@ -10,6 +10,7 @@
 - GUI: the card of the drive in use shows "Scanning…", "Refreshing…", or "Verifying…". Before, it showed "Scanning…" for all three operations.
 - GUI tests: `test/gui-vhdx.ps1` makes a small test VHDX with a drive letter and opens the GUI with test settings. The environment variables `SSD_REFRESH_TEST_THRESHOLD_MBPS` and `SSD_REFRESH_TEST_AFTER_WAIT_SECS` change the slow threshold and the wait of scan round 3. The GUI log shows a `TEST SETTING` line for each active variable. See CONTRIBUTING.md.
 - GUI: the version chip shows the version of `gui/package.json`. Before, `index.html` had a fixed `v1.0.5`, so the 1.0.6-rc.1 build showed v1.0.5.
+- GUI: without administrator rights, a notice shows at start, and Selective Refresh is locked with the hint "Needs administrator rights". Before, the GUI showed nothing. The refresh failed only after the confirmation, with a message for the command line.
 
 ## 1.0.5
 
