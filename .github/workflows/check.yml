@@ -1,13 +1,14 @@
 name: Check
 on:
   workflow_call:
-  push:
-    branches: [main]
+  # Pushes to main do not start a run. The ruleset requires a pull request
+  # that is up to date with main, so its checks already tested that commit.
+  workflow_dispatch:
   pull_request:
 permissions:
   contents: read
 # A new push to a pull request stops the older run of that pull request.
-# Other events use the run ID. Thus pushes to main and release calls run as before.
+# Other events use the run ID. Thus manual runs and release calls run as before.
 concurrency:
   group: check-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
