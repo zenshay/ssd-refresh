@@ -130,8 +130,14 @@ export function nextStep(outcomes: VerifyOutcome[], now = Date.now()): string {
   );
   const wait = Math.max(0, ...undecided.map((o) => o.waitSecs));
   if (wait === 0 && undecided.length > 0) {
-    // Enough time, but few slow files with different results.
-    return `With fewer than ${MIN_SLOW_FILES} slow files, all must have the same result. The numbers above show the change.`;
+    // Enough time, but few slow files. Either the results are different, or verify
+    // could not measure all slow files (an error, a missing or a changed file).
+    const same = undecided.every(
+      (o) => o.speed?.slowNow === 0 || o.speed?.slowNow === o.speed?.slowBefore,
+    );
+    return same
+      ? `Verify could not measure all slow files. With fewer than ${MIN_SLOW_FILES}, it must measure all of them. The log shows which files.`
+      : `With fewer than ${MIN_SLOW_FILES} slow files, all must have the same result. The numbers above show the change.`;
   }
   if (wait > 0) {
     const at = new Date(now + wait * 1000).toLocaleString("en-US", {
