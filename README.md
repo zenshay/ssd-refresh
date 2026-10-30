@@ -489,8 +489,9 @@ Result
   Faster (rewritten): YES  80% or more of the slow files are not slow now.
   Speed (read only):  30 MB/s before, 45 MB/s now (1.5 times faster).
   Slow (read only):   4 before, 3 now.
-  Faster (read only): NOT DECIDED  Only 4 slow files. Need 10 or more.
-  Conclusion:         NOT DECIDED  Only 4 slow files in the read only group. Need 10 or more.
+  Faster (read only): NOT DECIDED  Only 4 slow files, and they do not have the same result. With
+                                   fewer than 10, all must have the same result.
+  Conclusion:         NOT DECIDED  The read only group has no Faster result.
   Time since refresh: 21 days.
 ```
 
@@ -499,14 +500,16 @@ Result
 | Data safe | `YES`: the files that no program changed have the same SHA-256 as at the refresh. `NO`: some files have a different SHA-256, but their size, times and USN did not change. Thus no program changed them. `verify` shows these files. The exit code is 3 |
 | Speed | The read speed of the files that were slow before the refresh, before and now |
 | Slow files | The number of these files that were slow before, and that are slow now |
-| Faster | `YES`: 80% or more of these files are not slow now. See [NOT DECIDED](#not-decided) |
+| Faster | `YES`: 80% or more of these files are not slow now. With fewer than 10 of these files, all must have the same result: all not slow is `YES`, all slow is `NO`. See [NOT DECIDED](#not-decided) |
 | Time since refresh | The time since the refresh |
 | Verify again | Only less than 12 hours after the refresh: the time until `verify` can show `YES` or `NO` |
 
 <a id="not-decided"></a>`NOT DECIDED`: `verify` shows the numbers, but no `YES` or `NO`. This occurs in two conditions:
 
-1. A group has fewer than 10 files that were slow before the refresh. With few files, the result can be wrong.
+1. A group has fewer than 10 files that were slow before the refresh, and these files do not have the same result. With few files, one file changes the share very much.
 2. Less than 12 hours have gone by since the refresh. New data is always fast at first.
+
+`verify` reads all slow files of the refresh log, not a sample. Thus a drive with 3 slow files can get `YES` or `NO`. One file with a wrong measurement can change this result. Run `verify` again after 7 and 30 days to compare.
 
 If a Faster line is `NOT DECIDED`, the conclusion is also `NOT DECIDED`. `NOT DECIDED` is not an error: the exit code is 0. Data safe does not change: `verify` always checks it.
 

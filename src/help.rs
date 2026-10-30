@@ -314,14 +314,16 @@ Result (at the end)
                 Some files are different.
                 n/a: a scan report. The scan did not move files.
   Faster        Only for files that were slow before. YES: 80% or more of
-                these files are not slow now. The speed is all bytes divided
+                these files are not slow now. With fewer than 10 of these
+                files, all must have the same result: all not slow is YES,
+                all slow is NO. The speed is all bytes divided
                 by all read time, before and now. verify shows the result as
                 'N.N times faster' or 'N.N times slower'. With a control group,
                 there is one line for each group and a conclusion.
                 NOT DECIDED: verify shows the numbers, but no YES or NO. This
-                occurs if a group has fewer than 10 slow files, or if less
-                than 12 hours have gone by. The conclusion is then also NOT
-                DECIDED. The exit code stays 0.
+                occurs if less than 12 hours have gone by, or if fewer than
+                10 slow files do not have the same result. The conclusion is
+                then also NOT DECIDED. The exit code stays 0.
   Time since refresh
                 The time since the refresh.
 

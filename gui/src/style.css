@@ -1272,7 +1272,9 @@ body {
   color: var(--text-main);
   /* Keep line breaks and column spaces, so the verify summary looks like the log file. */
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  /* Break only a word that is longer than the line, for example a path.
+     "anywhere" also let the column become narrow and broke words like "on|ly". */
+  overflow-wrap: break-word;
 }
 
 /* Short windows (for example a laptop at 125% scale): use less space

@@ -110,7 +110,7 @@ function verifyNotice(
   return { kind, title, body: lines.join("\n") };
 }
 
-/** Verify shows YES or NO only with this many slow files or more (src/verify.rs MIN_SLOW_FILES). */
+/** With fewer slow files, all of them must have the same result (src/verify.rs MIN_SLOW_FILES). */
 const MIN_SLOW_FILES = 10;
 
 /** "1298 → 255 MB/s (5.1 times slower)" */
@@ -128,13 +128,11 @@ export function nextStep(outcomes: VerifyOutcome[], now = Date.now()): string {
   const undecided = outcomes.filter(
     (o) => o.faster === "NOT DECIDED" && o.speed,
   );
-  const few = undecided.filter(
-    (o) => (o.speed?.slowBefore ?? 0) < MIN_SLOW_FILES,
-  );
-  if (few.length > 0) {
-    return `Faster needs ${MIN_SLOW_FILES} or more slow files. The numbers above show the change.`;
-  }
   const wait = Math.max(0, ...undecided.map((o) => o.waitSecs));
+  if (wait === 0 && undecided.length > 0) {
+    // Enough time, but few slow files with different results.
+    return `With fewer than ${MIN_SLOW_FILES} slow files, all must have the same result. The numbers above show the change.`;
+  }
   if (wait > 0) {
     const at = new Date(now + wait * 1000).toLocaleString("en-US", {
       month: "short",

@@ -33,6 +33,20 @@ impl Speed {
     fn recovered(&self) -> bool {
         self.n > 0 && (self.n - self.still) as f64 >= RECOVERED_SHARE * self.n as f64
     }
+    /// YES (`Some(true)`), NO (`Some(false)`) or no decision. With fewer than MIN_SLOW_FILES
+    /// files, the share can change much with one file. Then all files must have the same result.
+    /// Verify reads all slow files of the log, so the few files are all the slow files.
+    fn decision(&self) -> Option<bool> {
+        if self.n >= MIN_SLOW_FILES {
+            Some(self.recovered())
+        } else if self.n > 0 && self.still == 0 {
+            Some(true)
+        } else if self.n > 0 && self.still == self.n {
+            Some(false)
+        } else {
+            None
+        }
+    }
     fn factor(&self) -> f64 {
         if self.then_bps > 0.0 {
             self.now_bps / self.then_bps
@@ -273,10 +287,10 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         "Only {} since {since}. New data is always fast at first.",
         fmt_time(s.age)
     );
-    let few_reason = |n: usize| {
+    let few_reason = |sp: &Speed| {
         format!(
-            "Only {}. Need {MIN_SLOW_FILES} or more.",
-            count_of(n as u64, "slow file")
+            "Only {}, and they do not have the same result. With fewer than {MIN_SLOW_FILES}, all must have the same result.",
+            count_of(sp.n as u64, "slow file")
         )
     };
     let mut faster = "";
@@ -331,21 +345,26 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
             "",
             &format!("{} before, {} now.", sp.n, sp.still),
         );
+        let decision = sp.decision();
         let mut reasons = Vec::new();
-        if sp.n < MIN_SLOW_FILES {
-            reasons.push(few_reason(sp.n));
+        if decision.is_none() {
+            reasons.push(few_reason(sp));
         }
         if too_soon {
             reasons.push(soon_reason.clone());
         }
-        if reasons.is_empty() {
-            let yes = sp.recovered();
+        if let (true, Some(yes)) = (reasons.is_empty(), decision) {
             let v = verdict(if yes { "YES" } else { "NO" });
             let share = (RECOVERED_SHARE * 100.0).round();
-            let text = if yes {
-                format!("{share}% or more of the slow files are not slow now.")
-            } else {
-                format!("Less than {share}% of the slow files are not slow now.")
+            let text = match (yes, sp.n >= MIN_SLOW_FILES) {
+                (true, true) => format!("{share}% or more of the slow files are not slow now."),
+                (false, true) => {
+                    format!("Less than {share}% of the slow files are not slow now.")
+                }
+                (true, false) if sp.n == 1 => "The slow file is not slow now.".to_string(),
+                (false, false) if sp.n == 1 => "The slow file is still slow.".to_string(),
+                (true, false) => format!("All {} slow files are not slow now.", sp.n),
+                (false, false) => format!("All {} slow files are still slow.", sp.n),
             };
             t += &result_line(&named("Faster"), v, &text);
         } else {
@@ -355,10 +374,9 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
     if let [(_, rw), (_, ro)] = speeds.as_slice() {
         let mut reasons = Vec::new();
         for (sp, name) in [(rw, "rewritten"), (ro, label(Group::ReadOnly))] {
-            if sp.n < MIN_SLOW_FILES {
+            if sp.decision().is_none() {
                 reasons.push(format!(
-                    "Only {} in the {} group. Need {MIN_SLOW_FILES} or more.",
-                    count_of(sp.n as u64, "slow file"),
+                    "The {} group has no Faster result.",
                     name.to_lowercase()
                 ));
             }
@@ -366,8 +384,10 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         if too_soon {
             reasons.push(soon_reason.clone());
         }
-        if reasons.is_empty() {
-            let text = match (rw.recovered(), ro.recovered()) {
+        if let (true, Some(rw_yes), Some(ro_yes)) =
+            (reasons.is_empty(), rw.decision(), ro.decision())
+        {
+            let text = match (rw_yes, ro_yes) {
                 (true, false) => format!(
                     "Rewriting made the files {} than reading only.",
                     times(rw.now_bps / ro.now_bps)
@@ -394,8 +414,8 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         "",
         &format!("{}.", fmt_time(s.age)),
     );
-    // With too few slow files, a later verify cannot decide either. Then do not ask for one.
-    let wait_secs = if too_soon && speed.is_some_and(|f| f.slow_before >= MIN_SLOW_FILES) {
+    // A later verify can decide, also with few slow files: then all files must agree.
+    let wait_secs = if too_soon && speed.is_some() {
         min_age - s.age
     } else {
         0
@@ -604,12 +624,19 @@ mod tests {
     }
 
     #[test]
-    fn few_slow_files_is_not_decided() {
+    fn few_slow_files_decide_when_all_agree() {
+        // 2 files in each group: all rewritten files are fast, all read-only files are slow.
         let (items, results) = two_groups(2);
         let s = summary(&items, &results);
         assert!(
             s.text
-                .contains("Faster (read only): NOT DECIDED  Only 2 slow files. Need 10 or more.\n"),
+                .contains("Faster (rewritten): YES  All 2 slow files are not slow now."),
+            "{}",
+            s.text
+        );
+        assert!(
+            s.text
+                .contains("Faster (read only): NO   All 2 slow files are still slow."),
             "{}",
             s.text
         );
@@ -624,16 +651,37 @@ mod tests {
             "{}",
             s.text
         );
+        assert!(s.text.contains("Rewriting made"), "{}", s.text);
+        assert!(!s.data_not_safe);
+        assert_eq!(s.faster, "YES");
+    }
+
+    #[test]
+    fn few_slow_files_with_different_results_are_not_decided() {
+        // 3 slow files: 2 are fast now, 1 is slow now. 67% would be NO with 10 files or more.
+        let items: Vec<Item> = (0..3)
+            .map(|i| item(&format!("f{i}"), Group::Rewritten, 10.0, true))
+            .collect();
+        let results: Vec<(usize, Outcome)> = (0..3)
+            .map(|i| (i, measured(i == 0, if i == 0 { 10.0 } else { 500.0 })))
+            .collect();
+        let s = summary(&items, &results);
         assert!(
             s.text.contains(
-                "Conclusion:         NOT DECIDED  Only 2 slow files in the rewritten group."
+                "Faster:             NOT DECIDED  Only 3 slow files, and they do not have the same"
             ),
             "{}",
             s.text
         );
-        assert!(!s.text.contains("Rewriting made"), "{}", s.text);
-        assert!(!s.data_not_safe);
         assert_eq!(s.faster, "NOT DECIDED");
+        // One file is enough when it has a result: it is all the slow files.
+        let s = summary(&items[..1], &results[..1]);
+        assert!(
+            s.text
+                .contains("Faster:             NO   The slow file is still slow."),
+            "{}",
+            s.text
+        );
     }
 
     #[test]
@@ -677,8 +725,8 @@ mod tests {
     }
 
     #[test]
-    fn few_slow_files_do_not_ask_to_verify_again() {
-        // Too soon and too few: a later verify cannot decide either.
+    fn few_slow_files_too_soon_ask_to_verify_again() {
+        // Too soon: a later verify can decide, also with few files.
         let (items, results) = two_groups(2);
         let s = build_summary(&SummaryInput {
             items: &items,
@@ -687,9 +735,10 @@ mod tests {
             has_meta: true,
             age: 0,
         });
-        assert_eq!(s.wait_secs, 0);
-        assert!(!s.text.contains("Verify again:"), "{}", s.text);
-        assert!(s.text.contains("Need 10 or more."), "{}", s.text);
+        assert_eq!(s.wait_secs, MIN_AGE_HOURS * 3600);
+        assert!(s.text.contains("Verify again:"), "{}", s.text);
+        assert!(!s.text.contains("do not have the same"), "{}", s.text);
+        assert_eq!(s.faster, "NOT DECIDED");
     }
 
     #[test]

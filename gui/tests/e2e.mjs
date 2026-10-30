@@ -352,11 +352,12 @@ try {
     // biome-ignore lint/performance/useDomNodeTextContent: innerText shows the line breaks that CSS renders.
     (node) => node.innerText.split("\n"),
   );
-  assert.deepEqual(noticeLines, [
+  assert.deepEqual(noticeLines.slice(0, 2), [
     "Read speed: 12 → 480 MB/s (40.0 times faster)",
     "Slow files: 1 → 0",
-    "Faster needs 10 or more slow files. The numbers above show the change.",
   ]);
+  assert.equal(noticeLines.length, 3);
+  assert.match(noticeLines[2], /^Next step: verify again after /);
   assert.equal(
     await page.$eval("#mode-chip", (node) => node.textContent),
     "Ready",
