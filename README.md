@@ -45,9 +45,10 @@ Results depend on the drive. The diagram shows a possible result.
 </p>
 <p align="center"><sub>The desktop app after a scan. The drives and files are demo data.</sub></p>
 
-Get the Windows desktop app from [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases).
-Choose `ssd-refresh-gui-v1.0.5-windows-x64.zip` for Windows 10/11.
-The ARM64 package is `ssd-refresh-gui-v1.0.5-windows-arm64.zip`.
+Get the Windows desktop app from the [latest release](https://github.com/zenshay/ssd-refresh/releases/latest).
+Choose `ssd-refresh-gui-<version>-windows-x64.zip` for Windows 10/11.
+The ARM64 package is `ssd-refresh-gui-<version>-windows-arm64.zip`.
+`<version>` is the release tag, for example `v1.2.3`.
 Extract the ZIP file and run the app. The app uses English.
 The desktop app needs Microsoft Edge WebView2 Runtime.
 The Windows app is not signed. Windows or your security software may show a warning.
@@ -185,18 +186,19 @@ Remove private file names, user names, and paths from summaries. Do not attach a
 
 ### Download
 
-Get pre-compiled binaries from [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases).
+Get pre-compiled binaries from the [latest release](https://github.com/zenshay/ssd-refresh/releases/latest).
+In each name, `<version>` is the release tag, for example `v1.2.3`.
 
 | Package | Platform & Architecture | Description |
 |---|---|---|
-| **`ssd-refresh-gui-v1.0.5-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Desktop GUI; needs WebView2. |
-| **`ssd-refresh-gui-v1.0.5-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled GUI; ARM hardware operation is not confirmed here. |
-| **`ssd-refresh-cli-v1.0.5-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Command-line tool. |
-| **`ssd-refresh-cli-v1.0.5-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled CLI; ARM hardware operation is not confirmed here. |
-| **`ssd-refresh-cli-v1.0.5-linux-x64.tar.gz`** | Linux (`x86_64`) | Command-line tool. |
-| **`ssd-refresh-cli-v1.0.5-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | CLI; scan and verify only. |
+| **`ssd-refresh-gui-<version>-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Desktop GUI; needs WebView2. |
+| **`ssd-refresh-gui-<version>-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled GUI; ARM hardware operation is not confirmed here. |
+| **`ssd-refresh-cli-<version>-windows-x64.zip`** | Windows 10/11 (`x86_64`) | Command-line tool. |
+| **`ssd-refresh-cli-<version>-windows-arm64.zip`** | Windows on ARM (`aarch64`) | Cross-compiled CLI; ARM hardware operation is not confirmed here. |
+| **`ssd-refresh-cli-<version>-linux-x64.tar.gz`** | Linux (`x86_64`) | Command-line tool. |
+| **`ssd-refresh-cli-<version>-macos-universal.tar.gz`** | macOS (`Apple Silicon & Intel`) | CLI; scan and verify only. |
 
-These names apply to v1.0.5. Check the asset list for another version.
+Older releases can have other files. Check the asset list of that release.
 
 <a id="platforms"></a>
 
