@@ -298,6 +298,26 @@ try {
     await page.$eval("#btn-verify .action-hint", (node) => node.textContent),
     /Speed result after 12 hours/,
   );
+  // The drive card shows the refresh. The text must fit in the card.
+  const refreshedCard = await page.$eval('[data-root="X:\\\\"]', (node) => {
+    const meta = node.querySelector(".drive-meta");
+    return {
+      text: node.querySelector(".drive-refreshed")?.textContent,
+      fits: meta.scrollWidth <= meta.clientWidth,
+    };
+  });
+  assert.deepEqual(refreshedCard, { text: "Refreshed just now", fits: true });
+  // Long real values must also fit at the default window size.
+  assert.equal(
+    await page.$eval('[data-root="X:\\\\"]', (node) => {
+      const meta = node.querySelector(".drive-meta");
+      meta.firstElementChild.textContent = "123.4 GB free of 1.8 TB";
+      node.querySelector(".drive-refreshed").textContent =
+        "Refreshed 30 days ago";
+      return meta.scrollWidth <= meta.clientWidth;
+    }),
+    true,
+  );
   await page.click("#btn-verify");
   await page.waitForFunction(() =>
     document

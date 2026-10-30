@@ -278,6 +278,65 @@ test("verify is locked until a selected drive has a refresh log", () => {
   assert.equal(verifyAction(store.get()).disabled, true);
 });
 
+test("verify names a refreshed drive that is not selected", () => {
+  const store = createStore({
+    ...initialState,
+    volumes: [
+      volume("X:"),
+      volume("Y:", { logPath: "y.refresh.csv", unixSecs: 1 }),
+      volume("Z:"),
+    ],
+    selectedRoots: ["X:"],
+  });
+  const one = verifyAction(store.get());
+  assert.equal(one.disabled, true);
+  assert.equal(one.hint, "Y: has a refresh log. Select it to verify.");
+  store.set({
+    volumes: [
+      volume("X:"),
+      volume("Y:", { logPath: "y.refresh.csv", unixSecs: 1 }),
+      volume("Z:", { logPath: "z.refresh.csv", unixSecs: 1 }),
+    ],
+  });
+  assert.equal(
+    verifyAction(store.get()).hint,
+    "Y:, Z: have a refresh log. Select them to verify.",
+  );
+  store.set({ volumes: [volume("X:")] });
+  assert.equal(verifyAction(store.get()).hint, "Run Selective Refresh first.");
+});
+
+test("at start, the drive list selects the drives with a refresh log", async () => {
+  const refreshed = [
+    volume("C:"),
+    volume("D:", { logPath: "d.refresh.csv", unixSecs: 1 }),
+    volume("E:", { logPath: "e.refresh.csv", unixSecs: 1 }),
+  ];
+  const store = createStore({ ...initialState });
+  const actions = createActions(
+    store,
+    async () => true,
+    backend({ listVolumes: async () => refreshed }),
+  );
+  await actions.loadVolumes();
+  assert.deepEqual(store.get().selectedRoots, ["D:", "E:"]);
+  assert.equal(verifyAction(store.get()).disabled, false);
+
+  // A reload keeps the selection of the user.
+  store.set({ selectedRoots: ["C:"] });
+  await actions.loadVolumes();
+  assert.deepEqual(store.get().selectedRoots, ["C:"]);
+
+  // Without a refresh log, the first drive is selected.
+  const plain = createStore({ ...initialState });
+  await createActions(
+    plain,
+    async () => true,
+    backend({ listVolumes: async () => [volume("C:"), volume("D:")] }),
+  ).loadVolumes();
+  assert.deepEqual(plain.get().selectedRoots, ["C:"]);
+});
+
 test("verify reads only the drives with a refresh log", async () => {
   const store = createStore({
     ...initialState,

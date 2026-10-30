@@ -514,6 +514,12 @@ body {
   justify-content: space-between;
 }
 
+.drive-refreshed {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
 .drive-status-active {
   color: var(--accent-warm);
   font-weight: 600;

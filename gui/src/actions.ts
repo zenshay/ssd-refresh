@@ -127,16 +127,23 @@ export function createActions(
     try {
       const volumes = await backend.listVolumes();
       const currentSelected = store.get().selectedRoots;
-      // Retain already selected roots if they still exist, otherwise default to all or first
+      // Keep the selected drives that still exist. Without a selection (for example at start),
+      // select the drives with a refresh log, so Verify is ready after a restart.
+      // Without a refresh log, select the first drive.
       const validSelected = currentSelected.filter((r) =>
         volumes.some((v) => v.root === r),
       );
+      const refreshed = volumes
+        .filter((v) => v.lastRefresh !== null)
+        .map((v) => v.root);
       const nextSelected =
         validSelected.length > 0
           ? validSelected
-          : volumes.length > 0
-            ? [volumes[0].root]
-            : [];
+          : refreshed.length > 0
+            ? refreshed
+            : volumes.length > 0
+              ? [volumes[0].root]
+              : [];
 
       store.set({
         volumes,
