@@ -25,26 +25,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
       - name: Require a version tag
-        shell: pwsh
-        run: |
-          if ($env:GITHUB_REF_TYPE -ne 'tag') {
-            throw 'Select an existing version tag when you start this workflow.'
-          }
-          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
-            throw 'Use a version tag such as v1.0.3 or v1.0.3-rc.1.'
-          }
-          $version = $env:RELEASE_TAG.Substring(1)
-          foreach ($manifest in @('Cargo.toml', 'gui/src-tauri/Cargo.toml')) {
-            $text = Get-Content -LiteralPath $manifest -Raw
-            $package = [regex]::Match($text, '(?ms)^\[package\]\s*(.*?)(?=^\[|\z)').Groups[1].Value
-            $actual = [regex]::Match($package, '(?m)^version\s*=\s*"([^"]+)"').Groups[1].Value
-            if ($actual -ne $version) { throw "Version does not match the tag: $manifest" }
-          }
-          foreach ($manifest in @('gui/package.json', 'gui/src-tauri/tauri.conf.json')) {
-            $actual = (Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json).version
-            if ($actual -ne $version) { throw "Version does not match the tag: $manifest" }
-          }
+        run: node scripts/release.mjs validate
 
   check:
     name: Check release commit
@@ -101,25 +86,7 @@ jobs:
           cargo build --locked --release --target ${{ matrix.target }} --bin ssd-refresh
 
       - name: Package Windows Artifacts
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force dist-out | Out-Null
-          $guiExe = "target/${{ matrix.target }}/release/ssd-refresh-gui.exe"
-          foreach ($kind in @('gui', 'cli')) {
-            $staging = "dist-out/staging/$kind"
-            New-Item -ItemType Directory -Force $staging | Out-Null
-            Copy-Item README.md, README.zh-TW.md, LICENSE-MIT, LICENSE-APACHE, SECURITY.md, SUPPORT.md, CONTRIBUTING.md -Destination $staging
-            New-Item -ItemType Directory -Force "$staging/docs" | Out-Null
-            Copy-Item docs/security.md, docs/architecture.md -Destination "$staging/docs"
-            $package = if ($kind -eq 'gui') { 'ssd-refresh-gui' } else { 'ssd-refresh' }
-            node scripts/package-notices.mjs --target '${{ matrix.target }}' --package $package --output "$staging/THIRD-PARTY-NOTICES.txt"
-            if ($LASTEXITCODE -ne 0) { throw "Cannot collect notices for $package." }
-            $binary = if ($kind -eq 'gui') { $guiExe } else { "target/${{ matrix.target }}/release/ssd-refresh.exe" }
-            Copy-Item $binary -Destination $staging
-            Compress-Archive -Path "$staging/*" -DestinationPath "dist-out/ssd-refresh-$kind-$env:RELEASE_TAG-windows-${{ matrix.arch }}.zip" -Force
-          }
-          Copy-Item $guiExe -Destination "dist-out/ssd-refresh-gui-$env:RELEASE_TAG-windows-${{ matrix.arch }}.exe"
-          Copy-Item dist-out/staging/gui/THIRD-PARTY-NOTICES.txt -Destination "dist-out/ssd-refresh-gui-$env:RELEASE_TAG-windows-${{ matrix.arch }}-NOTICES.txt"
+        run: node scripts/release.mjs package-windows --target ${{ matrix.target }} --arch ${{ matrix.arch }}
 
       - name: Store Windows packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -242,91 +209,19 @@ jobs:
           pattern: release-*
           path: dist-out
           merge-multiple: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
       - name: Check release token
-        shell: pwsh
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          if (-not $env:RELEASE_TOKEN) {
-            throw 'The RELEASE_TOKEN secret is missing. See docs/architecture.md, "Release token".'
-          }
+        run: node scripts/release.mjs require-token
       - name: Check tag and release state
-        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-        run: |
-          $tagJson = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:RELEASE_TAG"
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the release tag.' }
-          $target = ($tagJson | ConvertFrom-Json).object
-          while ($target.type -eq 'tag') {
-            $tagJson = gh api "repos/$env:GITHUB_REPOSITORY/git/tags/$($target.sha)"
-            if ($LASTEXITCODE -ne 0) { throw 'Cannot read the annotated tag.' }
-            $target = ($tagJson | ConvertFrom-Json).object
-          }
-          $sourceCommit = git rev-parse HEAD
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the source commit.' }
-          if ($target.type -ne 'commit' -or $target.sha -ne $sourceCommit) {
-            throw 'The release tag changed during this run.'
-          }
-          $releases = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases" --jq '.[] | [.tag_name, .draft] | @tsv'
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the release list.' }
-          foreach ($release in $releases) {
-            $fields = $release -split "`t"
-            if ($fields[0] -eq $env:RELEASE_TAG -and $fields[1] -ne 'true') {
-              throw 'This release is already published. Use a new version tag.'
-            }
-          }
+        run: node scripts/release.mjs guard
       - name: Check packages and record evidence
-        shell: pwsh
-        run: |
-          Copy-Item LICENSE-MIT, LICENSE-APACHE -Destination dist-out
-          $expected = @(
-            "ssd-refresh-gui-$env:RELEASE_TAG-windows-x64.zip",
-            "ssd-refresh-gui-$env:RELEASE_TAG-windows-x64.exe",
-            "ssd-refresh-cli-$env:RELEASE_TAG-windows-x64.zip",
-            "ssd-refresh-gui-$env:RELEASE_TAG-windows-arm64.zip",
-            "ssd-refresh-gui-$env:RELEASE_TAG-windows-arm64.exe",
-            "ssd-refresh-cli-$env:RELEASE_TAG-windows-arm64.zip",
-            "ssd-refresh-cli-$env:RELEASE_TAG-linux-x64.tar.gz",
-            "ssd-refresh-cli-$env:RELEASE_TAG-macos-universal.tar.gz",
-            "ssd-refresh-gui-$env:RELEASE_TAG-windows-x64-NOTICES.txt",
-            "ssd-refresh-gui-$env:RELEASE_TAG-windows-arm64-NOTICES.txt",
-            'LICENSE-MIT',
-            'LICENSE-APACHE'
-          )
-          $actual = @(Get-ChildItem -LiteralPath dist-out -File | Select-Object -ExpandProperty Name)
-          if (Compare-Object $expected $actual) { throw 'The release package list does not match.' }
-          $packages = foreach ($name in $expected) {
-            $file = Get-Item -LiteralPath "dist-out/$name"
-            if ($file.Length -eq 0) { throw "The package is empty: $name" }
-            [ordered]@{
-              name = $name
-              bytes = $file.Length
-              sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            }
-          }
-          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          [ordered]@{
-            tag = $env:RELEASE_TAG
-            commit = $env:GITHUB_SHA
-            run = $runUrl
-            attempt = $env:GITHUB_RUN_ATTEMPT
-            checks = 'Windows, Linux, macOS: node check.mjs; native Tauri checks run on Windows only.'
-            hardwareTests = 'NO'
-            packages = @($packages)
-          } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath dist-out/release-metadata.json -Encoding utf8NoBOM
-          $sums = @($packages | ForEach-Object { "$($_.sha256)  $($_.name)" })
-          $metadataHash = (Get-FileHash -LiteralPath dist-out/release-metadata.json -Algorithm SHA256).Hash.ToLowerInvariant()
-          $sums += "$metadataHash  release-metadata.json"
-          $sums | Set-Content -LiteralPath dist-out/SHA256SUMS -Encoding utf8NoBOM
-          @(
-            "Commit: $env:GITHUB_SHA",
-            "Checks: $runUrl",
-            'Hardware tests in this run: NO.',
-            'Windows programs are not signed. Archives include license texts and third-party notices.',
-            'For a standalone Windows program, also download its NOTICES.txt and both LICENSE files.',
-            'Review the packages and SHA256SUMS before you publish this draft.'
-          ) | Set-Content -LiteralPath release-notes.txt -Encoding utf8NoBOM
+        run: node scripts/release.mjs evidence
       - name: Create or update draft
         id: release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -340,26 +235,7 @@ jobs:
           body_path: release-notes.txt
           files: dist-out/*
       - name: Verify remote draft assets
-        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           RELEASE_ID: ${{ steps.release.outputs.id }}
-        run: |
-          if (-not $env:RELEASE_ID) { throw 'The release ID is missing.' }
-          $json = gh api "repos/$env:GITHUB_REPOSITORY/releases/$env:RELEASE_ID"
-          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the uploaded release.' }
-          $release = $json | ConvertFrom-Json
-          if ($release.draft -ne $true -or $release.tag_name -ne $env:RELEASE_TAG) {
-            throw 'The uploaded release is not the expected draft.'
-          }
-          $files = @(Get-ChildItem -LiteralPath dist-out -File)
-          $names = @($files | Select-Object -ExpandProperty Name)
-          $remoteNames = @($release.assets | ForEach-Object { $_.name })
-          if (Compare-Object $names $remoteNames) { throw 'The remote release asset list does not match.' }
-          foreach ($file in $files) {
-            $asset = @($release.assets | Where-Object { $_.name -eq $file.Name })
-            $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($asset.Count -ne 1 -or $asset[0].size -ne $file.Length -or $asset[0].digest -ne "sha256:$hash") {
-              throw "The remote asset size or hash does not match: $($file.Name)"
-            }
-          }
+        run: node scripts/release.mjs verify-remote

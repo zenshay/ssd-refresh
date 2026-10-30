@@ -35,13 +35,8 @@ async function sharedChecks() {
 }
 
 async function releaseChecks() {
-  if (process.platform === "win32") {
-    await node("Release workflow regression tests", "scripts/test-release.mjs");
-    await node(
-      "Windows release package tests",
-      "scripts/test-release-packages.mjs",
-    );
-  }
+  await node("Release workflow regression tests", "scripts/test-release.mjs");
+  await node("Release package tests", "scripts/test-release-packages.mjs");
 }
 
 async function applicationChecks() {
@@ -114,11 +109,13 @@ async function applicationChecks() {
   }
 }
 
-// Release cases run beside the other checks to balance the two lanes.
+// Release cases run on all platforms. On Windows they run beside the other checks
+// to balance the two lanes. On Linux and macOS they run after the shared checks.
 await runBoth(
   async () => {
     await sharedChecks();
     if (process.platform === "win32") await applicationChecks();
+    else await releaseChecks();
   },
   process.platform === "win32" ? releaseChecks : applicationChecks,
 );

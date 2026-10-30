@@ -1,3 +1,5 @@
+// Release workflow tests. They run on Windows, Linux, and macOS without PowerShell.
+// External commands (gh, git) use stubs. The tests do not use the network.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -5,11 +7,22 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
+import {
+  cargoVersion,
+  evidence,
+  expectedPackages,
+  guard,
+  requireToken,
+  validate,
+  verifyRemote,
+} from "./release.mjs";
 import { root } from "./tools.mjs";
 
 const require = createRequire(new URL("../gui/package.json", import.meta.url));
@@ -21,30 +34,18 @@ const check = parse(
   readFileSync(`${root}/.github/workflows/check.yml`, "utf8"),
 );
 const sha = "0123456789abcdef0123456789abcdef01234567";
-const validation = release.jobs.validate.steps.find((step) => step.run).run;
-const guard = release.jobs.draft.steps.find(
-  (step) => step.name === "Check tag and release state",
-).run;
-const evidence = release.jobs.draft.steps.find(
-  (step) => step.name === "Check packages and record evidence",
-).run;
+const baseEnv = {
+  GITHUB_REF_TYPE: "tag",
+  RELEASE_TAG: "v1.0.2",
+  GITHUB_SHA: sha,
+  GITHUB_REPOSITORY: "test/repo",
+  GITHUB_SERVER_URL: "https://github.com",
+  GITHUB_RUN_ID: "123",
+  GITHUB_RUN_ATTEMPT: "1",
+};
 mkdirSync(join(root, "scratch"), { recursive: true });
 const suiteRoot = mkdtempSync(`${root}/scratch/release-tests-`);
 let count = 0;
-const packageNames = [
-  "ssd-refresh-gui-v1.0.2-windows-x64.zip",
-  "ssd-refresh-gui-v1.0.2-windows-x64.exe",
-  "ssd-refresh-cli-v1.0.2-windows-x64.zip",
-  "ssd-refresh-gui-v1.0.2-windows-arm64.zip",
-  "ssd-refresh-gui-v1.0.2-windows-arm64.exe",
-  "ssd-refresh-cli-v1.0.2-windows-arm64.zip",
-  "ssd-refresh-cli-v1.0.2-linux-x64.tar.gz",
-  "ssd-refresh-cli-v1.0.2-macos-universal.tar.gz",
-  "LICENSE-MIT",
-  "LICENSE-APACHE",
-  "ssd-refresh-gui-v1.0.2-windows-x64-NOTICES.txt",
-  "ssd-refresh-gui-v1.0.2-windows-arm64-NOTICES.txt",
-];
 
 function fixture(name, mismatch) {
   const directory = join(suiteRoot, name);
@@ -68,46 +69,17 @@ function fixture(name, mismatch) {
   return directory;
 }
 
-function execute(directory, script, environment = {}) {
-  const scriptFile = join(directory, "run.ps1");
-  writeFileSync(scriptFile, `$ErrorActionPreference = 'Stop'\n${script}`);
-  return spawnSync(
-    "pwsh",
-    ["-NoProfile", "-NonInteractive", "-File", scriptFile],
-    {
-      cwd: directory,
-      encoding: "utf8",
-      windowsHide: true,
-      timeout: 30000,
-      env: {
-        ...process.env,
-        GITHUB_REF_TYPE: "tag",
-        RELEASE_TAG: "v1.0.2",
-        GITHUB_SHA: sha,
-        GITHUB_REPOSITORY: "test/repo",
-        GITHUB_SERVER_URL: "https://github.com",
-        GITHUB_RUN_ID: "123",
-        GITHUB_RUN_ATTEMPT: "1",
-        RELEASE_TEST_CASE: "valid",
-        ...environment,
-      },
-    },
-  );
-}
-
-function expect(name, result, success, errorText) {
-  assert.ifError(result.error);
-  assert.equal(
-    result.status === 0,
-    success,
-    `${name}: ${result.stdout}\n${result.stderr}`,
-  );
-  if (errorText)
-    assert.ok(result.stderr.includes(errorText), `${name}: ${result.stderr}`);
+function expect(name, action, errorText) {
+  if (errorText) {
+    assert.throws(action, (error) => error.message.includes(errorText), name);
+  } else {
+    action();
+  }
   count += 1;
   console.log(`PASS: ${name}`);
 }
 
+// Workflow structure.
 assert.ok(Object.hasOwn(check.on, "workflow_call"));
 assert.equal(release.permissions.contents, "read");
 assert.equal(release.jobs.check.uses, "./.github/workflows/check.yml");
@@ -128,9 +100,6 @@ const draftStep = release.jobs.draft.steps.find(
 );
 assert.equal(draftStep.with.draft, true);
 assert.equal(draftStep.with.token, `\${{ secrets.RELEASE_TOKEN }}`);
-assert.ok(
-  release.jobs.draft.steps.some((step) => step.name === "Check release token"),
-);
 for (const [name, job] of Object.entries(release.jobs))
   if (name !== "draft")
     assert.ok(
@@ -148,19 +117,68 @@ for (const workflow of [check, release])
   }
 count += 1;
 console.log("PASS: workflow gates and permissions");
-expect("valid version tag", execute(fixture("valid"), validation), true);
+
+// Each release step calls release.mjs. Node 24 is set before the first call.
+const releaseSteps = {
+  validate: { "Require a version tag": "validate" },
+  "build-windows": {
+    "Package Windows Artifacts": `package-windows --target \${{ matrix.target }} --arch \${{ matrix.arch }}`,
+  },
+  draft: {
+    "Check release token": "require-token",
+    "Check tag and release state": "guard",
+    "Check packages and record evidence": "evidence",
+    "Verify remote draft assets": "verify-remote",
+  },
+};
+for (const [jobName, steps] of Object.entries(releaseSteps)) {
+  const job = release.jobs[jobName];
+  const nodeIndex = job.steps.findIndex(
+    (step) =>
+      step.uses?.startsWith("actions/setup-node@") &&
+      String(step.with?.["node-version"]) === "24",
+  );
+  assert.ok(nodeIndex >= 0, `${jobName}: set Node 24.`);
+  for (const [stepName, command] of Object.entries(steps)) {
+    const index = job.steps.findIndex((step) => step.name === stepName);
+    assert.ok(index > nodeIndex, `${jobName}: ${stepName} runs after Node.`);
+    assert.equal(job.steps[index].run, `node scripts/release.mjs ${command}`);
+    assert.equal(job.steps[index].shell, undefined);
+  }
+}
+assert.ok(
+  !/\bpwsh\b|powershell/i.test(
+    readFileSync(`${root}/.github/workflows/release.yml`, "utf8"),
+  ),
+  "release.yml must not need PowerShell.",
+);
+count += 1;
+console.log("PASS: release steps call release.mjs");
+
+// Tag and version checks.
+expect("valid version tag", () =>
+  validate({ env: baseEnv, cwd: fixture("valid") }),
+);
 expect(
   "branch dispatch rejected",
-  execute(fixture("branch"), validation, { GITHUB_REF_TYPE: "branch" }),
-  false,
+  () =>
+    validate({
+      env: { ...baseEnv, GITHUB_REF_TYPE: "branch" },
+      cwd: fixture("branch"),
+    }),
   "Select an existing version tag",
 );
-expect(
-  "invalid tag rejected",
-  execute(fixture("invalid"), validation, { RELEASE_TAG: "v1.0.2/extra" }),
-  false,
-  "Use a version tag",
-);
+for (const tag of ["v1.0.2/extra", "V1.0.2", "v1.0", "v1.0.2-", "1.0.2"]) {
+  expect(
+    `invalid tag ${tag} rejected`,
+    () =>
+      validate({
+        env: { ...baseEnv, RELEASE_TAG: tag },
+        cwd: fixture("invalid"),
+      }),
+    "Use a version tag",
+  );
+}
 for (const [index, manifest] of [
   "Cargo.toml",
   "gui/src-tauri/Cargo.toml",
@@ -169,61 +187,121 @@ for (const [index, manifest] of [
 ].entries()) {
   expect(
     `version mismatch ${manifest}`,
-    execute(fixture(`version-${index}`, manifest), validation),
-    false,
+    () =>
+      validate({ env: baseEnv, cwd: fixture(`version-${index}`, manifest) }),
     "Version does not match",
   );
 }
+assert.equal(
+  cargoVersion(
+    '[workspace]\nversion = "0.0.1"\n\n[package]\r\nname = "x"\r\nversion = "1.2.3"\r\n[deps]\nversion = "9"\n',
+  ),
+  "1.2.3",
+);
+assert.equal(cargoVersion('[package]\nname = "x"\n'), undefined);
+count += 1;
+console.log("PASS: Cargo package version only");
 
-const stub = `
-function git { $global:LASTEXITCODE = 0; '${sha}' }
-function gh {
-  $global:LASTEXITCODE = 0
-  $request = $args -join ' '
-  if ($env:RELEASE_TEST_CASE -eq 'api-failure') { $global:LASTEXITCODE = 1; return }
-  if ($request.Contains('/releases')) {
-    if ($env:RELEASE_TEST_CASE -eq 'published') { "v1.0.2\tfalse" }
-    if ($env:RELEASE_TEST_CASE -eq 'draft') { "v1.0.2\ttrue" }
-    return
-  }
-  if ($request.Contains('/git/tags/')) { '{"object":{"type":"commit","sha":"${sha}"}}'; return }
-  if ($env:RELEASE_TEST_CASE -eq 'annotated') { '{"object":{"type":"tag","sha":"tag-object"}}'; return }
-  if ($env:RELEASE_TEST_CASE -eq 'moved') { '{"object":{"type":"commit","sha":"other-commit"}}'; return }
-  '{"object":{"type":"commit","sha":"${sha}"}}'
+// The command line reports errors on stderr with exit code 1.
+const cli = (args, cwd, env) =>
+  spawnSync(process.execPath, [join(root, "scripts/release.mjs"), ...args], {
+    cwd,
+    encoding: "utf8",
+    windowsHide: true,
+    env: { ...process.env, ...env },
+  });
+let result = cli(["validate"], fixture("cli-valid"), baseEnv);
+assert.equal(result.status, 0, result.stderr);
+result = cli(["validate"], fixture("cli-invalid"), {
+  ...baseEnv,
+  RELEASE_TAG: "bad",
+});
+assert.equal(result.status, 1);
+assert.match(result.stderr, /^ERROR: Use a version tag/);
+result = cli(["unknown"], suiteRoot, baseEnv);
+assert.equal(result.status, 1);
+assert.match(result.stderr, /Use release\.mjs </);
+count += 1;
+console.log("PASS: command line exit codes");
+
+expect("token present", () =>
+  requireToken({ env: { RELEASE_TOKEN: "synthetic" } }),
+);
+expect(
+  "token missing rejected",
+  () => requireToken({ env: {} }),
+  "RELEASE_TOKEN secret is missing",
+);
+
+// Tag guard with stub gh and git.
+function guardExec(testCase) {
+  const calls = [];
+  const exec = (command, args) => {
+    calls.push([command, ...args].join(" "));
+    if (command === "git") return { status: 0, stdout: `${sha}\n` };
+    assert.equal(command, "gh");
+    if (testCase === "api-failure") return { status: 1, stdout: "" };
+    const request = args.join(" ");
+    if (request.includes("/releases")) {
+      if (testCase === "releases-failure") return { status: 1, stdout: "" };
+      if (testCase === "published")
+        return { status: 0, stdout: "v1.0.2\tfalse\nv1.0.1\tfalse\n" };
+      if (testCase === "draft") return { status: 0, stdout: "v1.0.2\ttrue\n" };
+      if (testCase === "other")
+        return { status: 0, stdout: "v1.0.20\tfalse\n" };
+      return { status: 0, stdout: "" };
+    }
+    if (request.includes("/git/tags/"))
+      return {
+        status: 0,
+        stdout: JSON.stringify({ object: { type: "commit", sha } }),
+      };
+    if (testCase === "annotated")
+      return {
+        status: 0,
+        stdout: JSON.stringify({ object: { type: "tag", sha: "tag-object" } }),
+      };
+    if (testCase === "moved")
+      return {
+        status: 0,
+        stdout: JSON.stringify({
+          object: { type: "commit", sha: "other-commit" },
+        }),
+      };
+    if (testCase === "bad-json") return { status: 0, stdout: "not json" };
+    return {
+      status: 0,
+      stdout: JSON.stringify({ object: { type: "commit", sha } }),
+    };
+  };
+  return { exec, calls };
 }
-`;
-for (const name of ["valid", "annotated", "draft"]) {
+for (const name of ["valid", "annotated", "draft", "other"]) {
+  const { exec, calls } = guardExec(name);
+  expect(`tag guard ${name}`, () =>
+    guard({ env: baseEnv, cwd: suiteRoot, exec }),
+  );
+  assert.equal(calls[0], "gh api repos/test/repo/git/ref/tags/v1.0.2");
+  if (name === "annotated")
+    assert.equal(calls[1], "gh api repos/test/repo/git/tags/tag-object");
+}
+for (const [name, message] of [
+  ["moved", "release tag changed"],
+  ["published", "already published"],
+  ["api-failure", "Cannot read the release tag"],
+  ["bad-json", "Cannot read the release tag"],
+  ["releases-failure", "Cannot read the release list"],
+]) {
+  const { exec } = guardExec(name);
   expect(
-    `tag guard ${name}`,
-    execute(fixture(`guard-${name}`), stub + guard, {
-      RELEASE_TEST_CASE: name,
-    }),
-    true,
+    `tag guard ${name} rejected`,
+    () => guard({ env: baseEnv, cwd: suiteRoot, exec }),
+    message,
   );
 }
-expect(
-  "moved tag rejected",
-  execute(fixture("guard-moved"), stub + guard, { RELEASE_TEST_CASE: "moved" }),
-  false,
-  "release tag changed",
-);
-expect(
-  "published release rejected",
-  execute(fixture("guard-published"), stub + guard, {
-    RELEASE_TEST_CASE: "published",
-  }),
-  false,
-  "already published",
-);
-expect(
-  "API failure rejected",
-  execute(fixture("guard-api"), stub + guard, {
-    RELEASE_TEST_CASE: "api-failure",
-  }),
-  false,
-  "Cannot read the release tag",
-);
 
+// Package evidence.
+const packageNames = expectedPackages("v1.0.2");
 function packageFixture(name, omit, empty = false, extra = false) {
   const directory = fixture(name);
   for (const license of ["LICENSE-MIT", "LICENSE-APACHE"]) {
@@ -231,6 +309,7 @@ function packageFixture(name, omit, empty = false, extra = false) {
   }
   mkdirSync(join(directory, "dist-out"));
   for (const filename of packageNames) {
+    if (filename.startsWith("LICENSE")) continue;
     if (filename === omit && !empty) continue;
     writeFileSync(
       join(directory, "dist-out", filename),
@@ -241,88 +320,120 @@ function packageFixture(name, omit, empty = false, extra = false) {
     writeFileSync(join(directory, "dist-out/unexpected.txt"), "unexpected");
   return directory;
 }
+const hash = (path) =>
+  createHash("sha256").update(readFileSync(path)).digest("hex");
 const good = packageFixture("packages");
-expect("package evidence", execute(good, evidence), true);
+expect("package evidence", () => evidence({ env: baseEnv, cwd: good }));
 const metadata = JSON.parse(
   readFileSync(join(good, "dist-out/release-metadata.json"), "utf8"),
 );
+assert.equal(metadata.tag, "v1.0.2");
 assert.equal(metadata.commit, sha);
+assert.equal(metadata.run, "https://github.com/test/repo/actions/runs/123");
+assert.equal(metadata.attempt, "1");
 assert.equal(metadata.hardwareTests, "NO");
-assert.equal(metadata.packages.length, packageNames.length);
+assert.deepEqual(
+  metadata.packages.map((entry) => entry.name),
+  packageNames,
+);
 for (const entry of metadata.packages) {
-  assert.equal(
-    entry.sha256,
-    createHash("sha256")
-      .update(readFileSync(join(good, "dist-out", entry.name)))
-      .digest("hex"),
-  );
+  const path = join(good, "dist-out", entry.name);
+  assert.equal(entry.sha256, hash(path));
+  assert.equal(entry.bytes, statSync(path).size);
 }
-for (const line of readFileSync(join(good, "dist-out/SHA256SUMS"), "utf8")
-  .trim()
-  .split(/\r?\n/)) {
-  const [hash, filename] = line.split("  ");
-  assert.equal(
-    hash,
-    createHash("sha256")
-      .update(readFileSync(join(good, "dist-out", filename)))
-      .digest("hex"),
-  );
+const sums = readFileSync(join(good, "dist-out/SHA256SUMS"), "utf8")
+  .trimEnd()
+  .split("\n");
+assert.equal(sums.length, packageNames.length + 1);
+for (const line of sums) {
+  const [value, filename] = line.split("  ");
+  assert.equal(value, hash(join(good, "dist-out", filename)));
 }
-assert.ok(existsSync(join(good, "release-notes.txt")));
+assert.ok(sums.at(-1).endsWith("  release-metadata.json"));
+const notes = readFileSync(join(good, "release-notes.txt"), "utf8");
+assert.ok(notes.startsWith(`Commit: ${sha}\n`));
+assert.ok(notes.includes("Hardware tests in this run: NO."));
 count += 1;
 console.log("PASS: commit and all checksums");
 expect(
   "missing package rejected",
-  execute(packageFixture("missing", packageNames[0]), evidence),
-  false,
+  () =>
+    evidence({ env: baseEnv, cwd: packageFixture("missing", packageNames[0]) }),
   "package list does not match",
 );
 expect(
   "extra package rejected",
-  execute(packageFixture("extra", undefined, false, true), evidence),
-  false,
+  () =>
+    evidence({
+      env: baseEnv,
+      cwd: packageFixture("extra", undefined, false, true),
+    }),
   "package list does not match",
 );
 expect(
   "empty package rejected",
-  execute(packageFixture("empty", packageNames[0], true), evidence),
-  false,
+  () =>
+    evidence({
+      env: baseEnv,
+      cwd: packageFixture("empty", packageNames[0], true),
+    }),
   "package is empty",
 );
-const remoteCheck = release.jobs.draft.steps.find(
-  (step) => step.name === "Verify remote draft assets",
-).run;
-const remoteStub = `
-function gh {
-  $global:LASTEXITCODE = 0
-  if ($env:RELEASE_TEST_CASE -eq 'remote-api') { $global:LASTEXITCODE = 1; return }
-  $assets = @(Get-ChildItem -LiteralPath dist-out -File | ForEach-Object {
-    @{ name = $_.Name; size = $_.Length; digest = 'sha256:' + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
-  })
-  if ($env:RELEASE_TEST_CASE -eq 'remote-extra') { $assets += @{name='stale.exe'; size=1; digest='sha256:bad'} }
-  if ($env:RELEASE_TEST_CASE -eq 'remote-missing') { $assets = @($assets | Select-Object -Skip 1) }
-  if ($env:RELEASE_TEST_CASE -eq 'remote-hash') { $assets[0].digest = 'sha256:bad' }
-  if ($env:RELEASE_TEST_CASE -eq 'remote-size') { $assets[0].size = 0 }
-  @{ draft = ($env:RELEASE_TEST_CASE -ne 'remote-published'); tag_name=$env:RELEASE_TAG; assets=$assets } | ConvertTo-Json -Depth 5
+
+// Remote draft check with a stub gh that reports the local files.
+function remoteExec(testCase) {
+  return (command, args) => {
+    assert.equal(command, "gh");
+    assert.deepEqual(args, ["api", "repos/test/repo/releases/123"]);
+    if (testCase === "remote-api") return { status: 1, stdout: "" };
+    const directory = join(good, "dist-out");
+    let assets = readdirSync(directory).map((name) => ({
+      name,
+      size: statSync(join(directory, name)).size,
+      digest: `sha256:${hash(join(directory, name))}`,
+    }));
+    if (testCase === "remote-extra")
+      assets.push({ name: "stale.exe", size: 1, digest: "sha256:bad" });
+    if (testCase === "remote-missing") assets = assets.slice(1);
+    if (testCase === "remote-duplicate") assets.push({ ...assets[0] });
+    if (testCase === "remote-hash") assets[0].digest = "sha256:bad";
+    if (testCase === "remote-size") assets[0].size = 0;
+    return {
+      status: 0,
+      stdout: JSON.stringify({
+        draft: testCase !== "remote-published",
+        tag_name: testCase === "remote-tag" ? "v9.9.9" : "v1.0.2",
+        assets,
+      }),
+    };
+  };
 }
-`;
 for (const [name, message] of [
   ["valid", undefined],
   ["remote-api", "Cannot read the uploaded release"],
   ["remote-extra", "remote release asset list does not match"],
   ["remote-missing", "remote release asset list does not match"],
+  ["remote-duplicate", "remote release asset list does not match"],
   ["remote-hash", "remote asset size or hash does not match"],
   ["remote-size", "remote asset size or hash does not match"],
   ["remote-published", "not the expected draft"],
+  ["remote-tag", "not the expected draft"],
 ]) {
   expect(
     `remote draft ${name}`,
-    execute(good, remoteStub + remoteCheck, {
-      RELEASE_TEST_CASE: name,
-      RELEASE_ID: "123",
-    }),
-    name === "valid",
+    () =>
+      verifyRemote({
+        env: { ...baseEnv, RELEASE_ID: "123" },
+        cwd: good,
+        exec: remoteExec(name),
+      }),
     message,
   );
 }
+expect(
+  "remote draft without release ID rejected",
+  () => verifyRemote({ env: baseEnv, cwd: good, exec: remoteExec("valid") }),
+  "release ID is missing",
+);
+assert.ok(existsSync(join(good, "dist-out/SHA256SUMS")));
 console.log(`RESULT: YES (${count} checks)`);
