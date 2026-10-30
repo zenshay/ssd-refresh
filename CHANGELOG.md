@@ -8,6 +8,7 @@
 - README: package names use `<version>` instead of a fixed version. Download links open the latest release. A new release does not need a README change.
 - GUI: at start, the app selects the drives that have a refresh log. Before, it selected the first drive. When you refreshed another drive and opened the app later, Verify said "Run Selective Refresh first". Now Verify is ready. When the selected drives have no refresh log, Verify names the drives that have one. Each drive card shows the time since its last refresh.
 - GUI: the card of the drive in use shows "Scanning…", "Refreshing…", or "Verifying…". Before, it showed "Scanning…" for all three operations.
+- GUI tests: `test/gui-vhdx.ps1` makes a small test VHDX with a drive letter and opens the GUI with test settings. The environment variables `SSD_REFRESH_TEST_THRESHOLD_MBPS` and `SSD_REFRESH_TEST_AFTER_WAIT_SECS` change the slow threshold and the wait of scan round 3. The GUI log shows a `TEST SETTING` line for each active variable. See CONTRIBUTING.md.
 - GUI: the version chip shows the version of `gui/package.json`. Before, `index.html` had a fixed `v1.0.5`, so the 1.0.6-rc.1 build showed v1.0.5.
 
 ## 1.0.5
