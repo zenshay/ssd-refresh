@@ -36,6 +36,21 @@ Syntax queries and test results are not cached. Release cases keep separate test
 Keep the two-lane limit. Measure full checks before you add more workers or new test tools.
 Do not treat a skipped check as a passed check.
 
+### Development on each platform
+
+This table shows what you can build and test on each system.
+For the operations that the program supports on each system, see [Platforms](README.md#platforms--architectures).
+
+| Task | Windows | Linux | macOS |
+|---|---|---|---|
+| `node check.mjs` | Full | `--core-only` (no GUI targets) | `--core-only` (no GUI targets) |
+| Release workflow tests | YES | YES | YES |
+| GUI build and GUI checks | YES | NO | NO |
+| Disk image test (administrator or root) | VHDX with NTFS: `test/vhdx-test.ps1` | ext4: `test/run-ext4-test.sh` | NO |
+
+GUI work needs Windows. macOS has no disk image test.
+ARM64 and macOS packages are cross-compiled or built in CI. Nobody tested them on a physical device.
+
 ## Changes with storage risk
 
 File system, `unsafe`, FFI, path checks, write ordering, and resource cleanup changes need extra review and tests.
