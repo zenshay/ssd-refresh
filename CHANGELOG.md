@@ -1,5 +1,9 @@
 # Changes
 
+## Unreleased
+
+- Checks: pushes to `main` do not start the check workflow. The ruleset requires an up-to-date pull request with passing checks, so `main` gets a tested commit. Release calls and manual runs still run the checks. The Check badge shows the latest pull request check.
+
 ## 1.0.5
 
 v1.0.4 has no release packages. v1.0.5 also includes all changes of 1.0.4.

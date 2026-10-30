@@ -3,7 +3,7 @@
 <h1>ssd-refresh（繁體中文說明）</h1>
 
 [![Latest release](https://img.shields.io/github/v/release/zenshay/ssd-refresh?label=release)](https://github.com/zenshay/ssd-refresh/releases/latest)
-[![Check](https://github.com/zenshay/ssd-refresh/actions/workflows/check.yml/badge.svg?branch=main)](https://github.com/zenshay/ssd-refresh/actions/workflows/check.yml)
+[![Check](https://github.com/zenshay/ssd-refresh/actions/workflows/check.yml/badge.svg?event=pull_request)](https://github.com/zenshay/ssd-refresh/actions/workflows/check.yml)
 [![GitHub stars](https://img.shields.io/github/stars/zenshay/ssd-refresh?style=flat)](https://github.com/zenshay/ssd-refresh)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#授權)
 [![CLI Rust 1.85+](https://img.shields.io/badge/CLI_Rust-1.85%2B-orange?logo=rust)](#建置)
