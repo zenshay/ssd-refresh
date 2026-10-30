@@ -7,7 +7,7 @@
 #   remove Detach the VHDX and delete the VHDX file.
 #
 # First build the GUI as a normal user: cargo build --release -p ssd-refresh-gui
-# Windows can open an Explorer window for the new drive. Close it.
+# Windows can open an Explorer window for the new drive (AutoPlay). Close it.
 # The GUI keeps its reports for the drive letter. A real drive with the same letter later shows these
 # reports as its last refresh. Delete them in the GUI data folder if this is a problem.
 param(
@@ -53,9 +53,11 @@ if ($new) {
     $code = $LASTEXITCODE
     Remove-Item $dp
     if ($code -ne 0) { throw "diskpart could not make $Path (exit code $code)." }
-    $disk = Mount-DiskImage -ImagePath $Path -PassThru | Get-Disk
+    # Format first, then give the drive letter. A drive letter on a partition without a file system
+    # makes Windows ask "You need to format the disk".
+    $disk = Mount-DiskImage -ImagePath $Path -NoDriveLetter -PassThru | Get-Disk
     Initialize-Disk -Number $disk.Number -PartitionStyle GPT
-    $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize -AssignDriveLetter
+    $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize
     Format-Volume -Partition $part -FileSystem NTFS -NewFileSystemLabel $label -AllocationUnitSize 4096 -Confirm:$false | Out-Null
 } elseif (-not (Get-TestPartition)) {
     Mount-DiskImage -ImagePath $Path | Out-Null
