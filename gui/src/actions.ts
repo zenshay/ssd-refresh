@@ -2,7 +2,7 @@
 
 import type { Api } from "./api";
 import { api, type ScanOutcome, type Verdict, type VerifyOutcome } from "./api";
-import { countOf, fmtAge, wasWere } from "./format";
+import { countOf, fmtCount, wasWere } from "./format";
 import type { Confirm } from "./interactions";
 import {
   allSelected,
@@ -83,27 +83,69 @@ function verifyNotice(
       body: "The log has the summary of the files read until the stop. Nothing changed on the drive(s).",
     };
   }
-  const line = ({ root, outcome }: { root: string; outcome: VerifyOutcome }) =>
-    `${drive(root)} faster: ${outcome.faster || "n/a"} (${countOf(outcome.processedFiles, "file")}, ${fmtAge(outcome.ageSecs)} after the refresh).`;
   const verdicts = results.map((r) => r.outcome.faster);
   const all = (v: Verdict) =>
     verdicts.length > 0 && verdicts.every((x) => x === v);
   const kind = verdicts.includes("NO") ? "warn" : all("YES") ? "ok" : "info";
-  const title =
-    results.length === 1
-      ? `Data safe: YES. Faster: ${results[0].outcome.faster || "n/a"}`
-      : "Data safe: YES on all drives";
-  const soon = results.some(
-    (r) => r.outcome.faster === "NOT DECIDED" && r.outcome.ageSecs < 12 * 3600,
+  const one = results.length === 1;
+  const title = one
+    ? `Data safe: YES. Faster: ${results[0].outcome.faster || "n/a"}`
+    : "Data safe: YES on all drives";
+  // One short line per fact. The speed comes first: the user wants to see it.
+  const lines: string[] = [];
+  for (const { root, outcome } of results) {
+    const prefix = one ? "" : `${drive(root)}  `;
+    const sp = outcome.speed;
+    if (!sp) {
+      lines.push(`${prefix}No file was slow before.`);
+      continue;
+    }
+    if (!one) lines.push(`${prefix}Faster: ${outcome.faster || "n/a"}`);
+    lines.push(
+      `${prefix}Read speed: ${speedChange(sp.beforeMbps, sp.nowMbps)}`,
+      `${prefix}Slow files: ${fmtCount(sp.slowBefore)} → ${fmtCount(sp.slowNow)}`,
+    );
+  }
+  lines.push(nextStep(results.map((r) => r.outcome)));
+  return { kind, title, body: lines.join("\n") };
+}
+
+/** Verify shows YES or NO only with this many slow files or more (src/verify.rs MIN_SLOW_FILES). */
+const MIN_SLOW_FILES = 10;
+
+/** "1298 → 255 MB/s (5.1 times slower)" */
+export function speedChange(before: number, now: number): string {
+  const factor = before > 0 && now > 0 ? now / before : 1;
+  const times =
+    factor >= 1
+      ? `${factor.toFixed(1)} times faster`
+      : `${(1 / factor).toFixed(1)} times slower`;
+  return `${Math.round(before)} → ${Math.round(now)} MB/s (${times})`;
+}
+
+/** The last line of the verify notice: what the user can do next. */
+export function nextStep(outcomes: VerifyOutcome[], now = Date.now()): string {
+  const undecided = outcomes.filter(
+    (o) => o.faster === "NOT DECIDED" && o.speed,
   );
-  return {
-    kind,
-    title,
-    body:
-      results.map(line).join(" ") +
-      (soon ? " Verify again after 1 day or more." : "") +
-      " The log has the full summary.",
-  };
+  const few = undecided.filter(
+    (o) => (o.speed?.slowBefore ?? 0) < MIN_SLOW_FILES,
+  );
+  if (few.length > 0) {
+    return `Faster needs ${MIN_SLOW_FILES} or more slow files. The numbers above show the change.`;
+  }
+  const wait = Math.max(0, ...undecided.map((o) => o.waitSecs));
+  if (wait > 0) {
+    const at = new Date(now + wait * 1000).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    return `Next step: verify again after ${at}. New data is always fast at first.`;
+  }
+  return "The log has the full summary.";
 }
 
 type Operations = Pick<

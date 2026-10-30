@@ -79,7 +79,18 @@ export interface VerifyOutcome {
   faster: Verdict;
   /** The time since the refresh, in seconds. */
   ageSecs: number;
+  /** The files that were slow before. null when no file was slow before. */
+  speed: VerifySpeed | null;
+  /** The time until Faster can show YES or NO, in seconds. 0 when it can now. */
+  waitSecs: number;
   stopped: boolean;
+}
+
+export interface VerifySpeed {
+  beforeMbps: number;
+  nowMbps: number;
+  slowBefore: number;
+  slowNow: number;
 }
 
 export const api = {

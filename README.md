@@ -484,20 +484,24 @@ Result
   Data safe:          YES  597 of 597 files that no program changed have the same SHA-256 as at
                            refresh. 3 files were changed by other programs after the refresh.
                            This is normal.
-  Faster (rewritten): YES  340 files were slow before. 3 files are slow now. Read speed: 25 MB/s
-                           before, 414 MB/s now (16.5 times faster).
-  Faster (read only): NOT DECIDED  Only 4 slow files. Need 10 or more. 4 files were slow before.
-                                   3 files are slow now. Read speed: 30 MB/s before, 45 MB/s now
-                                   (1.5 times faster).
+  Speed (rewritten):  25 MB/s before, 414 MB/s now (16.5 times faster).
+  Slow (rewritten):   340 before, 3 now.
+  Faster (rewritten): YES  80% or more of the slow files are not slow now.
+  Speed (read only):  30 MB/s before, 45 MB/s now (1.5 times faster).
+  Slow (read only):   4 before, 3 now.
+  Faster (read only): NOT DECIDED  Only 4 slow files. Need 10 or more.
   Conclusion:         NOT DECIDED  Only 4 slow files in the read only group. Need 10 or more.
   Time since refresh: 21 days.
 ```
 
-| Line | YES or NO |
+| Line | Content |
 |---|---|
 | Data safe | `YES`: the files that no program changed have the same SHA-256 as at the refresh. `NO`: some files have a different SHA-256, but their size, times and USN did not change. Thus no program changed them. `verify` shows these files. The exit code is 3 |
-| Faster | Only for the files that were slow before the refresh. `YES`: 80% or more of these files are not slow now. See [NOT DECIDED](#not-decided) |
+| Speed | The read speed of the files that were slow before the refresh, before and now |
+| Slow files | The number of these files that were slow before, and that are slow now |
+| Faster | `YES`: 80% or more of these files are not slow now. See [NOT DECIDED](#not-decided) |
 | Time since refresh | The time since the refresh |
+| Verify again | Only less than 12 hours after the refresh: the time until `verify` can show `YES` or `NO` |
 
 <a id="not-decided"></a>`NOT DECIDED`: `verify` shows the numbers, but no `YES` or `NO`. This occurs in two conditions:
 

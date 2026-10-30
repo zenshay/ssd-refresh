@@ -160,6 +160,8 @@ try {
             dataSafe: true,
             faster: "NOT DECIDED",
             ageSecs: 60,
+            speed: { beforeMbps: 12, nowMbps: 480, slowBefore: 1, slowNow: 0 },
+            waitSecs: 12 * 3600 - 60,
             stopped: false,
           };
         }
@@ -344,10 +346,17 @@ try {
     ),
     [{ logPath: "synthetic-refresh.csv" }],
   );
-  assert.match(
-    await page.$eval("#notice-body", (node) => node.textContent),
-    /X: faster: NOT DECIDED \(1 file, 1 minute after the refresh\)/,
+  // The notice shows one fact per line. The speed is on the first line.
+  const noticeLines = await page.$eval(
+    "#notice-body",
+    // biome-ignore lint/performance/useDomNodeTextContent: innerText shows the line breaks that CSS renders.
+    (node) => node.innerText.split("\n"),
   );
+  assert.deepEqual(noticeLines, [
+    "Read speed: 12 → 480 MB/s (40.0 times faster)",
+    "Slow files: 1 → 0",
+    "Faster needs 10 or more slow files. The numbers above show the change.",
+  ]);
   assert.equal(
     await page.$eval("#mode-chip", (node) => node.textContent),
     "Ready",

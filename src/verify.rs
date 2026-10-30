@@ -464,6 +464,8 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         summary: text,
         faster: s.faster,
         age_secs: age,
+        speed: s.speed,
+        wait_secs: s.wait_secs,
     })
 }
 

@@ -70,6 +70,20 @@ pub struct VerifyOutcome {
     pub faster: &'static str,
     /// The time since the refresh (or the scan), in seconds.
     pub age_secs: u64,
+    /// The speed of the rewritten group (or of the only group). `None` when no file was slow before.
+    pub speed: Option<SpeedFacts>,
+    /// The time until the Faster line can show YES or NO, in seconds. 0 when it can now.
+    pub wait_secs: u64,
+}
+
+/// The files that were slow before: their speed and how many are slow, before and now.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SpeedFacts {
+    /// All bytes divided by all read time (MB = 10^6 bytes)
+    pub before_mbps: f64,
+    pub now_mbps: f64,
+    pub slow_before: usize,
+    pub slow_now: usize,
 }
 
 #[cfg(test)]
