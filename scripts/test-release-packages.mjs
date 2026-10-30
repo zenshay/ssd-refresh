@@ -93,18 +93,30 @@ assert.deepEqual(
 );
 for (const [name, content] of Object.entries(edgeFiles))
   assert.ok(edgeEntries[name].equals(content), name);
+// The system reader gets ASCII names only. Windows tar converts names to the
+// system ANSI code page and skips names that the code page cannot show.
+// Release packages use ASCII names. readZip above checks the Unicode name.
+const asciiFiles = Object.fromEntries(
+  Object.entries(edgeFiles).filter(([name]) => /^[\x20-\x7e]+$/.test(name)),
+);
+asciiFiles["docs/name.md"] = edgeFiles["docs/中文 name.md"];
+for (const [name, content] of Object.entries(asciiFiles)) {
+  mkdirSync(dirname(join(edge, "ascii", name)), { recursive: true });
+  writeFileSync(join(edge, "ascii", name), content);
+}
+writeZip(join(edge, "ascii.zip"), join(edge, "ascii"));
 const [reader, before, after] = systemReader();
 const extracted = join(edge, "reader-out");
 mkdirSync(extracted);
 const readerResult = spawnSync(
   reader,
-  [...before, join(edge, "edge.zip"), ...after, extracted],
+  [...before, join(edge, "ascii.zip"), ...after, extracted],
   { encoding: "utf8", windowsHide: true },
 );
 let independent = `NOT RUN (${basename(reader)} is not available)`;
 if (!readerResult.error) {
   assert.equal(readerResult.status, 0, readerResult.stderr);
-  for (const [name, content] of Object.entries(edgeFiles))
+  for (const [name, content] of Object.entries(asciiFiles))
     assert.ok(
       readFileSync(join(extracted, name)).equals(content),
       `${basename(reader)}: ${name}`,
