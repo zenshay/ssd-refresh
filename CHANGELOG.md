@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Verify: with fewer than 10 slow files, Faster can show YES or NO. All these files must have the same result: all not slow is YES, all slow is NO. Before, Faster was always NOT DECIDED for these drives. Verify reads all slow files of the refresh log, so a few files are all the slow files of the drive.
+- Verify: with fewer than 10 slow files, Faster can show YES or NO. Verify must measure all these files (no `--sample`, no error, no changed file), and all must have the same result: all not slow is YES, all slow is NO. Before, Faster was always NOT DECIDED for these drives. Verify reads all slow files of the refresh log, so a few files are all the slow files of the drive.
 - Verify summary: the speed and the slow file count have their own lines (`Speed:`, `Slow files:`), before the `Faster:` line. Before, they were at the end of the Faster text. Less than 12 hours after the refresh, a `Verify again:` line tells the wait. Before, the text said "after 1 day or more", but the rule is 12 hours.
 - GUI verify notice: one fact per line. Line 1 is the read speed before and now. Then the slow files, and the next step with a time ("verify again after Oct 31, 12:08").
 - GUI log: messages keep their line breaks and spaces. Before, the verify summary showed as one long line. Words break only when they are longer than the line. The notice line in the log starts its text on a new line after the title.

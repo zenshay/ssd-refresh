@@ -506,7 +506,7 @@ Result
 
 <a id="not-decided"></a>`NOT DECIDED`: `verify` shows the numbers, but no `YES` or `NO`. This occurs in two conditions:
 
-1. A group has fewer than 10 files that were slow before the refresh, and these files do not have the same result. With few files, one file changes the share very much.
+1. A group has fewer than 10 files that were slow before the refresh, and these files do not have the same result. With few files, one file changes the share very much. `verify` must also measure all these files: with `--sample`, an error, or a file that a program changed, the result is `NOT DECIDED`.
 2. Less than 12 hours have gone by since the refresh. New data is always fast at first.
 
 `verify` reads all slow files of the refresh log, not a sample. Thus a drive with 3 slow files can get `YES` or `NO`. One file with a wrong measurement can change this result. Run `verify` again after 7 and 30 days to compare.
