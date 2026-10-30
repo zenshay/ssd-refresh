@@ -1,12 +1,13 @@
 // Browser test with synthetic IPC. This test does not access storage volumes.
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { createServer } from "vite";
+import viteConfig from "../vite.config.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const candidates = [
@@ -32,6 +33,8 @@ const longSlowPath = `X:\\${"synthetic-folder\\".repeat(5)}😀-synthetic.dat`;
 const vite = await createServer({
   root,
   configFile: false,
+  // The plugins put the version from package.json in the page.
+  plugins: viteConfig.plugins,
   server: { host: "127.0.0.1", middlewareMode: true, hmr: false },
 });
 const server = createHttpServer(vite.middlewares);
@@ -177,6 +180,14 @@ try {
   });
   await page.waitForFunction(
     () => !document.querySelector("#btn-scan").disabled,
+  );
+  // The version chip shows the version of package.json.
+  const { version } = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  assert.equal(
+    await page.$eval(".version-chip", (node) => node.textContent),
+    `v${version}`,
   );
   // Before a refresh, the drive has no refresh log. Verify is locked.
   assert.equal(await page.$eval("#btn-verify", (node) => node.disabled), true);

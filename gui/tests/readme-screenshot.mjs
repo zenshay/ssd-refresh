@@ -9,6 +9,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
 import { createServer } from "vite";
+import viteConfig from "../vite.config.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const output = resolve(root, "../docs/images/gui-scan.png");
@@ -91,6 +92,8 @@ const demo = {
 const vite = await createServer({
   root,
   configFile: false,
+  // The plugins put the version from package.json in the page.
+  plugins: viteConfig.plugins,
   server: { host: "127.0.0.1", middlewareMode: true, hmr: false },
 });
 const server = createHttpServer(vite.middlewares);
