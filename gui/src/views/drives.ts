@@ -2,7 +2,7 @@ import type { Actions } from "../actions";
 import type { Volume } from "../api";
 import { $, el } from "../dom";
 import { fmtAge, fmtBytes } from "../format";
-import { allSelected, isSelected, type Store } from "../store";
+import { activeDriveText, allSelected, isSelected, type Store } from "../store";
 
 const SMART_TEXT = {
   healthy: "SMART OK",
@@ -19,10 +19,11 @@ function refreshedText(ageSecs: number): string {
 function card(
   v: Volume,
   selected: boolean,
-  active: boolean,
+  activeText: string | null,
   disabled: boolean,
   nowSecs: number,
 ): HTMLButtonElement {
+  const active = activeText !== null;
   const used = Math.max(0, v.totalBytes - v.freeBytes);
   const usedPct =
     v.totalBytes > 0 ? Math.min(100, (used / v.totalBytes) * 100) : 0;
@@ -68,7 +69,7 @@ function card(
         text: `${fmtBytes(v.freeBytes)} free of ${fmtBytes(v.totalBytes)}`,
       }),
       active
-        ? el("span", { class: "drive-status-active", text: "Scanning…" })
+        ? el("span", { class: "drive-status-active", text: activeText })
         : v.lastRefresh
           ? el("span", {
               class: "drive-refreshed",
@@ -137,7 +138,7 @@ export function mountDrives(store: Store, actions: Actions): void {
         card(
           v,
           isSelected(s, v.root),
-          s.activeRoot === v.root,
+          s.activeRoot === v.root ? activeDriveText(s.mode) : null,
           isRunning,
           nowSecs,
         ),

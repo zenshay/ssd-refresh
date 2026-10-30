@@ -115,6 +115,14 @@ export const MIN_VERIFY_AGE_SECS = 12 * 3600;
 export const verifyTargets = (s: State): Volume[] =>
   selectedVolumes(s).filter((v) => v.lastRefresh !== null);
 
+/** The text on the card of the drive that the current operation uses. */
+export function activeDriveText(mode: Mode): string | null {
+  if (mode === "scanning") return "Scanning…";
+  if (mode === "refreshing") return "Refreshing…";
+  if (mode === "verifying") return "Verifying…";
+  return null;
+}
+
 export type ActionState = "ready" | "running" | "done" | "waiting" | "locked";
 
 export interface ActionView {

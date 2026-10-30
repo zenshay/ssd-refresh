@@ -4,6 +4,7 @@ import { createActions } from "../src/actions.ts";
 import { createDiagnostics } from "../src/diagnostics.ts";
 import { countOf, truncatePath, wasWere } from "../src/format.ts";
 import {
+  activeDriveText,
   createStore,
   initialState,
   refreshAction,
@@ -276,6 +277,13 @@ test("verify is locked until a selected drive has a refresh log", () => {
   assert.match(verifyAction(store.get(), 1000 + 3 * 86400).hint, /3 days ago/);
   store.set({ mode: "refreshing" });
   assert.equal(verifyAction(store.get()).disabled, true);
+});
+
+test("the active drive card names the current operation", () => {
+  assert.equal(activeDriveText("scanning"), "Scanning…");
+  assert.equal(activeDriveText("refreshing"), "Refreshing…");
+  assert.equal(activeDriveText("verifying"), "Verifying…");
+  assert.equal(activeDriveText("idle"), null);
 });
 
 test("verify names a refreshed drive that is not selected", () => {
