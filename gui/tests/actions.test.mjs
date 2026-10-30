@@ -275,13 +275,20 @@ const verified = (overrides = {}) => ({
 test("the verify notice puts the speed first, one fact per line", () => {
   assert.equal(speedChange(1298, 255), "1298 → 255 MB/s (5.1 times slower)");
   assert.equal(speedChange(10, 400), "10 → 400 MB/s (40.0 times faster)");
-  // Too few slow files: verify cannot decide later either. Do not ask to verify again.
+  // Few slow files and too soon: a later verify can decide when all files agree.
   const few = verified({
     faster: "NOT DECIDED",
     speed: { beforeMbps: 1298, nowMbps: 255, slowBefore: 3, slowNow: 0 },
     waitSecs: 40000,
   });
-  assert.match(nextStep([few]), /needs 10 or more slow files/);
+  assert.match(nextStep([few]), /^Next step: verify again after /);
+  // Enough time, but the few files have different results.
+  const mixed = verified({
+    faster: "NOT DECIDED",
+    speed: { beforeMbps: 10, nowMbps: 90, slowBefore: 3, slowNow: 1 },
+    waitSecs: 0,
+  });
+  assert.match(nextStep([mixed]), /all must have the same result/);
   // Too soon: give the time to verify again.
   const now = new Date(2026, 9, 31, 0, 8).getTime();
   const soon = verified({ faster: "NOT DECIDED", waitSecs: 12 * 3600 });

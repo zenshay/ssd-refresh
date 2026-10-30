@@ -482,8 +482,9 @@ Result
   Faster (rewritten): YES  80% or more of the slow files are not slow now.
   Speed (read only):  30 MB/s before, 45 MB/s now (1.5 times faster).
   Slow (read only):   4 before, 3 now.
-  Faster (read only): NOT DECIDED  Only 4 slow files. Need 10 or more.
-  Conclusion:         NOT DECIDED  Only 4 slow files in the read only group. Need 10 or more.
+  Faster (read only): NOT DECIDED  Only 4 slow files, and they do not have the same result. With
+                                   fewer than 10, all must have the same result.
+  Conclusion:         NOT DECIDED  The read only group has no Faster result.
   Time since refresh: 21 days.
 ```
 
@@ -492,14 +493,16 @@ Result
 | Data safe（資料安全） | `YES`：沒被程式改過的檔案，SHA-256 都和刷新時一樣。`NO`：有檔案的 SHA-256 不同，但大小、時間戳記和 USN 都沒變，也就是沒有程式改過它。`verify` 會列出這些檔案，結束代碼是 3 |
 | Speed（速度） | 刷新前就慢的檔案，刷新前與現在的讀取速度 |
 | Slow files（慢檔案） | 這些檔案刷新前有幾個慢、現在有幾個慢 |
-| Faster（變快） | 其中 80% 以上現在不慢，才是 `YES`。另見下方的 `NOT DECIDED` |
+| Faster（變快） | 其中 80% 以上現在不慢，才是 `YES`。這些檔案少於 10 個時，全部的結果要一致：全部不慢是 `YES`，全部仍慢是 `NO`。另見下方的 `NOT DECIDED` |
 | Time since refresh（距離刷新） | 距離刷新多久 |
 | Verify again（再驗證） | 只在刷新後未滿 12 小時出現：還要等多久，`verify` 才能判斷 `YES` 或 `NO` |
 
 `NOT DECIDED`（不下結論）：`verify` 照樣顯示數字，但不給 `YES` 或 `NO`。以下兩種情況會出現：
 
-1. 某一組「刷新前就慢的檔案」少於 10 個。檔案太少，結果可能是錯的。
+1. 某一組「刷新前就慢的檔案」少於 10 個，而且這些檔案的結果不一致。檔案少時，一個檔案就會讓比例大幅改變。
 2. 距離刷新不到 12 小時。剛寫入的資料一定快。
+
+`verify` 讀取 refresh log 裡的全部慢檔案，不是抽樣。所以只有 3 個慢檔案的磁碟也能得到 `YES` 或 `NO`。一個量錯的檔案就可能改變這個結果，所以在第 7 天與第 30 天再執行一次 `verify` 來比對。
 
 任何一行 Faster 是 `NOT DECIDED` 時，結論也是 `NOT DECIDED`。`NOT DECIDED` 不算錯誤，結束代碼是 0。Data safe 不受影響，`verify` 一定會判斷。
 
