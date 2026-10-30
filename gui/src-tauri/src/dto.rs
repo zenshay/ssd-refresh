@@ -151,7 +151,20 @@ pub struct VerifyOutcome {
     pub faster: &'static str,
     /// The time since the refresh, in seconds.
     pub age_secs: u64,
+    /// The files that were slow before. `None` when no file was slow before.
+    pub speed: Option<SpeedDto>,
+    /// The time until Faster can show YES or NO, in seconds. 0 when it can now.
+    pub wait_secs: u64,
     pub stopped: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeedDto {
+    pub before_mbps: f64,
+    pub now_mbps: f64,
+    pub slow_before: usize,
+    pub slow_now: usize,
 }
 
 impl VerifyOutcome {
@@ -163,6 +176,13 @@ impl VerifyOutcome {
             data_safe: result.status != RunStatus::DataMismatch,
             faster: result.faster,
             age_secs: result.age_secs,
+            speed: result.speed.map(|s| SpeedDto {
+                before_mbps: s.before_mbps,
+                now_mbps: s.now_mbps,
+                slow_before: s.slow_before,
+                slow_now: s.slow_now,
+            }),
+            wait_secs: result.wait_secs,
             stopped: result.status == RunStatus::Stopped,
         }
     }
@@ -228,11 +248,21 @@ mod tests {
                 status: ssd_refresh::outcome::RunStatus::DataMismatch,
                 faster: "NOT DECIDED",
                 age_secs: 60,
+                speed: Some(ssd_refresh::outcome::SpeedFacts {
+                    before_mbps: 12.0,
+                    now_mbps: 480.0,
+                    slow_before: 3,
+                    slow_now: 0,
+                }),
+                wait_secs: 43140,
                 ..Default::default()
             },
         );
         assert!(!verify.data_safe);
         assert!(!verify.stopped);
         assert_eq!(verify.faster, "NOT DECIDED");
+        assert_eq!(verify.wait_secs, 43140);
+        let speed = verify.speed.unwrap();
+        assert_eq!((speed.now_mbps, speed.slow_before), (480.0, 3));
     }
 }

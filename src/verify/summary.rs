@@ -1,6 +1,7 @@
 //! Pure verification summaries and their tests.
 use super::{fmt_time, Group, Item, Outcome, MIN_AGE_HOURS, MIN_SLOW_FILES, RECOVERED_SHARE};
 use crate::common::{agree, count_of, fmt_count};
+use crate::outcome::SpeedFacts;
 use crate::text::paragraph as para_string;
 
 fn median(mut v: Vec<f64>) -> Option<f64> {
@@ -48,6 +49,16 @@ pub(super) struct Summary {
     pub(super) data_not_safe: bool,
     /// The result of the first Faster line: the rewritten group, or the only group.
     pub(super) faster: &'static str,
+    /// The speed of the first group with slow files: the rewritten group, or the only group.
+    pub(super) speed: Option<SpeedFacts>,
+    /// The time until the Faster lines can show YES or NO (0 when they can now).
+    pub(super) wait_secs: u64,
+}
+
+/// A wait in words, rounded up: 41760 s is "12 hours", 90 s is "2 minutes".
+fn wait_words(secs: u64) -> String {
+    let step = if secs > 3600 { 3600 } else { 60 };
+    fmt_time(secs.div_ceil(step) * step)
 }
 
 /// "  Label:            YES  text": a label, a result (YES, NO, n/a, UNKNOWN, NOT DECIDED) or
@@ -255,11 +266,12 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
     };
     let speeds: Vec<(Group, Speed)> = groups.iter().map(|&g| (g, speed(g))).collect();
     // Too short a time or too few slow files: show the numbers, but no YES or NO.
-    let too_soon = s.age < MIN_AGE_HOURS * 3600;
+    let min_age = MIN_AGE_HOURS * 3600;
+    let too_soon = s.age < min_age;
+    let since = if is_log { "refresh" } else { "scan" };
     let soon_reason = format!(
-        "Only {} since {}. New data is always fast at first. Run verify again after 1 day or more.",
-        fmt_time(s.age),
-        if is_log { "refresh" } else { "scan" }
+        "Only {} since {since}. New data is always fast at first.",
+        fmt_time(s.age)
     );
     let few_reason = |n: usize| {
         format!(
@@ -268,6 +280,7 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         )
     };
     let mut faster = "";
+    let mut speed: Option<SpeedFacts> = None;
     for (g, sp) in &speeds {
         let first = faster.is_empty();
         let mut verdict = |v: &'static str| {
@@ -276,24 +289,47 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
             }
             v
         };
-        let name = if groups.len() == 1 {
-            "Faster:".to_string()
-        } else {
-            format!("Faster ({}):", label(*g).to_lowercase())
+        // One label per line: "Speed:" or "Speed (rewritten):". Labels fit in 20 characters.
+        let named = |word: &str| {
+            if groups.len() == 1 {
+                format!("{word}:")
+            } else {
+                // "Slow files (read only):" is too long. Use the first word only.
+                let short = word.split(' ').next().unwrap_or(word);
+                format!("{short} ({}):", label(*g).to_lowercase())
+            }
         };
         if sp.n == 0 {
-            t += &result_line(&name, verdict("n/a"), "No measured file was slow before.");
+            t += &result_line(
+                &named("Faster"),
+                verdict("n/a"),
+                "No measured file was slow before.",
+            );
             continue;
         }
-        let numbers = format!(
-            "{} {} slow before. {} {} slow now. Read speed: {:.0} MB/s before, {:.0} MB/s now ({}).",
-            count_of(sp.n as u64, "file"),
-            agree(sp.n as u64, "was", "were"),
-            count_of(sp.still as u64, "file"),
-            agree(sp.still as u64, "is", "are"),
-            sp.then_bps / 1e6,
-            sp.now_bps / 1e6,
-            times(sp.factor())
+        if speed.is_none() {
+            speed = Some(SpeedFacts {
+                before_mbps: sp.then_bps / 1e6,
+                now_mbps: sp.now_bps / 1e6,
+                slow_before: sp.n,
+                slow_now: sp.still,
+            });
+        }
+        // The speed first: it is the number that the user wants to see.
+        t += &result_line(
+            &named("Speed"),
+            "",
+            &format!(
+                "{:.0} MB/s before, {:.0} MB/s now ({}).",
+                sp.then_bps / 1e6,
+                sp.now_bps / 1e6,
+                times(sp.factor())
+            ),
+        );
+        t += &result_line(
+            &named("Slow files"),
+            "",
+            &format!("{} before, {} now.", sp.n, sp.still),
         );
         let mut reasons = Vec::new();
         if sp.n < MIN_SLOW_FILES {
@@ -303,14 +339,17 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
             reasons.push(soon_reason.clone());
         }
         if reasons.is_empty() {
-            let v = verdict(if sp.recovered() { "YES" } else { "NO" });
-            t += &result_line(&name, v, &numbers);
+            let yes = sp.recovered();
+            let v = verdict(if yes { "YES" } else { "NO" });
+            let share = (RECOVERED_SHARE * 100.0).round();
+            let text = if yes {
+                format!("{share}% or more of the slow files are not slow now.")
+            } else {
+                format!("Less than {share}% of the slow files are not slow now.")
+            };
+            t += &result_line(&named("Faster"), v, &text);
         } else {
-            t += &result_line(
-                &name,
-                verdict("NOT DECIDED"),
-                &format!("{} {numbers}", reasons.join(" ")),
-            );
+            t += &result_line(&named("Faster"), verdict("NOT DECIDED"), &reasons.join(" "));
         }
     }
     if let [(_, rw), (_, ro)] = speeds.as_slice() {
@@ -355,10 +394,27 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         "",
         &format!("{}.", fmt_time(s.age)),
     );
+    let wait_secs = if too_soon && speed.is_some() {
+        min_age - s.age
+    } else {
+        0
+    };
+    if wait_secs > 0 {
+        t += &result_line(
+            "Verify again:",
+            "",
+            &format!(
+                "In {} or later ({MIN_AGE_HOURS} hours after the {since}).",
+                wait_words(wait_secs)
+            ),
+        );
+    }
     Summary {
         text: t,
         data_not_safe: !bad.is_empty() && is_log,
         faster,
+        speed,
+        wait_secs,
     }
 }
 
@@ -428,11 +484,22 @@ mod tests {
         );
         assert!(
             s.text.contains(
-                "Faster:             YES  10 files were slow before. 1 file is slow now."
+                "Faster:             YES  80% or more of the slow files are not slow now."
             ),
             "{}",
             s.text
         );
+        assert!(
+            s.text.contains("Slow files:         10 before, 1 now."),
+            "{}",
+            s.text
+        );
+        // The speed line comes before the Faster line.
+        assert!(s.text.find("Speed:").unwrap() < s.text.find("Faster:").unwrap());
+        let facts = s.speed.unwrap();
+        assert_eq!((facts.slow_before, facts.slow_now), (10, 1));
+        assert_eq!(s.wait_secs, 0);
+        assert!(!s.text.contains("Verify again:"), "{}", s.text);
         // All bytes divided by all time: 1 file at 10 MB/s and 9 files at 500 MB/s.
         let now = 10.0 * (1u64 << 20) as f64
             / ((1u64 << 20) as f64 / 10e6 + 9.0 * (1u64 << 20) as f64 / 500e6);
@@ -462,7 +529,11 @@ mod tests {
             .map(|i| (i, measured(i < 3, if i < 3 { 10.0 } else { 500.0 })))
             .collect();
         let s = summary(&items, &results);
-        assert!(s.text.contains("Faster:             NO   10 files"));
+        assert!(
+            s.text.contains("Faster:             NO   Less than 80%"),
+            "{}",
+            s.text
+        );
         assert_eq!(s.faster, "NO");
     }
 
@@ -535,7 +606,23 @@ mod tests {
     fn few_slow_files_is_not_decided() {
         let (items, results) = two_groups(2);
         let s = summary(&items, &results);
-        assert!(s.text.contains("Faster (read only): NOT DECIDED  Only 2 slow files. Need 10 or more. 2 files were slow before."), "{}", s.text);
+        assert!(
+            s.text
+                .contains("Faster (read only): NOT DECIDED  Only 2 slow files. Need 10 or more.\n"),
+            "{}",
+            s.text
+        );
+        assert!(
+            s.text.contains("Slow (read only):   2 before, 2 now."),
+            "{}",
+            s.text
+        );
+        assert!(
+            s.text
+                .contains("Speed (rewritten):  10 MB/s before, 400 MB/s now (40.0 times faster)."),
+            "{}",
+            s.text
+        );
         assert!(
             s.text.contains(
                 "Conclusion:         NOT DECIDED  Only 2 slow files in the rewritten group."
@@ -571,9 +658,21 @@ mod tests {
             s.text
         );
         // The numbers stay. Data safe does not change.
-        assert!(s.text.contains("10 files were slow before."), "{}", s.text);
+        assert!(
+            s.text.contains("Slow (rewritten):   10 before, 0 now."),
+            "{}",
+            s.text
+        );
         assert!(s.text.contains("Data safe:          YES"), "{}", s.text);
-        assert!(!s.text.contains(" YES  10 files were slow"), "{}", s.text);
+        assert!(!s.text.contains("Faster (rewritten): YES"), "{}", s.text);
+        // The summary tells when verify can decide.
+        assert_eq!(s.wait_secs, MIN_AGE_HOURS * 3600);
+        assert!(
+            s.text
+                .contains("Verify again:       In 12 hours or later (12 hours after the refresh)."),
+            "{}",
+            s.text
+        );
     }
 
     #[test]
@@ -581,5 +680,8 @@ mod tests {
         assert_eq!(fmt_time(90061), "1 day");
         assert_eq!(fmt_time(7200), "2 hours");
         assert_eq!(fmt_time(300), "5 minutes");
+        // A wait rounds up, so the user does not verify too early.
+        assert_eq!(wait_words(41760), "12 hours");
+        assert_eq!(wait_words(90), "2 minutes");
     }
 }

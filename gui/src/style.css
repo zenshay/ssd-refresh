@@ -951,6 +951,8 @@ body {
 .notice-body {
   font-size: 0.75rem;
   color: var(--text-muted);
+  /* Keep the line breaks of the text (for example the verify result). */
+  white-space: pre-line;
 }
 
 /* Slow Files Table
@@ -1268,6 +1270,9 @@ body {
 
 .log-text {
   color: var(--text-main);
+  /* Keep line breaks and column spaces, so the verify summary looks like the log file. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Short windows (for example a laptop at 125% scale): use less space

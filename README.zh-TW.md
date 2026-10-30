@@ -477,20 +477,24 @@ Result
   Data safe:          YES  597 of 597 files that no program changed have the same SHA-256 as at
                            refresh. 3 files were changed by other programs after the refresh.
                            This is normal.
-  Faster (rewritten): YES  340 files were slow before. 3 files are slow now. Read speed: 25 MB/s
-                           before, 414 MB/s now (16.5 times faster).
-  Faster (read only): NOT DECIDED  Only 4 slow files. Need 10 or more. 4 files were slow before.
-                                   3 files are slow now. Read speed: 30 MB/s before, 45 MB/s now
-                                   (1.5 times faster).
+  Speed (rewritten):  25 MB/s before, 414 MB/s now (16.5 times faster).
+  Slow (rewritten):   340 before, 3 now.
+  Faster (rewritten): YES  80% or more of the slow files are not slow now.
+  Speed (read only):  30 MB/s before, 45 MB/s now (1.5 times faster).
+  Slow (read only):   4 before, 3 now.
+  Faster (read only): NOT DECIDED  Only 4 slow files. Need 10 or more.
   Conclusion:         NOT DECIDED  Only 4 slow files in the read only group. Need 10 or more.
   Time since refresh: 21 days.
 ```
 
-| 項目 | YES 或 NO 的判斷 |
+| 項目 | 內容 |
 |---|---|
 | Data safe（資料安全） | `YES`：沒被程式改過的檔案，SHA-256 都和刷新時一樣。`NO`：有檔案的 SHA-256 不同，但大小、時間戳記和 USN 都沒變，也就是沒有程式改過它。`verify` 會列出這些檔案，結束代碼是 3 |
-| Faster（變快） | 只算刷新前就慢的檔案。其中 80% 以上現在不慢，才是 `YES`。另見下方的 `NOT DECIDED` |
+| Speed（速度） | 刷新前就慢的檔案，刷新前與現在的讀取速度 |
+| Slow files（慢檔案） | 這些檔案刷新前有幾個慢、現在有幾個慢 |
+| Faster（變快） | 其中 80% 以上現在不慢，才是 `YES`。另見下方的 `NOT DECIDED` |
 | Time since refresh（距離刷新） | 距離刷新多久 |
+| Verify again（再驗證） | 只在刷新後未滿 12 小時出現：還要等多久，`verify` 才能判斷 `YES` 或 `NO` |
 
 `NOT DECIDED`（不下結論）：`verify` 照樣顯示數字，但不給 `YES` 或 `NO`。以下兩種情況會出現：
 

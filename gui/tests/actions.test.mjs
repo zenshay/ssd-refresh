@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createActions } from "../src/actions.ts";
+import { createActions, nextStep, speedChange } from "../src/actions.ts";
 import { createDiagnostics } from "../src/diagnostics.ts";
 import { countOf, truncatePath, wasWere } from "../src/format.ts";
 import {
@@ -266,8 +266,30 @@ const verified = (overrides = {}) => ({
   dataSafe: true,
   faster: "YES",
   ageSecs: 2 * 86400,
+  speed: { beforeMbps: 10, nowMbps: 400, slowBefore: 12, slowNow: 0 },
+  waitSecs: 0,
   stopped: false,
   ...overrides,
+});
+
+test("the verify notice puts the speed first, one fact per line", () => {
+  assert.equal(speedChange(1298, 255), "1298 → 255 MB/s (5.1 times slower)");
+  assert.equal(speedChange(10, 400), "10 → 400 MB/s (40.0 times faster)");
+  // Too few slow files: verify cannot decide later either. Do not ask to verify again.
+  const few = verified({
+    faster: "NOT DECIDED",
+    speed: { beforeMbps: 1298, nowMbps: 255, slowBefore: 3, slowNow: 0 },
+    waitSecs: 40000,
+  });
+  assert.match(nextStep([few]), /needs 10 or more slow files/);
+  // Too soon: give the time to verify again.
+  const now = new Date(2026, 9, 31, 0, 8).getTime();
+  const soon = verified({ faster: "NOT DECIDED", waitSecs: 12 * 3600 });
+  assert.equal(
+    nextStep([soon], now),
+    "Next step: verify again after Oct 31, 12:08. New data is always fast at first.",
+  );
+  assert.equal(nextStep([verified()]), "The log has the full summary.");
 });
 
 test("verify is locked until a selected drive has a refresh log", () => {
@@ -374,7 +396,11 @@ test("verify reads only the drives with a refresh log", async () => {
     backend({
       startVerify: async (logPath) => {
         calls.push(logPath);
-        return verified({ faster: "NOT DECIDED", ageSecs: 3600 });
+        return verified({
+          faster: "NOT DECIDED",
+          ageSecs: 3600,
+          waitSecs: 11 * 3600,
+        });
       },
     }),
   ).runVerify();
@@ -382,8 +408,12 @@ test("verify reads only the drives with a refresh log", async () => {
   assert.equal(store.get().mode, "idle");
   assert.equal(store.get().notice.kind, "info");
   assert.equal(store.get().notice.title, "Data safe: YES. Faster: NOT DECIDED");
-  assert.match(store.get().notice.body, /1 hour after the refresh/);
-  assert.match(store.get().notice.body, /Verify again after 1 day/);
+  assert.equal(
+    store.get().notice.body.split("\n")[0],
+    "Read speed: 10 → 400 MB/s (40.0 times faster)",
+  );
+  assert.match(store.get().notice.body, /\nSlow files: 12 → 0\n/);
+  assert.match(store.get().notice.body, /Next step: verify again after /);
 });
 
 test("verify reports changed data as an error and stops", async () => {
