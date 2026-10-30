@@ -7,9 +7,9 @@ use crate::dto::{
     Environment, LastRefreshDto, ProgressDto, RefreshOutcome, ScanOutcome, VerifyOutcome, VolumeDto,
 };
 use crate::state::AppState;
+use crate::test_settings::TestSettings;
 use ssd_refresh::control::Control;
 use ssd_refresh::outcome::RunStatus;
-use ssd_refresh::reader::ReadOptions;
 use ssd_refresh::refresh::{self, RefreshOptions};
 use ssd_refresh::scan::{self, ScanOptions};
 use ssd_refresh::sys;
@@ -148,6 +148,7 @@ pub async fn start_scan(
     let guard = state.begin()?;
     let report = reports_dir(&app)?.join(report_name(&root));
     forward_progress(&guard.ctl, &app);
+    let test = announce_test_settings(&app);
 
     run_blocking(move || {
         let ctl = guard.ctl.clone();
@@ -157,8 +158,8 @@ pub async fn start_scan(
             hash: false,
             resume: false,
             parallel: PARALLEL_READS,
-            read: ReadOptions::default(),
-            after_wait: scan::DEFAULT_AFTER_WAIT,
+            read: test.read_options(),
+            after_wait: test.after_wait(),
         };
         let result = scan::run(&opts, ctl).map_err(|e| format!("The scan failed: {e}"))?;
         match result.status {
@@ -186,6 +187,7 @@ pub async fn start_refresh(
 
     let guard = state.begin()?;
     forward_progress(&guard.ctl, &app);
+    let test = announce_test_settings(&app);
 
     run_blocking(move || {
         let ctl = guard.ctl.clone();
@@ -203,7 +205,7 @@ pub async fn start_refresh(
             stop_after: 0,
             max_chunk_mb: MAX_CHUNK_MB,
             control_fraction: 0.0,
-            read: ReadOptions::default(),
+            read: test.read_options(),
         };
         let result = refresh::run(&opts, ctl).map_err(|e| format!("The refresh failed: {e}"))?;
         match result.status {
@@ -233,6 +235,7 @@ pub async fn start_verify(
     }
     let guard = state.begin()?;
     forward_progress(&guard.ctl, &app);
+    let test = announce_test_settings(&app);
 
     run_blocking(move || {
         let ctl = guard.ctl.clone();
@@ -243,7 +246,7 @@ pub async fn start_verify(
             log: log.clone(),
             sample: 0,
             select_all: false,
-            read: ReadOptions::default(),
+            read: test.read_options(),
         };
         let result = verify::run(&opts, ctl).map_err(|e| format!("The verify failed: {e}"))?;
         match result.status {
@@ -277,6 +280,15 @@ fn forward_progress(ctl: &Control, app: &AppHandle) {
     ctl.set_progress_reporter(std::sync::Arc::new(move |update| {
         let _ = app.emit(PROGRESS_EVENT, ProgressDto::from(update));
     }));
+}
+
+/// Read the test settings and write a log line for each active setting.
+fn announce_test_settings(app: &AppHandle) -> TestSettings {
+    let settings = TestSettings::from_env();
+    for note in settings.notes() {
+        let _ = app.emit("operation-message", note);
+    }
+    settings
 }
 
 /// Where the reports go: the data folder of the app, not a fixed path.

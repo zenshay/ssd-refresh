@@ -51,6 +51,25 @@ For the operations that the program supports on each system, see [Platforms](REA
 GUI work needs Windows. macOS has no disk image test.
 ARM64 and macOS packages are cross-compiled or built in CI. Nobody tested them on a physical device.
 
+### Test the GUI on a test drive
+
+A scan of a real drive can take hours. `test/gui-vhdx.ps1` makes a 1 GB VHDX with a drive letter and 120 test files.
+Then it opens the release GUI with two test settings:
+
+| Variable | Value of the script | Effect |
+|---|---|---|
+| `SSD_REFRESH_TEST_THRESHOLD_MBPS` | 100000 | All files are slow. Steps 2 and 3 unlock. |
+| `SSD_REFRESH_TEST_AFTER_WAIT_SECS` | 5 | Scan round 3 waits 5 s, not 60 s. |
+
+The GUI log shows a `TEST SETTING` line for each active variable. Without the variables, the GUI uses the defaults.
+
+1. Build as a normal user: `cargo build --release -p ssd-refresh-gui`.
+2. In PowerShell as administrator, run `& C:\src\ssd-refresh\test\gui-vhdx.ps1`. In the GUI, select only the test drive.
+3. When you finish, run `& C:\src\ssd-refresh\test\gui-vhdx.ps1 remove`. This detaches and deletes the VHDX.
+
+The GUI keeps its reports for the drive letter of the test drive.
+A real drive with the same letter later shows these reports as its last refresh.
+
 ## Changes with storage risk
 
 File system, `unsafe`, FFI, path checks, write ordering, and resource cleanup changes need extra review and tests.

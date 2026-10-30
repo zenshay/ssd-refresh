@@ -3,6 +3,7 @@ mod dto;
 mod native_open;
 mod startup;
 mod state;
+mod test_settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
