@@ -72,7 +72,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (s.notice && s.notice !== prev?.notice) {
       logMessage(
         s.notice.kind === "ok" ? "info" : s.notice.kind,
-        `${s.notice.title}: ${s.notice.body ?? ""}`,
+        // The body can have many lines. Start it on a new line.
+        s.notice.body ? `${s.notice.title}\n${s.notice.body}` : s.notice.title,
       );
     }
   });
