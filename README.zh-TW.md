@@ -40,6 +40,11 @@ ssd-refresh 找出慢檔案，並讀取檔案。
 
 ## 下載與開始
 
+<p align="center">
+  <img src="docs/images/gui-scan.png" width="720" alt="ssd-refresh 桌面版掃描 D 槽後的畫面。步驟 2 卡片顯示選擇性重寫（5 個檔案）。表格列出 5 個慢檔案的路徑、大小與速度，速度從 6.2 到 21.3 MB/s。">
+</p>
+<p align="center"><sub>桌面版掃描完成後的畫面。磁碟與檔案都是示範資料。介面只有英文。</sub></p>
+
 從 [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases) 下載 Windows 桌面版。
 Windows 10/11 選 `ssd-refresh-gui-v1.0.4-windows-x64.zip`。
 Windows on ARM 的檔案是 `ssd-refresh-gui-v1.0.4-windows-arm64.zip`。

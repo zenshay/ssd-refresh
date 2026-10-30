@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test": "node --import ./tests/register.mjs --test tests/actions.test.mjs",
     "test:mutation": "node tests/mutation.mjs",
-    "test:e2e": "node tests/e2e.mjs"
+    "test:e2e": "node tests/e2e.mjs",
+    "screenshot": "node tests/readme-screenshot.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.3",

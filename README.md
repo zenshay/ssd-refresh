@@ -40,6 +40,11 @@ Results depend on the drive. The diagram shows a possible result.
 
 ## Download and start
 
+<p align="center">
+  <img src="docs/images/gui-scan.png" width="720" alt="The ssd-refresh desktop app after a scan of drive D:. The Step 2 card shows Selective Refresh (5 files). The table lists 5 slow files with path, size and speed from 6.2 to 21.3 MB/s.">
+</p>
+<p align="center"><sub>The desktop app after a scan. The drives and files are demo data.</sub></p>
+
 Get the Windows desktop app from [GitHub Releases](https://github.com/zenshay/ssd-refresh/releases).
 Choose `ssd-refresh-gui-v1.0.4-windows-x64.zip` for Windows 10/11.
 The ARM64 package is `ssd-refresh-gui-v1.0.4-windows-arm64.zip`.
