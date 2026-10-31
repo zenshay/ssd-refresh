@@ -431,7 +431,7 @@ test("verify is locked until a selected drive has a refresh log", () => {
   assert.equal(ready.disabled, false);
   assert.match(
     ready.hint,
-    /Refreshed 1 hour ago\. Speed result after 12 hours/,
+    /Refreshed 1 hour ago\. Checks data now\. Speed result after 12 hours/,
   );
   assert.match(verifyAction(store.get(), 1000 + 3 * 86400).hint, /3 days ago/);
   store.set({ mode: "refreshing" });
@@ -607,7 +607,31 @@ test("refresh makes its log the newest refresh of the drive", async () => {
   assert.equal(verifyAction(store.get()).disabled, false);
   assert.equal(store.get().notice.kind, "ok");
   assert.equal(store.get().notice.title, "2 files rewritten");
-  assert.match(store.get().notice.body, /Run Verify after 1, 7 and 30 days/);
+  assert.match(
+    store.get().notice.body,
+    /Run Verify 1 day after the refresh\. Run it again after 7 and 30 days\./,
+  );
+});
+
+test("the scan notice does not offer a locked Step 2", async () => {
+  const run = async (patch) => {
+    const store = createStore({
+      ...initialState,
+      volumes: [volume("X:")],
+      selectedRoots: ["X:"],
+      elevated: true,
+      ...patch,
+    });
+    await createActions(store, async () => true, backend()).runScan();
+    return store.get().notice.body;
+  };
+  assert.match(
+    await run({}),
+    /Step 2 can rewrite only the slow files safely\./,
+  );
+  const locked = await run({ elevated: false });
+  assert.match(locked, /Step 2 is locked\. Needs administrator rights\./);
+  assert.doesNotMatch(locked, /Step 2 can rewrite/);
 });
 
 test("refresh with error files is a warning, not a success", async () => {
