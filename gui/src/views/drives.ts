@@ -1,7 +1,7 @@
 import type { Actions } from "../actions";
 import type { Volume } from "../api";
 import { $, el } from "../dom";
-import { fmtAge, fmtBytes } from "../format";
+import { fmtBytes, refreshedText } from "../format";
 import { activeDriveText, allSelected, isSelected, type Store } from "../store";
 
 const SMART_TEXT = {
@@ -9,12 +9,6 @@ const SMART_TEXT = {
   failing: "SMART FAILING",
   unknown: "SMART unknown",
 } as const;
-
-function refreshedText(ageSecs: number): string {
-  return ageSecs < 60
-    ? "Refreshed just now"
-    : `Refreshed ${fmtAge(ageSecs)} ago`;
-}
 
 function card(
   v: Volume,

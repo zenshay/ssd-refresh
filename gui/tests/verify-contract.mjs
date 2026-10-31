@@ -29,12 +29,8 @@ for (const [index, safety] of [
     startVerify: async () => outcome,
   }).runVerify();
   const notice = store.get().notice;
-  if (safety === "NO") {
-    assert.equal(notice.kind, "error");
-    assert.match(notice.body, /Data safe: NO/);
-  } else {
-    assert.match(notice.title, new RegExp(`Data safe: ${safety}`));
-  }
+  assert.match(notice.title, new RegExp(`Data safe: ${safety}`));
+  if (safety === "NO") assert.equal(notice.kind, "error");
   if (safety !== "YES") assert.doesNotMatch(notice.title, /Data safe: YES/);
   // The Rust fixture gives UNKNOWN one file that verify could not compare.
   assert.equal(outcome.uncheckedFiles, safety === "UNKNOWN" ? 1 : 0);

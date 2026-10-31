@@ -44,13 +44,19 @@ try {
         return {
           pageWidth: document.documentElement.scrollWidth,
           cut: cut(
-            ".console-toolbar, .drive-meta, .card-header, .notice-content, .action-card",
+            ".console-toolbar, .drive-top, .drive-meta, .card-header, .notice-content, .action-card",
           ),
           cards: [...document.querySelectorAll(".action-card")].map((el) => ({
             id: el.id,
             ratio: box(el).width / box(el).height,
             clipped: el.scrollHeight > el.clientHeight + 1,
           })),
+          icons: [...document.querySelectorAll(".action-icon")].filter(
+            (el) => el.getBoundingClientRect().width > 0,
+          ).length,
+          lockedButNext:
+            document.querySelector("#btn-refresh").disabled &&
+            document.querySelector("#app").dataset.next === "refresh",
           console: box(document.querySelector(".console-card")).height,
           slowShown: !slow.hidden,
           tableScrolls: table.scrollHeight > table.clientHeight,
@@ -70,6 +76,13 @@ try {
           `${where}: ${card.id} is ${card.ratio.toFixed(2)}:1, not wide`,
         );
       }
+      // Only the minimum window hides the card icons.
+      if (size !== "min")
+        assert.equal(facts.icons, 3, `${where}: card icons are hidden`);
+      assert.ok(
+        !facts.lockedButNext,
+        `${where}: a locked refresh card has the next-step color`,
+      );
       assert.ok(
         facts.console >=
           MIN_CONSOLE_PX[facts.slowShown ? "slowList" : "other"] - 1,

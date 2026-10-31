@@ -210,7 +210,8 @@ pub async fn start_refresh(
         let result = refresh::run(&opts, ctl).map_err(|e| format!("The refresh failed: {e}"))?;
         match result.status {
             RunStatus::DataMismatch => Err(
-                "The data of a file changed without a writer. Keep the log and report this error."
+                "File data changed, but no program wrote to the file. Do not delete the files or \
+                 the refresh log (Folder button). Click Report to tell us."
                     .into(),
             ),
             RunStatus::Completed | RunStatus::Stopped => {

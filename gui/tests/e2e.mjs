@@ -142,6 +142,7 @@ try {
           return {
             logPath: "synthetic-refresh.csv",
             movedFiles: 1,
+            errorFiles: 0,
             stopped: false,
           };
         if (command === "start_verify") {

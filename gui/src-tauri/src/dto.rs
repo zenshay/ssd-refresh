@@ -136,6 +136,8 @@ pub struct ScanOutcome {
 pub struct RefreshOutcome {
     pub log_path: String,
     pub moved_files: usize,
+    /// Files with the ERROR status. The refresh did not move them, and their data did not change.
+    pub error_files: usize,
     pub stopped: bool,
 }
 
@@ -219,6 +221,7 @@ impl RefreshOutcome {
         Self {
             log_path: path.to_string_lossy().into_owned(),
             moved_files: result.moved_files,
+            error_files: result.counts.get("ERROR").copied().unwrap_or(0),
             stopped: result.status == ssd_refresh::outcome::RunStatus::Stopped,
         }
     }
@@ -283,7 +286,10 @@ mod tests {
         let mut refresh = ssd_refresh::outcome::RefreshOutcome::default();
         refresh.record("OK", 10);
         refresh.record("CHANGED", 20);
-        assert_eq!(RefreshOutcome::from_core(missing, refresh).moved_files, 2);
+        refresh.record("ERROR", 0);
+        let refresh = RefreshOutcome::from_core(missing, refresh);
+        assert_eq!(refresh.moved_files, 2);
+        assert_eq!(refresh.error_files, 1);
         let verify = VerifyOutcome::from_core(
             missing,
             ssd_refresh::outcome::VerifyOutcome {

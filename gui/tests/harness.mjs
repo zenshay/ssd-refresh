@@ -67,7 +67,12 @@ export async function startServer() {
 
 /**
  * Fake the Tauri IPC before the page loads.
- * data: { volumes, messages?, scan?, verify? } — the results of the commands.
+ * data: {
+ *   volumes, elevated? (default true), messages?,
+ *   scan?, scans? (by drive root), verify?,
+ *   refresh?: a RefreshOutcome, or "pending" for a refresh that does not end,
+ *   progress?: one progress event to send before the result,
+ * }
  */
 export function installIpc(page, data) {
   return page.evaluateOnNewDocument((data) => {
@@ -89,12 +94,22 @@ export function installIpc(page, data) {
           listeners.set(args.event, args.handler);
           return id;
         }
-        if (command === "environment") return { elevated: true };
+        if (command === "environment")
+          return { elevated: data.elevated ?? true };
         if (command === "list_volumes") return data.volumes;
-        if (command === "start_scan" || command === "start_verify") {
+        const results = {
+          // data.scans: one scan result for each drive root. data.scan: the same for all.
+          start_scan: data.scans?.[args?.root] ?? data.scan,
+          start_refresh: data.refresh,
+          start_verify: data.verify,
+        };
+        if (command in results) {
           for (const message of data.messages ?? [])
             emit("operation-message", message);
-          return command === "start_scan" ? data.scan : data.verify;
+          if (data.progress) emit("progress", data.progress);
+          // A refresh that does not end: the page stays in the running state.
+          if (results[command] === "pending") return new Promise(() => {});
+          return results[command];
         }
         return null;
       },
