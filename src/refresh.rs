@@ -261,56 +261,127 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     ctl.cli_note(2, "Keys: p + Enter = pause or continue. q + Enter = stop after this file (use --resume later).");
     ctl.paragraph(2, "You can stop at any time. This does not damage files.");
 
-    if !o.dry_run {
-        let typed = match &o.confirm {
+    let typed = if !o.dry_run {
+        match &o.confirm {
             Some(c) => c.clone(),
             None => ctl.confirm(&label)?,
-        };
-        if !confirm_matches(&label, &typed) {
-            ctl.message("Cancelled. The tool did not change anything.");
-            return Ok(RefreshOutcome {
-                status: RunStatus::InvalidInput,
-                ..Default::default()
-            });
         }
-    }
-
-    // ---------- Step 3: process ----------
-    ctl.message("");
-    ctl.message(&format!(
-        "Step 3/3  {}",
-        if o.dry_run {
-            "Measure again"
-        } else {
-            "Refresh"
-        }
-    ));
-    // This thread gives the move commands. Thus its I/O priority is the priority of the moves.
-    let reloc = if o.dry_run {
-        None
     } else {
-        Some(Relocator::new(
-            &vol,
-            &RelocOptions {
-                max_chunk: o.max_chunk_mb.max(1) << 20,
-            },
-        )?)
+        String::new()
     };
-    let _priority = sys::ThreadIoPriorityGuard::new(o.read.io_priority);
-    let mut r = Run {
-        o,
-        vol_block: vol.block,
-        ctl: ctl.clone(),
-        reloc,
-        q: sys::IoQueue::new(o.read.qd, o.read.chunk),
-    };
-    let mut w = CsvWriter::create(&o.out, &HEADER[..width], o.resume)?;
-    let prog = Progress::new(
-        Phase::Refresh { dry_run: o.dry_run },
-        todo.len() as u64,
-        todo_bytes,
-        ctl.clone(),
-    );
+
+    run_confirmed(o.dry_run, &label, &typed, &ctl, || {
+        // ---------- Step 3: process ----------
+        ctl.message("");
+        ctl.message(&format!(
+            "Step 3/3  {}",
+            if o.dry_run {
+                "Measure again"
+            } else {
+                "Refresh"
+            }
+        ));
+        // This thread gives the move commands. Thus its I/O priority is the priority of the moves.
+        let reloc = if o.dry_run {
+            None
+        } else {
+            Some(Relocator::new(
+                &vol,
+                &RelocOptions {
+                    max_chunk: o.max_chunk_mb.max(1) << 20,
+                },
+            )?)
+        };
+        let _priority = sys::ThreadIoPriorityGuard::new(o.read.io_priority);
+        let mut r = Run {
+            o,
+            vol_block: vol.block,
+            ctl: ctl.clone(),
+            reloc,
+            q: sys::IoQueue::new(o.read.qd, o.read.chunk),
+        };
+        let mut w = CsvWriter::create(&o.out, &HEADER[..width], o.resume)?;
+        let prog = Progress::new(
+            Phase::Refresh { dry_run: o.dry_run },
+            todo.len() as u64,
+            todo_bytes,
+            ctl.clone(),
+        );
+        let outcome = process_files(
+            &todo,
+            o.stop_after,
+            &ctl,
+            &prog,
+            |path, log| r.process(path, log),
+            |row| w.row(row.values(width)),
+        )?;
+        prog.finish();
+
+        ctl.message("");
+        ctl.message("Summary");
+        ctl.message(&format!(
+            "  Files per status: {}",
+            outcome
+                .counts
+                .iter()
+                .map(|(k, v)| format!("{k} {v}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        if !o.dry_run {
+            ctl.message(&format!("  Data moved: {}", fmt_bytes(outcome.moved_bytes)));
+        }
+        ctl.message("  The statuses: see the README.");
+        ctl.cli_note(2, "Or run `ssd-refresh help refresh`.");
+        if outcome.status == RunStatus::Stopped {
+            ctl.message("  The run stopped early.");
+            ctl.cli_note(2, "To continue, run the same command with --resume.");
+        }
+        if !o.dry_run && outcome.moved_bytes > 0 {
+            let hint = sys::retrim_hint(&vol);
+            if !hint.is_empty() {
+                ctl.message(&format!("  Next: {hint}"));
+            }
+        }
+        if !o.dry_run {
+            ctl.message("");
+            ctl.paragraph(0, "The tool measured the 'after' speed in the log right after the move. New data is always fast at first (it can be in the fast cache of the SSD). Thus this speed does not show the real result. After 1 day or more, check again:");
+            ctl.message(&format!(
+                "  ssd-refresh verify --from \"{}\"",
+                o.out.display()
+            ));
+        }
+        Ok(outcome)
+    })
+}
+
+/// The work closure includes all move handles and file operations.
+fn run_confirmed(
+    dry_run: bool,
+    label: &str,
+    typed: &str,
+    ctl: &Control,
+    work: impl FnOnce() -> io::Result<RefreshOutcome>,
+) -> io::Result<RefreshOutcome> {
+    if !dry_run && !confirm_matches(label, typed) {
+        ctl.message("Cancelled. The tool did not change anything.");
+        return Ok(RefreshOutcome {
+            status: RunStatus::InvalidInput,
+            ..Default::default()
+        });
+    }
+    work()
+}
+
+/// Stop before the next file after a mismatch, a write error, or a stop request.
+fn process_files(
+    todo: &[(String, u64)],
+    stop_after: usize,
+    ctl: &Control,
+    prog: &Progress,
+    mut process: impl FnMut(&Path, &dyn Fn(&str)) -> Row,
+    mut write: impl FnMut(&Row) -> io::Result<()>,
+) -> io::Result<RefreshOutcome> {
     let mut outcome = RefreshOutcome::default();
     for (i, (path, size)) in todo.iter().enumerate() {
         if ctl.stopped() {
@@ -322,8 +393,8 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             outcome.status = RunStatus::Stopped;
             break;
         }
-        let row = r.process(Path::new(path), &|m: &str| prog.log(m));
-        w.row(row.values(width))?;
+        let row = process(Path::new(path), &|m: &str| prog.log(m));
+        write(&row)?;
         outcome.record(&row.status, row.st.moved_bytes);
         prog.add_file(*size);
         match row.status.as_str() {
@@ -343,7 +414,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             outcome.status = RunStatus::DataMismatch;
             break;
         }
-        if o.stop_after > 0 && i + 1 >= o.stop_after {
+        if stop_after > 0 && i + 1 >= stop_after {
             prog.log(&format!(
                 "The tool processed {} (--stop-after). It stops now.",
                 count_of((i + 1) as u64, "file")
@@ -351,45 +422,6 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             outcome.status = RunStatus::Stopped;
             break;
         }
-    }
-    prog.finish();
-
-    ctl.message("");
-    ctl.message("Summary");
-    ctl.message(&format!(
-        "  Files per status: {}",
-        outcome
-            .counts
-            .iter()
-            .map(|(k, v)| format!("{k} {v}"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    ));
-    if !o.dry_run {
-        ctl.message(&format!("  Data moved: {}", fmt_bytes(outcome.moved_bytes)));
-    }
-    ctl.message("  The statuses: see the README.");
-    ctl.cli_note(2, "Or run `ssd-refresh help refresh`.");
-    if outcome.status == RunStatus::Stopped {
-        ctl.message("  The run stopped early.");
-        ctl.cli_note(2, "To continue, run the same command with --resume.");
-    }
-    if !o.dry_run && outcome.moved_bytes > 0 {
-        let hint = sys::retrim_hint(&vol);
-        if !hint.is_empty() {
-            ctl.message(&format!("  Next: {hint}"));
-        }
-    }
-    if !o.dry_run {
-        ctl.message("");
-        ctl.paragraph(
-            0,
-            "The tool measured the 'after' speed in the log right after the move. New data is always fast at first (it can be in the fast cache of the SSD). Thus this speed does not show the real result. After 1 day or more, check again:",
-        );
-        ctl.message(&format!(
-            "  ssd-refresh verify --from \"{}\"",
-            o.out.display()
-        ));
     }
     Ok(outcome)
 }
@@ -635,7 +667,101 @@ impl Run<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{confirm_matches, Row, HEADER, OLD_WIDTH};
+    use super::{confirm_matches, process_files, run_confirmed, Row, HEADER, OLD_WIDTH};
+    use crate::control::Control;
+    use crate::outcome::{RefreshOutcome, RunStatus};
+    use crate::progress::{Phase, Progress};
+    use std::cell::Cell;
+    use std::io;
+
+    #[test]
+    fn confirmation_gates_all_work() {
+        let ctl = Control::new(None);
+        for (dry_run, typed, expected) in [(false, "wrong", 0), (false, "X:", 1), (true, "", 1)] {
+            let calls = Cell::new(0);
+            let result = run_confirmed(dry_run, "X:", typed, &ctl, || {
+                calls.set(calls.get() + 1);
+                Ok(RefreshOutcome::default())
+            })
+            .unwrap();
+            assert_eq!(calls.get(), expected);
+            assert_eq!(
+                result.status,
+                if expected == 0 {
+                    RunStatus::InvalidInput
+                } else {
+                    RunStatus::Completed
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn mismatch_is_recorded_before_the_next_file_can_start() {
+        let ctl = Control::new(None);
+        let todo = vec![("first".into(), 1), ("second".into(), 1)];
+        let prog = Progress::new(Phase::Refresh { dry_run: true }, 2, 2, ctl.clone());
+        let mut calls = 0;
+        let mut rows = Vec::new();
+        let result = process_files(
+            &todo,
+            0,
+            &ctl,
+            &prog,
+            |_, _| {
+                calls += 1;
+                Row {
+                    status: "MISMATCH".into(),
+                    ..Default::default()
+                }
+            },
+            |row| {
+                rows.push(row.status.clone());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(calls, 1);
+        assert_eq!(rows, ["MISMATCH"]);
+        assert_eq!(result.status, RunStatus::DataMismatch);
+        assert_eq!(result.processed_files, 1);
+    }
+
+    #[test]
+    fn write_failure_and_stop_prevent_the_next_file() {
+        let ctl = Control::new(None);
+        let todo = vec![("first".into(), 1), ("second".into(), 1)];
+        let prog = Progress::new(Phase::Refresh { dry_run: true }, 2, 2, ctl.clone());
+        let mut calls = 0;
+        assert!(process_files(
+            &todo,
+            0,
+            &ctl,
+            &prog,
+            |_, _| {
+                calls += 1;
+                Row {
+                    status: "OK".into(),
+                    ..Default::default()
+                }
+            },
+            |_| Err(io::Error::other("Synthetic write error"))
+        )
+        .is_err());
+        assert_eq!(calls, 1);
+        ctl.request_stop();
+        let result = process_files(
+            &todo,
+            0,
+            &ctl,
+            &prog,
+            |_, _| panic!("Must not process a stopped run"),
+            |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(result.status, RunStatus::Stopped);
+        assert_eq!(result.processed_files, 0);
+    }
 
     #[test]
     fn row_values_follow_the_log_width() {

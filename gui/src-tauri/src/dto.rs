@@ -145,8 +145,8 @@ pub struct VerifyOutcome {
     /// The text log. Each verify run adds its summary to the end.
     pub log_path: String,
     pub processed_files: usize,
-    /// false = the data of a file changed, but no program changed the file.
-    pub data_safe: bool,
+    /// YES, NO, UNKNOWN, or NOT_CHECKED. This is not the operation status.
+    pub data_safety: &'static str,
     /// `YES`, `NO`, `NOT DECIDED`, `n/a`, or empty when no file was measured.
     pub faster: &'static str,
     /// The time since the refresh, in seconds.
@@ -173,7 +173,7 @@ impl VerifyOutcome {
         Self {
             log_path: path.to_string_lossy().into_owned(),
             processed_files: result.processed_files,
-            data_safe: result.status != RunStatus::DataMismatch,
+            data_safety: result.data_safety.as_str(),
             faster: result.faster,
             age_secs: result.age_secs,
             speed: result.speed.map(|s| SpeedDto {
@@ -226,6 +226,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn verify_contract_keeps_each_safety_verdict() {
+        use ssd_refresh::outcome::{DataSafety, VerifyOutcome as Core};
+        let values = [
+            DataSafety::Yes,
+            DataSafety::No,
+            DataSafety::Unknown,
+            DataSafety::NotChecked,
+        ];
+        let fixtures: Vec<_> = values
+            .into_iter()
+            .map(|data_safety| {
+                let result = VerifyOutcome::from_core(
+                    std::path::Path::new("synthetic.verify.log"),
+                    Core {
+                        data_safety,
+                        processed_files: 1,
+                        faster: "n/a",
+                        ..Default::default()
+                    },
+                );
+                let json = serde_json::to_value(result).unwrap();
+                assert_eq!(json["dataSafety"], data_safety.as_str());
+                assert!(json.get("dataSafe").is_none());
+                json
+            })
+            .collect();
+        if let Some(path) = std::env::var_os("SSD_REFRESH_CONTRACT_OUTPUT") {
+            let path = std::path::PathBuf::from(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, serde_json::to_vec_pretty(&fixtures).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
     fn conversion_does_not_read_the_report_file() {
         let missing = std::path::Path::new("missing-synthetic-report.csv");
         let result = ScanOutcome::from_core(
@@ -246,6 +280,7 @@ mod tests {
             missing,
             ssd_refresh::outcome::VerifyOutcome {
                 status: ssd_refresh::outcome::RunStatus::DataMismatch,
+                data_safety: ssd_refresh::outcome::DataSafety::No,
                 faster: "NOT DECIDED",
                 age_secs: 60,
                 speed: Some(ssd_refresh::outcome::SpeedFacts {
@@ -258,7 +293,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        assert!(!verify.data_safe);
+        assert_eq!(verify.data_safety, "NO");
         assert!(!verify.stopped);
         assert_eq!(verify.faster, "NOT DECIDED");
         assert_eq!(verify.wait_secs, 43140);

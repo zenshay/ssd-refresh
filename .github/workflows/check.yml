@@ -1,8 +1,8 @@
 name: Check
 on:
   workflow_call:
-  # Pushes to main do not start a run. The ruleset requires a pull request
-  # that is up to date with main, so its checks already tested that commit.
+  # Pushes to main do not start a run. The branch rules require status checks.
+  # Check those rules separately; this workflow does not require a pull request.
   workflow_dispatch:
   pull_request:
 permissions:

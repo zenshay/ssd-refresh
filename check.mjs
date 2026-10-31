@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   pnpmCommand,
   root,
@@ -16,6 +18,14 @@ const node = (name, file, args = [], live = false) =>
   run(name, process.execPath, [join(root, file), ...args], live);
 const manifest = ["--manifest-path", join(root, "Cargo.toml")];
 const offline = options.has("--offline") ? ["--offline"] : [];
+// A unique path prevents an old fixture from passing a new contract check.
+const contractPath = join(
+  root,
+  "target/contracts",
+  `verify-${process.pid}-${randomUUID()}.json`,
+);
+if (!options.has("--core-only"))
+  process.env.SSD_REFRESH_CONTRACT_OUTPUT = contractPath;
 const [pnpm, ...prefix] = pnpmCommand();
 
 async function sharedChecks() {
@@ -60,6 +70,14 @@ async function applicationChecks() {
     ...scope,
     "--all-targets",
   ]);
+  if (!options.has("--core-only")) {
+    await run("Verify IPC contract", process.execPath, [
+      "--import",
+      pathToFileURL(join(root, "gui/tests/register.mjs")).href,
+      join(root, "gui/tests/verify-contract.mjs"),
+      contractPath,
+    ]);
+  }
   await run("Rust lint", "cargo", [
     "clippy",
     "--locked",

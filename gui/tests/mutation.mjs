@@ -92,6 +92,54 @@ function body(text, replacement) {
 
 const mutants = [
   {
+    id: "rust-complete-read",
+    file: "src/verify.rs",
+    kind: "function_item",
+    match: (node) => /^fn complete_read\(/.test(node.text),
+    change: (text) => body(text, "Ok(result)"),
+  },
+  {
+    id: "rust-confirmation-gate",
+    file: "src/refresh.rs",
+    kind: "if_expression",
+    match: (node) => node.text.startsWith("if !dry_run && !confirm_matches("),
+    change: (text) => text.replace(/^if [^{]+/, "if false "),
+  },
+  {
+    id: "rust-mismatch-stop",
+    file: "src/refresh.rs",
+    kind: "if_expression",
+    match: (node) => node.text.startsWith('if row.status == "MISMATCH"'),
+    change: (text) => text.replace('row.status == "MISMATCH"', "false"),
+  },
+  {
+    id: "rust-safety-verdict",
+    file: "src/outcome.rs",
+    kind: "match_arm",
+    match: (node) => node.text.startsWith('Self::Unknown => "UNKNOWN"'),
+    change: (text) => text.replace('"UNKNOWN"', '"YES"'),
+  },
+  {
+    id: "frontend-safety-verdict",
+    file: "gui/src/actions.ts",
+    kind: "function_declaration",
+    match: (node) => /^function verifyNotice\(/.test(node.text),
+    change: (text) =>
+      text.replace(
+        'r.outcome.dataSafety === "YES"',
+        'r.outcome.dataSafety !== "NO"',
+      ),
+  },
+  {
+    id: "frontend-verify-validation",
+    file: "gui/src/api.ts",
+    kind: "function_declaration",
+    match: (node) =>
+      /^export function validateVerifyOutcome\(/.test(node.text) ||
+      /^function validateVerifyOutcome\(/.test(node.text),
+    change: (text) => body(text, "return value as VerifyOutcome;"),
+  },
+  {
     id: "rust-drop-cleanup",
     file: "src/progress.rs",
     kind: "function_item",

@@ -69,12 +69,13 @@ export interface RefreshOutcome {
 }
 
 export type Verdict = "YES" | "NO" | "NOT DECIDED" | "n/a" | "";
+export type DataSafety = "YES" | "NO" | "UNKNOWN" | "NOT_CHECKED";
 
 export interface VerifyOutcome {
   logPath: string;
   processedFiles: number;
-  /** false = the data of a file changed, but no program changed the file. */
-  dataSafe: boolean;
+  /** This is separate from completion and speed. */
+  dataSafety: DataSafety;
   /** The Faster result of the rewritten files. Empty when no file was measured. */
   faster: Verdict;
   /** The time since the refresh, in seconds. */
@@ -93,6 +94,49 @@ export interface VerifySpeed {
   slowNow: number;
 }
 
+/** Reject an invalid IPC result before the page can show a safety claim. */
+export function validateVerifyOutcome(value: unknown): VerifyOutcome {
+  const fail = (): never => {
+    throw new Error("Invalid verify result. Keep the log and restart the app.");
+  };
+  if (typeof value !== "object" || value === null || Array.isArray(value))
+    return fail();
+  const r = value as Record<string, unknown>;
+  const number = (v: unknown): v is number =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0;
+  const count = (v: unknown): v is number =>
+    number(v) && Number.isSafeInteger(v);
+  if (
+    typeof r.logPath !== "string" ||
+    r.logPath.length === 0 ||
+    !count(r.processedFiles) ||
+    !count(r.ageSecs) ||
+    !count(r.waitSecs) ||
+    typeof r.stopped !== "boolean" ||
+    typeof r.dataSafety !== "string" ||
+    !["YES", "NO", "UNKNOWN", "NOT_CHECKED"].includes(r.dataSafety) ||
+    typeof r.faster !== "string" ||
+    !["YES", "NO", "NOT DECIDED", "n/a", ""].includes(r.faster) ||
+    (r.dataSafety === "YES" && (r.processedFiles === 0 || r.stopped))
+  )
+    return fail();
+  if (r.speed !== null) {
+    if (typeof r.speed !== "object" || !r.speed || Array.isArray(r.speed))
+      return fail();
+    const s = r.speed as Record<string, unknown>;
+    if (
+      !number(s.beforeMbps) ||
+      !number(s.nowMbps) ||
+      !count(s.slowBefore) ||
+      !count(s.slowNow) ||
+      s.slowNow > s.slowBefore ||
+      s.slowBefore > r.processedFiles
+    )
+      return fail();
+  }
+  return value as VerifyOutcome;
+}
+
 export const api = {
   environment: () => invoke<{ elevated: boolean }>("environment"),
   listVolumes: () => invoke<Volume[]>("list_volumes"),
@@ -100,7 +144,7 @@ export const api = {
   startRefresh: (reportPath: string, root: string) =>
     invoke<RefreshOutcome>("start_refresh", { reportPath, root }),
   startVerify: (logPath: string) =>
-    invoke<VerifyOutcome>("start_verify", { logPath }),
+    invoke<unknown>("start_verify", { logPath }).then(validateVerifyOutcome),
   /** Returns the new state: true means paused. */
   togglePause: () => invoke<boolean>("toggle_pause"),
   stop: () => invoke<void>("stop_operation"),

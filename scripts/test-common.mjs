@@ -295,6 +295,18 @@ try {
   rejected++;
   write("gui/src/store.ts", 'import { type Actions } from "./actions";');
   checkArchitecture(fixture);
+  for (const syntax of ["import", "export"]) {
+    for (const name of [
+      "type as value",
+      "type  as value",
+      "type /* name of a value */ as value",
+    ]) {
+      write("gui/src/actions.ts", `${syntax} { ${name} } from "./store";`);
+      write("gui/src/store.ts", `${syntax} { ${name} } from "./actions";`);
+      assert.throws(() => checkArchitecture(fixture), /Runtime import cycle/);
+      rejected++;
+    }
+  }
   console.log(`BOUNDARY TESTS: YES (${rejected} rejected cases)`);
 } finally {
   childRelative(tmpdir(), fixture);

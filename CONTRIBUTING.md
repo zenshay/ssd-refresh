@@ -36,6 +36,18 @@ Syntax queries and test results are not cached. Release cases keep separate test
 Keep the two-lane limit. Measure full checks before you add more workers or new test tools.
 Do not treat a skipped check as a passed check.
 
+### Contracts for shared work
+
+Before implementation, name the affected input checks, result guarantees, and failure behavior.
+Use the safety contracts in `docs/architecture.md` for shared core and GUI work.
+Keep the contract code beside its type or operation. Keep examples and counterexamples in tests.
+When tasks use separate agents, give each agent the same contract and acceptance command.
+Use separate worktrees for concurrent changes. One owner integrates and checks the result.
+State whether a change alters a contract in the pull request.
+Review removed checks and changed test expectations as behavior changes.
+Do not weaken a safety condition to make a test pass.
+Use synthetic callbacks to test operation order before you use a disk image.
+
 ### Development on each platform
 
 This table shows what you can build and test on each system.

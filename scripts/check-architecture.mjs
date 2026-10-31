@@ -283,9 +283,10 @@ export function checkArchitecture(base = root) {
     const typeOnly =
       /^(?:import|export)\s+type\b/.test(node.text) ||
       named?.[1]
+        .replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, " ")
         .split(",")
         .filter((part) => part.trim())
-        .every((part) => /^\s*type\s+/.test(part));
+        .every((part) => /^\s*type\s+(?!\s*as\b)/.test(part));
     if (!typeOnly) graph.get(module).push(dependency);
   }
   const visiting = new Set();
