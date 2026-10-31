@@ -68,7 +68,7 @@ function verifyNotice(
   cancelled: boolean,
 ): Notice {
   const drive = (root: string) => root.slice(0, 2);
-  const unsafe = results.filter((r) => !r.outcome.dataSafe);
+  const unsafe = results.filter((r) => r.outcome.dataSafety === "NO");
   if (unsafe.length > 0) {
     return {
       kind: "error",
@@ -86,15 +86,36 @@ function verifyNotice(
   const verdicts = results.map((r) => r.outcome.faster);
   const all = (v: Verdict) =>
     verdicts.length > 0 && verdicts.every((x) => x === v);
-  const kind = verdicts.includes("NO") ? "warn" : all("YES") ? "ok" : "info";
+  const safety =
+    results.length > 0 && results.every((r) => r.outcome.dataSafety === "YES")
+      ? "YES"
+      : results.every((r) => r.outcome.dataSafety === "NOT_CHECKED") &&
+          results.length > 0
+        ? "NOT_CHECKED"
+        : "UNKNOWN";
+  const kind =
+    safety !== "YES"
+      ? "info"
+      : verdicts.includes("NO")
+        ? "warn"
+        : all("YES")
+          ? "ok"
+          : "info";
   const one = results.length === 1;
   const title = one
-    ? `Data safe: YES. Faster: ${results[0].outcome.faster || "n/a"}`
-    : "Data safe: YES on all drives";
+    ? `Data safe: ${safety}. Faster: ${results[0].outcome.faster || "n/a"}`
+    : safety === "YES"
+      ? "Data safe: YES on all drives"
+      : `Data safe: ${safety}`;
   // One short line per fact. The speed comes first: the user wants to see it.
   const lines: string[] = [];
+  if (safety !== "YES")
+    lines.push(
+      "The check cannot confirm all file data. Keep the log for details.",
+    );
   for (const { root, outcome } of results) {
     const prefix = one ? "" : `${drive(root)}  `;
+    if (!one) lines.push(`${prefix}Data safe: ${outcome.dataSafety}`);
     const sp = outcome.speed;
     if (!sp) {
       lines.push(`${prefix}No file was slow before.`);
@@ -442,7 +463,7 @@ export function createActions(
       try {
         const outcome = await backend.startVerify(logPath);
         finished.push({ root: volume.root, outcome });
-        if (outcome.stopped || !outcome.dataSafe) break;
+        if (outcome.stopped || outcome.dataSafety === "NO") break;
       } catch (e) {
         store.set({
           paused: false,

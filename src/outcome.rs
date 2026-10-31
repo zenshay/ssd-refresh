@@ -60,9 +60,31 @@ impl RefreshOutcome {
     }
 }
 
+/// The data check result. This is separate from the operation status.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DataSafety {
+    Yes,
+    No,
+    Unknown,
+    #[default]
+    NotChecked,
+}
+
+impl DataSafety {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Yes => "YES",
+            Self::No => "NO",
+            Self::Unknown => "UNKNOWN",
+            Self::NotChecked => "NOT_CHECKED",
+        }
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct VerifyOutcome {
     pub status: RunStatus,
+    pub data_safety: DataSafety,
     pub processed_files: usize,
     pub summary: String,
     /// The result of the Faster line of the rewritten group (or of the only group):

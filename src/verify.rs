@@ -457,7 +457,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         ctl.message(&format!("CSV: {} (one row per file)", out.display()));
     }
     Ok(VerifyOutcome {
-        status: if s.data_not_safe {
+        status: if s.data_safety == crate::outcome::DataSafety::No {
             RunStatus::DataMismatch
         } else if stopped {
             RunStatus::Stopped
@@ -465,6 +465,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
             RunStatus::Completed
         },
         processed_files: results.len(),
+        data_safety: s.data_safety,
         summary: text,
         faster: s.faster,
         age_secs: age,
@@ -515,7 +516,7 @@ fn measure(
     let data = sys::open_direct(path)?;
     sys::set_read_priority(q, &data, opt.measure_priority);
     let check_hash = !it.sha.is_empty();
-    let mut res: ReadResult = read_file(q, &data, m.size, &l, true, check_hash, opt, ctl)?;
+    let mut res = complete_read(read_file(q, &data, m.size, &l, true, check_hash, opt, ctl)?)?;
     let differs = if check_hash {
         res.sha256.map(|h| hex(&h)) != Some(it.sha.clone())
     } else {
@@ -556,7 +557,7 @@ fn measure(
         .map(|e| (e.begin_unix_ms, e.secs * 1000.0, e.bytes));
     let mut reads = 1;
     if first_slow {
-        let second = read_file(q, &data, m.size, &l, true, false, opt, ctl)?;
+        let second = complete_read(read_file(q, &data, m.size, &l, true, false, opt, ctl)?)?;
         res.keep_faster(&second, opt);
         reads = 2;
     }
@@ -581,3 +582,33 @@ fn measure(
 #[path = "verify/summary.rs"]
 mod summary;
 use summary::{build_summary, SummaryInput};
+
+fn complete_read(result: ReadResult) -> io::Result<ReadResult> {
+    if result.short_read {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "The file read did not finish. No data safety result is available.",
+        ));
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod read_contract_tests {
+    #[test]
+    fn incomplete_reads_are_not_hash_evidence() {
+        for short_read in [true, false] {
+            let result = super::complete_read(super::ReadResult {
+                disk_bytes: 0,
+                disk_secs: 0.0,
+                short_read,
+                sha256: None,
+                extents: Vec::new(),
+            });
+            assert_eq!(result.is_err(), short_read);
+            if let Err(error) = result {
+                assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+            }
+        }
+    }
+}

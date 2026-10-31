@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createActions, nextStep, speedChange } from "../src/actions.ts";
+import { validateVerifyOutcome } from "../src/api.ts";
 import { createDiagnostics } from "../src/diagnostics.ts";
 import { countOf, truncatePath, wasWere } from "../src/format.ts";
 import {
@@ -262,14 +263,58 @@ const volume = (root, lastRefresh = null) => ({
 });
 const verified = (overrides = {}) => ({
   logPath: "synthetic.verify.log",
-  processedFiles: 3,
-  dataSafe: true,
+  processedFiles: 12,
+  dataSafety: "YES",
   faster: "YES",
   ageSecs: 2 * 86400,
   speed: { beforeMbps: 10, nowMbps: 400, slowBefore: 12, slowNow: 0 },
   waitSecs: 0,
   stopped: false,
   ...overrides,
+});
+
+test("verify IPC rejects invalid safety claims and data", () => {
+  for (const dataSafety of ["YES", "NO", "UNKNOWN", "NOT_CHECKED"])
+    assert.equal(
+      validateVerifyOutcome(verified({ dataSafety })).dataSafety,
+      dataSafety,
+    );
+  for (const patch of [
+    { dataSafety: true },
+    { dataSafety: "unexpected" },
+    { dataSafety: undefined },
+    { processedFiles: 0 },
+    { stopped: true },
+    { ageSecs: -1 },
+    { waitSecs: NaN },
+    { speed: { beforeMbps: Infinity, nowMbps: 1, slowBefore: 1, slowNow: 0 } },
+    { speed: { beforeMbps: 1, nowMbps: 1, slowBefore: 1, slowNow: 2 } },
+  ])
+    assert.throws(
+      () => validateVerifyOutcome(verified(patch)),
+      /Invalid verify result/,
+    );
+});
+
+test("unknown safety never becomes a positive notice", async () => {
+  for (const dataSafety of ["UNKNOWN", "NOT_CHECKED"]) {
+    const store = createStore({
+      ...initialState,
+      volumes: [volume("X:", { logPath: "x.refresh.csv", unixSecs: 1 })],
+      selectedRoots: ["X:"],
+    });
+    await createActions(
+      store,
+      async () => true,
+      backend({ startVerify: async () => verified({ dataSafety }) }),
+    ).runVerify();
+    assert.match(
+      store.get().notice.title,
+      new RegExp(`Data safe: ${dataSafety}`),
+    );
+    assert.equal(store.get().notice.kind, "info");
+    assert.doesNotMatch(store.get().notice.title, /Data safe: YES/);
+  }
 });
 
 test("the verify notice puts the speed first, one fact per line", () => {
@@ -446,7 +491,7 @@ test("verify reports changed data as an error and stops", async () => {
     backend({
       startVerify: async (logPath) => {
         calls.push(logPath);
-        return verified({ dataSafe: false });
+        return verified({ dataSafety: "NO" });
       },
     }),
   ).runVerify();

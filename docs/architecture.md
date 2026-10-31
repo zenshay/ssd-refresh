@@ -21,6 +21,32 @@ Tauri adapter --+             |
 - Each diagnostic model owns its entries. Views subscribe to that model.
 - Windows modules share the platform API. File moves remain in `relocation`.
 
+## Safety contracts
+
+The core owns the data safety verdict. Completion and read speed are separate facts.
+`DataSafety` has four values: `YES`, `NO`, `UNKNOWN`, and `NOT_CHECKED`.
+The summary, IPC data, and frontend preserve this verdict.
+Missing hashes, missing evidence for changed files, failed reads, and incomplete checks cannot produce `YES`.
+Scan reports produce `NOT_CHECKED`, because they do not record a refresh data check.
+Short reads produce a read error before hash or speed comparison.
+The core accepts old CSV reports. Missing evidence reduces the verdict; it does not reject an old format.
+
+The refresh confirmation gate contains all move handles and file processing.
+Wrong confirmation calls the work function zero times.
+The file loop records `MISMATCH` and returns `DataMismatch` before the next file starts.
+A report write error also prevents the next file from starting.
+Tests use synthetic file results and counters. They do not move file data.
+
+The frontend checks verify IPC data at runtime before it shows a verdict.
+Native Rust tests serialize all four verdicts into a unique file for each check run.
+The frontend contract check reads that file and checks the resulting notices.
+Core-only checks omit this native DTO check. They still run core verdict and frontend validation tests.
+
+Keep contracts beside their types and operation code.
+Task instructions must name the affected contracts and the acceptance command.
+Review changes to verdicts, validation, or expected results as behavior changes.
+Passing type checks alone does not prove a safety contract.
+
 `Control` calls observers without holding their registration locks.
 Observers must return promptly. They must not panic.
 `Progress` stops and joins its worker on normal return, error, or panic.
@@ -59,6 +85,13 @@ The CI matrix tests the core on Windows, Linux, and macOS. It tests native Tauri
 macOS checks run on two macOS 15 runners: ARM64 (`macos-15`) and Intel (`macos-15-intel`). Universal release builds compile both targets.
 
 Architecture checks reject core-to-CLI imports, terminal APIs in core, model-to-view imports, and frontend runtime import cycles.
+All library root modules need a policy. The platform layer can depend only on common types and control.
+Grouped Rust imports and relative paths use the same policy as direct imports.
+Frontend re-exports and fixed dynamic imports also enter the dependency graph.
+Type-only imports do not create runtime edges. An imported value named `type` still creates an edge.
+New frontend files use model rules unless they are views or named adapters.
+The checker rejects unsupported namespace aliases, dynamic import expressions, and inline library root modules.
+These restrictions keep the check small; it does not resolve all Rust names or JavaScript expressions.
 The checks use AST nodes. They do not count TypeScript type imports as runtime dependencies.
 Node calls ast-grep directly for boundary and mutation checks.
 Path tests include spaces, Unicode, parent segments, and platform case rules.
@@ -160,11 +193,12 @@ Each child test command has a 120-second limit. Timeout cleanup stops its proces
 Set `SSD_REFRESH_MUTATION_TIMEOUT_MS` to change this limit.
 Read `target/mutation/report.json` and the per-mutation logs for details.
 
-Windows has 12 selected mutations. Linux and macOS have 11 because the Windows priority guard is not present.
+Windows has 18 selected mutations. Linux and macOS have 17 because the Windows priority guard is not present.
 This is a targeted regression suite. It is not an exhaustive mutation score for the repository.
-The first run killed 10 of 12 mutations.
-Two added tests check final event delivery and a required column that the summary does not use.
-The same 12 mutations then failed their tests.
+The added mutations check confirmation, mismatch stops, short reads, safety verdicts, and IPC validation.
+They run in the same isolated copies as the earlier cleanup and report mutations.
+The initial architecture pass had 12 selected mutations. Its first run killed 10.
+Two added tests then killed the remaining mutations.
 
 ## Windows check result: 2026-10-18
 
