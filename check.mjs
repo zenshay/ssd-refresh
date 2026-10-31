@@ -115,7 +115,7 @@ async function applicationChecks() {
     "typecheck",
     "lint",
     "test",
-    ...(!options.has("--skip-browser") ? ["test:e2e"] : []),
+    ...(!options.has("--skip-browser") ? ["test:e2e", "test:layout"] : []),
   ]) {
     await run(`Frontend ${task}`, pnpm, [
       ...prefix,
