@@ -73,6 +73,15 @@ try {
     ]);
     assert.equal(query.status, 0, query.stderr);
     assert.equal(JSON.parse(query.stdout)[0].text, "fn npm_entry_test() {}");
+    const native = join(
+      npmFolder,
+      `node_modules/@ast-grep/cli-win32-${process.arch}-msvc/ast-grep.exe`,
+    );
+    mkdirSync(join(native, ".."), { recursive: true });
+    writeFileSync(native, "");
+    assert.deepEqual(windowsAstGrepCommand([join(npmFolder, "ast-grep.cmd")]), [
+      native,
+    ]);
     console.log("WINDOWS NPM ENTRY TEST: YES");
   }
   for (const folder of ["src", "gui/src/views", "gui/src-tauri/src"])
