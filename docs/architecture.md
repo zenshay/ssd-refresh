@@ -88,6 +88,21 @@ The PowerShell wrapper maps `-SkipBrowser`, `-CoreOnly`, and `-Offline` to these
 The CI matrix tests the core on Windows, Linux, and macOS. It tests native Tauri on Windows.
 macOS checks run on two macOS 15 runners: ARM64 (`macos-15`) and Intel (`macos-15-intel`). Universal release builds compile both targets.
 
+Windows CI caches Rust dependencies with `Swatinem/rust-cache`. Each Rust version has a separate cache.
+Windows release builds use separate caches for x64 and ARM64. They do not use the check caches.
+The first build creates the cache. Later builds pay the restore cost but can reuse compiled dependencies.
+Toolchain, dependency, or compiler option changes can require a new cache. A cache miss still builds from source.
+The cache does not store test results. All checks run after a restore.
+PRs and tags can read caches from the default branch. Caches from other PRs or tags are not shared.
+Main builds refresh check and release caches when manifests, the lock file, the toolchain, or CI workflows change.
+Other main pushes do not start another check run. PR checks still run before merge.
+Release cache jobs only compile. They do not upload packages or create a release.
+An exact cache hit skips those release builds. A missing cache can add two Windows builds after a dependency change.
+
+Windows calls the native ast-grep program when its npm platform package is present.
+It uses the Node wrapper when that package is absent.
+Layout tests wait for page assets, application state, fonts, and transitions. They do not wait for network silence.
+
 Architecture checks reject core-to-CLI imports, terminal APIs in core, model-to-view imports, and frontend runtime import cycles.
 All library root modules need a policy. The platform layer can depend only on common types and control.
 Grouped Rust imports and relative paths use the same policy as direct imports.

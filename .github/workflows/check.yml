@@ -1,19 +1,19 @@
 name: Check
 on:
   workflow_call:
-  # Pushes to main do not start a run. The branch rules require status checks.
-  # Check those rules separately; this workflow does not require a pull request.
   workflow_dispatch:
-    inputs:
-      release_benchmark:
-        description: Measure Windows release builds without a release
-        type: boolean
-        default: false
-      benchmark_warm:
-        description: Measure only the cache case
-        type: boolean
-        default: false
   pull_request:
+  # Refresh default-branch caches only when build inputs or workflows change.
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - gui/src-tauri/Cargo.toml
+      - rust-toolchain.toml
+      - .cargo/config.toml
+      - .github/workflows/check.yml
+      - .github/workflows/release.yml
 permissions:
   contents: read
 # A new push to a pull request stops the older run of that pull request.
@@ -23,7 +23,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
-    if: ${{ !inputs.release_benchmark }}
     strategy:
       fail-fast: false
       matrix:
@@ -35,8 +34,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
-      # Keep source lines in CI errors without full dependency debug data.
-      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,7 +76,6 @@ jobs:
           & ./scripts/check-architecture.ps1
 
   cli-msrv:
-    if: ${{ !inputs.release_benchmark }}
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
@@ -96,7 +92,6 @@ jobs:
         run: cargo +1.85.0 check --locked -p ssd-refresh --all-targets
 
   secrets:
-    if: ${{ !inputs.release_benchmark }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,16 +108,13 @@ jobs:
       - name: Scan reachable history for secrets
         run: '"$RUNNER_TEMP/gitleaks" git --redact=100 --no-banner --log-opts="--all" .'
 
-  release-benchmark:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_benchmark }}
+  warm-release-cache:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
-        mode: ${{ fromJSON(inputs.benchmark_warm && '["cache"]' || '["baseline", "cache"]') }}
-    env:
-      RELEASE_TAG: v1.0.7
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,24 +125,28 @@ jobs:
           toolchain: "1.99.0"
           targets: ${{ matrix.target }}
       - name: Cache Windows release dependencies
-        if: matrix.mode == 'cache'
+        id: rust-cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: windows-release-${{ matrix.target }}
           cache-bin: false
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: steps.rust-cache.outputs.cache-hit != 'true'
         with:
           package_json_file: gui/package.json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.rust-cache.outputs.cache-hit != 'true'
         with:
           node-version: 24
       - name: Install frontend packages
+        if: steps.rust-cache.outputs.cache-hit != 'true'
         run: pnpm --dir gui install --frozen-lockfile
       - name: Build frontend
+        if: steps.rust-cache.outputs.cache-hit != 'true'
         run: pnpm --dir gui run build
-      - name: Build GUI
+      - name: Build GUI release dependencies
+        if: steps.rust-cache.outputs.cache-hit != 'true'
         run: cargo build --locked --release --target ${{ matrix.target }} -p ssd-refresh-gui
-      - name: Build CLI
+      - name: Build CLI release dependencies
+        if: steps.rust-cache.outputs.cache-hit != 'true'
         run: cargo build --locked --release --target ${{ matrix.target }} --bin ssd-refresh
-      - name: Check packages
-        run: node scripts/release.mjs package-windows --target ${{ matrix.target }} --arch ${{ matrix.target == 'x86_64-pc-windows-msvc' && 'x64' || 'arm64' }}

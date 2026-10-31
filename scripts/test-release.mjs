@@ -81,6 +81,23 @@ function expect(name, action, errorText) {
 
 // Workflow structure.
 assert.ok(Object.hasOwn(check.on, "workflow_call"));
+assert.deepEqual(check.on.push.branches, ["main"]);
+assert.ok(check.on.push.paths.includes(".github/workflows/check.yml"));
+assert.ok(!check.on.push.paths.some((path) => path.startsWith("src/")));
+const warmer = check.jobs["warm-release-cache"];
+assert.equal(
+  warmer.if,
+  "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+);
+const cacheKey = (job) =>
+  job.steps.find((step) => step.uses?.startsWith("Swatinem/rust-cache@"))?.with[
+    "shared-key"
+  ];
+assert.equal(cacheKey(warmer), cacheKey(release.jobs["build-windows"]));
+assert.ok(!JSON.stringify(warmer).includes("RELEASE_TOKEN"));
+assert.ok(
+  !warmer.steps.some((step) => step.uses?.includes("action-gh-release")),
+);
 assert.equal(release.permissions.contents, "read");
 assert.equal(release.jobs.check.uses, "./.github/workflows/check.yml");
 assert.equal(release.jobs.check.needs, "validate");
