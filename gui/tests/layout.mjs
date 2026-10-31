@@ -54,6 +54,11 @@ try {
           icons: [...document.querySelectorAll(".action-icon")].filter(
             (el) => el.getBoundingClientRect().width > 0,
           ).length,
+          safety: (() => {
+            const el = document.querySelector("#safety-chip");
+            return el.hidden ? null : el.textContent;
+          })(),
+          mode: document.querySelector("#app").dataset.mode,
           lockedButNext:
             document.querySelector("#btn-refresh").disabled &&
             document.querySelector("#app").dataset.next === "refresh",
@@ -79,6 +84,11 @@ try {
       // Only the minimum window hides the card icons.
       if (size !== "min")
         assert.equal(facts.icons, 3, `${where}: card icons are hidden`);
+      // The header badge must agree with the running operation.
+      if (facts.mode === "refreshing")
+        assert.equal(facts.safety, "Rewriting files", `${where}: badge`);
+      if (facts.mode === "idle")
+        assert.equal(facts.safety, null, `${where}: badge shows when idle`);
       assert.ok(
         !facts.lockedButNext,
         `${where}: a locked refresh card has the next-step color`,
