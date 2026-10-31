@@ -208,7 +208,8 @@ body {
   border-color: rgba(255, 255, 255, 0.08);
 }
 
-.chip-safe {
+/* Two classes: the plain .chip rule comes later in this file and must not win. */
+.chip.chip-safe {
   background: rgba(16, 185, 129, 0.12);
   border-color: rgba(16, 185, 129, 0.35);
   color: #34d399;
@@ -217,7 +218,7 @@ body {
 }
 
 /* Refresh writes to the drive: amber, not the green "read-only" color. */
-.chip-safe[data-tone="write"] {
+.chip.chip-safe[data-tone="write"] {
   background: rgba(245, 158, 11, 0.12);
   border-color: rgba(245, 158, 11, 0.4);
   color: var(--accent-amber);

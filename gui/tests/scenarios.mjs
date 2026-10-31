@@ -72,6 +72,23 @@ export const SCENARIOS = {
     data: { volumes: [fresh], messages, scan },
     steps: [scanStep],
   },
+  "scan-running": {
+    data: {
+      volumes: [fresh],
+      messages,
+      scan: "pending",
+      progress: {
+        stage: "scan",
+        filesDone: 1900,
+        totalFiles: 4800,
+        bytesDone: 1.5e10,
+        totalBytes: 3.82e10,
+        mbps: 520,
+        etaSecs: 44,
+      },
+    },
+    steps: [{ click: "#btn-scan", until: "#progress-card:not(.is-idle)" }],
+  },
   "refresh-confirm": {
     data: { volumes: [fresh], messages, scan },
     steps: [scanStep, refreshStep],

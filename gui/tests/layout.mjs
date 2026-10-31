@@ -58,6 +58,8 @@ try {
             const el = document.querySelector("#safety-chip");
             return el.hidden ? null : el.textContent;
           })(),
+          safetyColor: getComputedStyle(document.querySelector("#safety-chip"))
+            .color,
           mode: document.querySelector("#app").dataset.mode,
           lockedButNext:
             document.querySelector("#btn-refresh").disabled &&
@@ -87,6 +89,15 @@ try {
       // The header badge must agree with the running operation.
       if (facts.mode === "refreshing")
         assert.equal(facts.safety, "Rewriting files", `${where}: badge`);
+      // Green text (#34d399), not the gray of a plain chip.
+      if (facts.mode === "scanning") {
+        assert.equal(facts.safety, "Read-only", `${where}: badge`);
+        assert.equal(
+          facts.safetyColor,
+          "rgb(52, 211, 153)",
+          `${where}: badge color`,
+        );
+      }
       if (facts.mode === "idle")
         assert.equal(facts.safety, null, `${where}: badge shows when idle`);
       assert.ok(
