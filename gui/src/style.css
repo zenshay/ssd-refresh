@@ -122,7 +122,8 @@ body {
 
 .app-two-column {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  /* A narrow sidebar gives the three operation cards more width. */
+  grid-template-columns: 272px 1fr;
   gap: 16px;
   align-items: stretch;
   flex: 1;
@@ -531,8 +532,10 @@ body {
   font-size: 0.72rem;
   color: var(--text-dim);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  column-gap: 8px;
 }
 
 .drive-refreshed {
@@ -565,8 +568,8 @@ body {
 /* Workflow Actions Grid */
 .workflow-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .action-card {
@@ -638,21 +641,27 @@ body {
   color: var(--text-muted);
 }
 
+/* Wide and flat: the icon and the title share one row, and the hint uses
+   the full width of the card below them. */
 .action-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
 }
 
 .action-icon {
-  margin-top: 2px;
+  display: flex;
   color: var(--primary);
 }
 
 .action-texts {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: contents;
+}
+
+.action-hint {
+  grid-column: 1 / -1;
 }
 
 .action-title {

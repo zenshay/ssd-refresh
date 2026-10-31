@@ -263,7 +263,8 @@ export function refreshAction(s: State): ActionView {
 
   return {
     state: "ready",
-    title: `Selective Refresh (${countOf(slowTotal, "file")})`,
+    // The hint has the count. A short title keeps the card on one title line.
+    title,
     hint: `Rewrites ${countOf(slowTotal, "slow file")} safely. You confirm first.`,
     label: "Ready",
     disabled: false,
