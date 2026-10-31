@@ -88,6 +88,8 @@ pub struct VerifyOutcome {
     /// Files that the run could not compare: changed while a program wrote them during the
     /// refresh, deleted, or of another kind now. `data_safety` does not cover them.
     pub unchecked_files: usize,
+    /// Files whose data changed without a writer. Above 0 only when `data_safety` is NO.
+    pub mismatched_files: usize,
     pub processed_files: usize,
     pub summary: String,
     /// The result of the Faster line of the rewritten group (or of the only group):

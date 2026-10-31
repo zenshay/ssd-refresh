@@ -30,7 +30,12 @@ for (const [index, safety] of [
   }).runVerify();
   const notice = store.get().notice;
   assert.match(notice.title, new RegExp(`Data safe: ${safety}`));
-  if (safety === "NO") assert.equal(notice.kind, "error");
+  // The Rust fixture gives NO one changed file. The notice must show the count.
+  assert.equal(outcome.mismatchedFiles, safety === "NO" ? 1 : 0);
+  if (safety === "NO") {
+    assert.equal(notice.kind, "error");
+    assert.match(notice.body, /Verify found 1 file with changed data/);
+  }
   if (safety !== "YES") assert.doesNotMatch(notice.title, /Data safe: YES/);
   // The Rust fixture gives UNKNOWN one file that verify could not compare.
   assert.equal(outcome.uncheckedFiles, safety === "UNKNOWN" ? 1 : 0);
