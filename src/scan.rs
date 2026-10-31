@@ -760,15 +760,6 @@ fn scan_one(
     (row, check)
 }
 
-/// Load an existing report for the CLI summary command.
-pub fn load_summary(path: &Path) -> io::Result<ScanOutcome> {
-    let mut outcome = ScanOutcome::default();
-    for record in crate::report::read_scan(path)? {
-        outcome.record(&record);
-    }
-    Ok(outcome)
-}
-
 pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &Control) {
     ctl.message(&format!("Summary of {}", path.display()));
     ctl.message(&format!(

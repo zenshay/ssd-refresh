@@ -234,15 +234,6 @@ pub fn unix_now() -> u64 {
         .unwrap_or(0)
 }
 
-/// 9000 s → "2h 30m"; 90000 s → "1d 1h"
-pub fn fmt_age(secs: u64) -> String {
-    match secs {
-        s if s >= 86400 => format!("{}d {}h", s / 86400, s / 3600 % 24),
-        s if s >= 3600 => format!("{}h {:02}m", s / 3600, s / 60 % 60),
-        s => format!("{}m {:02}s", s / 60, s % 60),
-    }
-}
-
 pub fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
