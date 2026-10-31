@@ -582,6 +582,8 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 | `--max-chunk-mb` | 16 | 每次搬移的最大長度 |
 | `--control-fraction` | 0 | refresh：慢檔中只讀不搬的比例（0 到 1），狀態記成 `CONTROL` |
 | `--sample` | 全部 | verify：每組最多讀 N 個檔案 |
+| `--log` | `<來源檔名>.verify.log` | verify：文字記錄檔 |
+| `--out` | 無 | verify：另外寫出每個檔案一列的 CSV |
 
 ### 搬移的原理
 
