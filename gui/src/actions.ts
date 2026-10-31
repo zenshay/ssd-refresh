@@ -93,14 +93,11 @@ function verifyNotice(
           results.length > 0
         ? "NOT_CHECKED"
         : "UNKNOWN";
-  const kind =
-    safety !== "YES"
-      ? "info"
-      : verdicts.includes("NO")
-        ? "warn"
-        : all("YES")
-          ? "ok"
-          : "info";
+  const kind = verdicts.includes("NO")
+    ? "warn"
+    : safety === "YES" && all("YES")
+      ? "ok"
+      : "info";
   const one = results.length === 1;
   const title = one
     ? `Data safe: ${safety}. Faster: ${results[0].outcome.faster || "n/a"}`
@@ -127,6 +124,14 @@ function verifyNotice(
       `${prefix}Slow files: ${fmtCount(sp.slowBefore)} → ${fmtCount(sp.slowNow)}`,
     );
   }
+  // Data safe: NO returned above, so these files are not a data error.
+  const unchecked = results.reduce((n, r) => n + r.outcome.uncheckedFiles, 0);
+  if (unchecked > 0)
+    lines.push(
+      `${countOf(unchecked, "file")} could not be compared. The refresh did not cause this. ` +
+        "Usually these are temporary files, logs or caches that programs write often. " +
+        "You do not need to do anything.",
+    );
   lines.push(nextStep(results.map((r) => r.outcome)));
   return { kind, title, body: lines.join("\n") };
 }

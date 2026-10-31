@@ -85,6 +85,9 @@ impl DataSafety {
 pub struct VerifyOutcome {
     pub status: RunStatus,
     pub data_safety: DataSafety,
+    /// Files that the run could not compare: changed while a program wrote them during the
+    /// refresh, deleted, or of another kind now. `data_safety` does not cover them.
+    pub unchecked_files: usize,
     pub processed_files: usize,
     pub summary: String,
     /// The result of the Faster line of the rewritten group (or of the only group):

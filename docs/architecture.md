@@ -26,10 +26,13 @@ Tauri adapter --+             |
 The core owns the data safety verdict. Completion and read speed are separate facts.
 `DataSafety` has four values: `YES`, `NO`, `UNKNOWN`, and `NOT_CHECKED`.
 The summary, IPC data, and frontend preserve this verdict.
-Missing hashes, missing evidence for changed files, failed reads, and incomplete checks cannot produce `YES`.
+`YES` covers only the files that verify compared. It needs at least one compared file.
+Failed reads and incomplete checks produce `UNKNOWN`.
+Files that verify cannot compare do not change the verdict. Examples: no hash, no metadata, a program wrote the file during the refresh, the file is deleted.
+The summary and `VerifyOutcome::unchecked_files` count these files. The refresh compared each moved file right after the move.
 Scan reports produce `NOT_CHECKED`, because they do not record a refresh data check.
 Short reads produce a read error before hash or speed comparison.
-The core accepts old CSV reports. Missing evidence reduces the verdict; it does not reject an old format.
+The core accepts old CSV reports. Files without metadata become files that verify cannot compare; the core does not reject an old format.
 
 The refresh confirmation gate contains all move handles and file processing.
 Wrong confirmation calls the work function zero times.

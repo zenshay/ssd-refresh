@@ -497,7 +497,7 @@ Result
 
 | Line | Content |
 |---|---|
-| Data safe | `YES`: the files that no program changed have the same SHA-256 as at the refresh. `NO`: some files have a different SHA-256, but their size, times and USN did not change. Thus no program changed them. `verify` shows these files. The exit code is 3 |
+| Data safe | `YES`: the files that no program changed have the same SHA-256 as at the refresh. `NO`: some files have a different SHA-256, but their size, times and USN did not change. Thus no program changed them. `verify` shows these files. The exit code is 3. `UNKNOWN`: `verify` could not read some files, the check stopped, or `verify` could compare no file. Files that `verify` cannot compare do not stop `YES` (see below) |
 | Speed | The read speed of the files that were slow before the refresh, before and now |
 | Slow files | The number of these files that were slow before, and that are slow now |
 | Faster | `YES`: 80% or more of these files are not slow now. With fewer than 10 of these files, all must have the same result: all not slow is `YES`, all slow is `NO`. See [NOT DECIDED](#not-decided) |
@@ -514,7 +514,8 @@ Result
 If a Faster line is `NOT DECIDED`, the conclusion is also `NOT DECIDED`. `NOT DECIDED` is not an error: the exit code is 0. Data safe does not change: `verify` always checks it.
 
 - How `verify` knows that no program changed a file: before the read of the SHA-256, the refresh log writes the size, the times and the USN of each file (column `meta_key`). If the SHA-256 is different now, but these values are the same, no program wrote the file. `verify` does not use this test for files that another program had open for writing during the refresh, or for files with status `CHANGED`. For these files, a different SHA-256 is a normal change.
-- Logs from older versions have no `meta_key`. If some files are different, Data safe is `UNKNOWN`.
+- Files that `verify` cannot compare: files that a program wrote during the refresh, deleted files, and files that are now compressed, sparse or of another kind. `verify` counts them under Data safe and shows up to 5 examples. The CSV from `--out` has all of them. These files do not stop `YES`, and they are not an error of the refresh: right after each move, the refresh read the file again and compared the SHA-256. Usually they are temporary files, logs or caches that programs write often.
+- Logs from older versions have no `meta_key`. If a file is different in such a log, `verify` cannot compare it. `verify` counts it with the other files that it cannot compare.
 - The speed is all bytes divided by all read time, before and now. It uses only the files that were slow before. `verify` shows it as `N.N times faster` or `N.N times slower`.
 - With a control group, there is one Faster line for each group, and a conclusion. Examples: "Rewriting made the files 3.1 times faster than reading only", "Reading only was enough on this drive".
 - For a scan report, Data safe is `n/a`. The scan did not move files.

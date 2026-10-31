@@ -158,6 +158,7 @@ try {
             logPath: "synthetic-refresh.verify.log",
             processedFiles: 1,
             dataSafety: "YES",
+            uncheckedFiles: 0,
             faster: "NOT DECIDED",
             ageSecs: 60,
             speed: { beforeMbps: 12, nowMbps: 480, slowBefore: 1, slowNow: 0 },

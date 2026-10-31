@@ -265,6 +265,7 @@ const verified = (overrides = {}) => ({
   logPath: "synthetic.verify.log",
   processedFiles: 12,
   dataSafety: "YES",
+  uncheckedFiles: 0,
   faster: "YES",
   ageSecs: 2 * 86400,
   speed: { beforeMbps: 10, nowMbps: 400, slowBefore: 12, slowNow: 0 },
@@ -284,6 +285,12 @@ test("verify IPC rejects invalid safety claims and data", () => {
     { dataSafety: "unexpected" },
     { dataSafety: undefined },
     { processedFiles: 0 },
+    { uncheckedFiles: undefined },
+    { uncheckedFiles: -1 },
+    { uncheckedFiles: 1.5 },
+    { uncheckedFiles: 13 },
+    // YES needs at least one file that verify compared.
+    { uncheckedFiles: 12 },
     { stopped: true },
     { ageSecs: -1 },
     { waitSecs: NaN },
@@ -315,6 +322,55 @@ test("unknown safety never becomes a positive notice", async () => {
     assert.equal(store.get().notice.kind, "info");
     assert.doesNotMatch(store.get().notice.title, /Data safe: YES/);
   }
+});
+
+test("files that verify could not compare get a calm note, not a warning", async () => {
+  const run = async (outcome) => {
+    const store = createStore({
+      ...initialState,
+      volumes: [volume("X:", { logPath: "x.refresh.csv", unixSecs: 1 })],
+      selectedRoots: ["X:"],
+    });
+    await createActions(
+      store,
+      async () => true,
+      backend({ startVerify: async () => outcome }),
+    ).runVerify();
+    return store.get().notice;
+  };
+  const calm =
+    /3 files could not be compared\. The refresh did not cause this\..*You do not need to do anything\./;
+  const yes = await run(verified({ uncheckedFiles: 3 }));
+  assert.equal(yes.kind, "ok");
+  assert.match(yes.title, /Data safe: YES/);
+  assert.match(yes.body, calm);
+  const unknown = await run(
+    verified({ dataSafety: "UNKNOWN", uncheckedFiles: 3 }),
+  );
+  assert.equal(unknown.kind, "info");
+  assert.match(unknown.body, calm);
+  const none = await run(verified());
+  assert.doesNotMatch(none.body, /could not be compared/);
+  const bad = await run(verified({ dataSafety: "NO", uncheckedFiles: 3 }));
+  assert.equal(bad.kind, "error");
+  assert.doesNotMatch(bad.body, /did not cause this/);
+});
+
+test("a slower result warns even when data safety is not YES", async () => {
+  const store = createStore({
+    ...initialState,
+    volumes: [volume("X:", { logPath: "x.refresh.csv", unixSecs: 1 })],
+    selectedRoots: ["X:"],
+  });
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startVerify: async () =>
+        verified({ dataSafety: "UNKNOWN", faster: "NO" }),
+    }),
+  ).runVerify();
+  assert.equal(store.get().notice.kind, "warn");
 });
 
 test("the verify notice puts the speed first, one fact per line", () => {

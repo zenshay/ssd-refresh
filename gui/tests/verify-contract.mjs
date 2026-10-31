@@ -36,5 +36,12 @@ for (const [index, safety] of [
     assert.match(notice.title, new RegExp(`Data safe: ${safety}`));
   }
   if (safety !== "YES") assert.doesNotMatch(notice.title, /Data safe: YES/);
+  // The Rust fixture gives UNKNOWN one file that verify could not compare.
+  assert.equal(outcome.uncheckedFiles, safety === "UNKNOWN" ? 1 : 0);
+  if (safety === "UNKNOWN")
+    assert.match(
+      notice.body,
+      /1 file could not be compared\. The refresh did not cause this\./,
+    );
 }
 console.log("VERIFY CONTRACT: YES (4 Rust DTO results and frontend notices)");
