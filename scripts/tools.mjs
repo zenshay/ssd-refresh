@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -112,7 +113,17 @@ export function windowsAstGrepCommand(shims) {
       "../@ast-grep/cli/ast-grep",
     ]) {
       const script = join(dirname(shim), entry);
-      if (existsSync(script)) return [process.execPath, script];
+      if (existsSync(script)) {
+        try {
+          const binary = createRequire(script).resolve(
+            `@ast-grep/cli-win32-${process.arch}-msvc/ast-grep.exe`,
+          );
+          return [binary];
+        } catch (error) {
+          if (error.code !== "MODULE_NOT_FOUND") throw error;
+        }
+        return [process.execPath, script];
+      }
     }
   }
   throw new Error(

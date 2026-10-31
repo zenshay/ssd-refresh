@@ -227,7 +227,8 @@ export async function openScenario(browser, url, scenario, viewport) {
   page.on("pageerror", (error) => errors.push(String(error)));
   await page.setViewport(viewport);
   await installIpc(page, scenario.data);
-  await page.goto(url, { waitUntil: "networkidle0" });
+  // Load assets, then wait for the application state instead of network silence.
+  await page.goto(url, { waitUntil: "load" });
   await page.waitForFunction(
     () => document.querySelector("#mode-chip").textContent === "Ready",
   );
