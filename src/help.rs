@@ -306,12 +306,16 @@ Summary table
 Result (at the end)
   Data safe     YES: the files that no program changed have the same SHA-256
                 as at the refresh. verify counts the files that programs
-                changed. These changes are normal.
+                changed. These changes are normal. verify also counts the
+                files that it cannot compare: a program wrote them during the
+                refresh, they are deleted, or they are now of another kind.
+                These files do not stop YES. The refresh read each file again
+                right after the move and compared it.
                 NO: some files have a different SHA-256, but their size, times
                 and USN did not change. Thus no program changed them. verify
                 shows these files. The exit code is 3.
-                UNKNOWN: the log is from an older version and has no metadata.
-                Some files are different.
+                UNKNOWN: verify could not read some files (ERROR), the check
+                stopped, or verify could compare no file.
                 n/a: a scan report. The scan did not move files.
   Faster        Only for files that were slow before. YES: 80% or more of
                 these files are not slow now. With fewer than 10 of these

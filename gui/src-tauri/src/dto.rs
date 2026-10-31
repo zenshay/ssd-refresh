@@ -147,6 +147,8 @@ pub struct VerifyOutcome {
     pub processed_files: usize,
     /// YES, NO, UNKNOWN, or NOT_CHECKED. This is not the operation status.
     pub data_safety: &'static str,
+    /// Files that verify could not compare. `data_safety` does not cover them.
+    pub unchecked_files: usize,
     /// `YES`, `NO`, `NOT DECIDED`, `n/a`, or empty when no file was measured.
     pub faster: &'static str,
     /// The time since the refresh, in seconds.
@@ -174,6 +176,7 @@ impl VerifyOutcome {
             log_path: path.to_string_lossy().into_owned(),
             processed_files: result.processed_files,
             data_safety: result.data_safety.as_str(),
+            unchecked_files: result.unchecked_files,
             faster: result.faster,
             age_secs: result.age_secs,
             speed: result.speed.map(|s| SpeedDto {
@@ -241,6 +244,7 @@ mod tests {
                     std::path::Path::new("synthetic.verify.log"),
                     Core {
                         data_safety,
+                        unchecked_files: usize::from(data_safety == DataSafety::Unknown),
                         processed_files: 1,
                         faster: "n/a",
                         ..Default::default()
@@ -248,6 +252,10 @@ mod tests {
                 );
                 let json = serde_json::to_value(result).unwrap();
                 assert_eq!(json["dataSafety"], data_safety.as_str());
+                assert_eq!(
+                    json["uncheckedFiles"],
+                    usize::from(data_safety == DataSafety::Unknown)
+                );
                 assert!(json.get("dataSafe").is_none());
                 json
             })

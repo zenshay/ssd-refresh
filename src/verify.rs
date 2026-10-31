@@ -466,6 +466,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         },
         processed_files: results.len(),
         data_safety: s.data_safety,
+        unchecked_files: s.unchecked,
         summary: text,
         faster: s.faster,
         age_secs: age,

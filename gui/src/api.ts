@@ -76,6 +76,8 @@ export interface VerifyOutcome {
   processedFiles: number;
   /** This is separate from completion and speed. */
   dataSafety: DataSafety;
+  /** Files that verify could not compare. dataSafety does not cover them. */
+  uncheckedFiles: number;
   /** The Faster result of the rewritten files. Empty when no file was measured. */
   faster: Verdict;
   /** The time since the refresh, in seconds. */
@@ -110,6 +112,8 @@ export function validateVerifyOutcome(value: unknown): VerifyOutcome {
     typeof r.logPath !== "string" ||
     r.logPath.length === 0 ||
     !count(r.processedFiles) ||
+    !count(r.uncheckedFiles) ||
+    r.uncheckedFiles > r.processedFiles ||
     !count(r.ageSecs) ||
     !count(r.waitSecs) ||
     typeof r.stopped !== "boolean" ||
@@ -117,7 +121,9 @@ export function validateVerifyOutcome(value: unknown): VerifyOutcome {
     !["YES", "NO", "UNKNOWN", "NOT_CHECKED"].includes(r.dataSafety) ||
     typeof r.faster !== "string" ||
     !["YES", "NO", "NOT DECIDED", "n/a", ""].includes(r.faster) ||
-    (r.dataSafety === "YES" && (r.processedFiles === 0 || r.stopped))
+    // YES needs at least one file that verify compared.
+    (r.dataSafety === "YES" &&
+      (r.uncheckedFiles >= r.processedFiles || r.stopped))
   )
     return fail();
   if (r.speed !== null) {
