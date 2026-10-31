@@ -146,6 +146,11 @@ function verifyNotice(
         "Usually these are temporary files, logs or caches that programs write often. " +
         "You do not need to do anything. The verify log (Folder button) shows examples.",
     );
+  // The README rule: YES needs 80% or more of the slow files to be fast now.
+  if (verdicts.includes("NO"))
+    lines.push(
+      "Faster: NO means that fewer than 80% of the slow files read fast now. Data safe is a separate result.",
+    );
   lines.push(nextStep(results.map((r) => r.outcome)));
   return { kind, title, body: lines.join("\n") };
 }
@@ -172,7 +177,7 @@ function refreshNotice(
     return {
       kind: "info",
       title: "Refresh stopped",
-      body: `${countOf(moved, "file")} ${wasWere(moved)} moved before the stop.${errorLine} Scan again to check remaining files.`,
+      body: `${countOf(moved, "file")} ${wasWere(moved)} moved before the stop.${errorLine} The refresh did not touch the other files. Scan again to check them.`,
     };
   if (errors > 0)
     return {

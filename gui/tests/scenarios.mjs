@@ -108,6 +108,35 @@ export const SCENARIOS = {
     },
     steps: [scanStep, refreshStep, confirmStep(NOTICE)],
   },
+  "refresh-stopped": {
+    data: {
+      volumes: [fresh],
+      messages,
+      scan,
+      refresh: {
+        logPath: "G:\\synthetic-refresh.csv",
+        movedFiles: 137,
+        errorFiles: 0,
+        stopped: true,
+      },
+    },
+    steps: [scanStep, refreshStep, confirmStep(NOTICE)],
+  },
+  "scan-no-slow": {
+    data: { volumes: [fresh], messages, scan: scanOf("G:\\", 0, 4800) },
+    steps: [scanStep],
+  },
+  "verify-faster-no": {
+    data: {
+      volumes: [refreshedAgo(3 * DAY)],
+      verify: verify({
+        faster: "NO",
+        ageSecs: 3 * DAY,
+        speed: { beforeMbps: 25, nowMbps: 31, slowBefore: 300, slowNow: 287 },
+      }),
+    },
+    steps: [{ click: "#btn-verify", until: NOTICE }],
+  },
   "verify-yes-unchecked": {
     data: { volumes: [refreshed], verify: verify({ uncheckedFiles: 37 }) },
     steps: [{ click: "#btn-verify", until: NOTICE }],

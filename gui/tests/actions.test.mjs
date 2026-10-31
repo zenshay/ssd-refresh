@@ -115,6 +115,27 @@ test("stop keeps reports for drives that did not run", async () => {
   assert.equal(store.get().scans["X:"], undefined);
   assert.ok(store.get().scans["Y:"]);
   assert.match(store.get().notice.title, /stopped/);
+  assert.match(
+    store.get().notice.body,
+    /The refresh did not touch the other files\./,
+  );
+});
+
+test("Faster: NO tells the rule and keeps it apart from Data safe", async () => {
+  const store = createStore({
+    ...initialState,
+    volumes: [volume("X:", { logPath: "x.refresh.csv", unixSecs: 1 })],
+    selectedRoots: ["X:"],
+  });
+  await createActions(
+    store,
+    async () => true,
+    backend({ startVerify: async () => verified({ faster: "NO" }) }),
+  ).runVerify();
+  const notice = store.get().notice;
+  assert.equal(notice.kind, "warn");
+  assert.match(notice.body, /fewer than 80% of the slow files read fast now/);
+  assert.match(notice.body, /Data safe is a separate result/);
 });
 test("failure clears transient state and invalidates the attempted report", async () => {
   const store = storeFor();
