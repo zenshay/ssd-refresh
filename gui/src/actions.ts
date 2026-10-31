@@ -5,8 +5,10 @@ import { api, type ScanOutcome, type Verdict, type VerifyOutcome } from "./api";
 import { countOf, fmtCount, wasWere } from "./format";
 import type { Confirm } from "./interactions";
 import {
+  type ActionView,
   allSelected,
   type Notice,
+  refreshAction,
   type Store,
   stillSlow,
   totalSlowAcrossSelected,
@@ -19,6 +21,8 @@ const errorText = (e: unknown): string =>
 function scanNotice(
   results: { root: string; outcome: ScanOutcome }[],
   cancelled: boolean,
+  /** The Step 2 card after the scan. A locked card gives the reason. */
+  refresh: ActionView,
 ): Notice {
   const stopped = cancelled || results.some((r) => r.outcome.stopped);
   const totalFiles = results.reduce((acc, r) => acc + r.outcome.totalFiles, 0);
@@ -59,7 +63,12 @@ function scanNotice(
   return {
     kind: "warn",
     title: `${countOf(totalSlow, "slow file")} detected`,
-    body: `Scanned ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")}.${waitNote} Step 2 can rewrite only the slow files safely.`,
+    body: `Scanned ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")}.${waitNote} ${
+      // Only the first sentence of the reason: the notice stays one line, and the card has the rest.
+      refresh.state === "locked"
+        ? `Step 2 is locked. ${refresh.hint.split(". ")[0].replace(/\.$/, "")}.`
+        : "Step 2 can rewrite only the slow files safely."
+    }`,
   };
 }
 
@@ -145,6 +154,10 @@ function verifyNotice(
 const FAST_AT_FIRST =
   "Right after a refresh, files read fast. This speed does not show if they stay fast.";
 
+/** One time plan. The Verify card says "Speed result after 12 hours", so 1 day agrees with it. */
+const VERIFY_PLAN =
+  "Run Verify 1 day after the refresh. Run it again after 7 and 30 days.";
+
 function refreshNotice(
   moved: number,
   errors: number,
@@ -165,12 +178,12 @@ function refreshNotice(
     return {
       kind: "warn",
       title: `${countOf(moved, "file")} rewritten, ${fmtCount(errors)} not moved`,
-      body: `${errorLine.trim()}\n${FAST_AT_FIRST} Run Verify after 1, 7 and 30 days.`,
+      body: `${errorLine.trim()}\n${FAST_AT_FIRST} ${VERIFY_PLAN}`,
     };
   return {
     kind: "ok",
     title: `${countOf(moved, "file")} rewritten`,
-    body: `${FAST_AT_FIRST} Run Verify after 1, 7 and 30 days.`,
+    body: `${FAST_AT_FIRST} ${VERIFY_PLAN}`,
   };
 }
 
@@ -355,7 +368,11 @@ export function createActions(
       activeRoot: null,
       progress: null,
       stopping: false,
-      notice: scanNotice(finishedOutcomes, store.get().stopping),
+      notice: scanNotice(
+        finishedOutcomes,
+        store.get().stopping,
+        refreshAction({ ...store.get(), mode: "idle" }),
+      ),
     });
   }
 
