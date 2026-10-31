@@ -1209,7 +1209,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  /* Wrap the buttons to a second line when the font is wider (Linux). */
+  flex-wrap: wrap;
+  gap: 6px 12px;
   padding: 8px 14px;
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid var(--border-subtle);
