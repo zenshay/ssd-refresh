@@ -80,6 +80,27 @@ body {
   background: rgba(255, 255, 255, 0.25);
 }
 
+/* Long lists: the user must see that the list scrolls. */
+.table-container::-webkit-scrollbar,
+.console-stream::-webkit-scrollbar {
+  width: 10px;
+}
+.table-container::-webkit-scrollbar-track,
+.console-stream::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+.table-container::-webkit-scrollbar-thumb,
+.console-stream::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.table-container::-webkit-scrollbar-thumb:hover,
+.console-stream::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.45);
+  background-clip: padding-box;
+}
+
 /* App Container */
 .app-container {
   max-width: 1280px;
@@ -960,14 +981,15 @@ body {
    it shrinks to its minimum and the table scrolls. The console gets the rest. */
 .slow-files-card {
   flex: 0 1 auto;
-  min-height: 170px;
+  min-height: 150px;
   display: flex;
   flex-direction: column;
 }
 
-/* After a scan, the slow files are more important than the console. */
+/* After a scan, the slow files get the most space, but the console keeps
+   about 7 lines. A long list scrolls in its table. At 1080x780 both fit. */
 .layout-content:has(#slow-files-card:not([hidden])) .console-card {
-  min-height: 90px;
+  min-height: 180px;
 }
 
 .table-container {
