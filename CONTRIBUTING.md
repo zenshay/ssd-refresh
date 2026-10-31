@@ -33,6 +33,7 @@ Each `TIME` line shows one check's elapsed time. Output from each check appears 
 Mutation output appears as the test runs. A lane failure waits for the other lane and prevents mutation tests.
 Windows tool lookup is cached within each process. PATH or PATHEXT changes cause a new lookup. Failed lookups are not cached.
 Syntax queries and test results are not cached. Release cases keep separate test folders.
+Windows can call the native ast-grep program from its npm platform package. The Node wrapper remains a fallback.
 Keep the two-lane limit. Measure full checks before you add more workers or new test tools.
 Do not treat a skipped check as a passed check.
 
