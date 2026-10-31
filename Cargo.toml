@@ -1,6 +1,6 @@
 [package]
 name = "ssd-refresh"
-version = "1.0.6"
+version = "1.0.7"
 edition = "2021"
 rust-version = "1.85"
 description = "File-level SSD refresh: find files whose old data reads slowly and let the file system rewrite them safely"

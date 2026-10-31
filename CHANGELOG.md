@@ -1,13 +1,13 @@
 # Changes
 
-## Unreleased
+## 1.0.7
 
 - Verify: `Data safe: YES` covers only the files that verify compared. Files that verify cannot compare are counted apart and do not block YES. Examples: a program wrote the file during the refresh, the file is deleted, the file has no hash. The summary and the GUI tell the user that the refresh did not cause these files.
 - Verify: the result has the count of files whose data changed without a writer. The GUI `Data safe: NO` notice shows this count, tells the user to keep the files and logs, and points to the `Report` and `Folder` buttons.
 - GUI refresh: when some files have `ERROR`, the notice is a warning with two counts ("287 files rewritten, 13 not moved"). Before, it said "rewritten successfully". A stopped refresh tells that it did not touch the other files.
 - GUI text: `NOT DECIDED` tells why the user must wait 12 hours. `Faster: NO` tells the 80% rule and that Data safe is a separate result. The refresh notice and the Verify card give the same wait. The scan notice does not offer Step 2 when Step 2 is locked. The Step 1 label after a scan is "Scanned".
 - GUI header: the badge follows the running operation. Scan and Verify show a green "Read-only". Refresh shows an amber "Rewriting files". When idle, the badge does not show. Before, it always said "Read-only Scan", also during a refresh.
-- GUI layout: the operation cards are wide and flat. The console keeps at least 180 px next to a long slow file list. Scroll bars show. Log words do not break in the middle. A locked Step 2 does not get the next-step color.
+- GUI layout: the operation cards are wide and flat. The console keeps at least 180 px next to a long slow file list. Scroll bars show. Log words do not break in the middle. A locked Step 2 does not get the next-step color. The console toolbar puts its buttons on a second line when the font is wider (Linux).
 - GUI tests: `pnpm --dir gui run test:layout` checks 14 synthetic states at 3 window sizes (cut text, card shape, console height, badge). `pnpm --dir gui run screens` makes the same screenshots for reviews. `node check.mjs` runs the layout check.
 - README (zh-TW): the options table has `--log` and `--out`.
 
