@@ -220,7 +220,7 @@ test("refresh counts only the files that stay slow after the wait", async () => 
     selectedRoots: ["X:", "Y:"],
     scans: { "X:": waited("X:", 2), "Y:": waited("Y:", 3) },
   });
-  assert.match(refreshAction(store.get()).title, /\(1 file\)/);
+  assert.match(refreshAction(store.get()).hint, /Rewrites 1 slow file safely/);
   let asked;
   await createActions(
     store,
