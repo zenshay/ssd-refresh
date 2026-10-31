@@ -5,6 +5,7 @@ import {
   type ActionView,
   refreshAction,
   type Store,
+  safetyBadge,
   scanAction,
   verifyAction,
 } from "../store";
@@ -25,6 +26,7 @@ export function mountWorkflow(store: Store, actions: Actions): void {
   const refresh = $("btn-refresh");
   const verify = $("btn-verify");
   const chip = $("mode-chip");
+  const safety = $("safety-chip");
 
   scan.addEventListener("click", () => void actions.runScan());
   refresh.addEventListener("click", () => void actions.runRefresh());
@@ -51,5 +53,13 @@ export function mountWorkflow(store: Store, actions: Actions): void {
     }[s.mode];
     chip.textContent = chipText;
     chip.dataset.tone = s.mode;
+
+    const badge = safetyBadge(s.mode);
+    safety.hidden = badge === null;
+    if (badge) {
+      safety.textContent = badge.text;
+      safety.title = badge.title;
+      safety.dataset.tone = badge.tone;
+    }
   });
 }

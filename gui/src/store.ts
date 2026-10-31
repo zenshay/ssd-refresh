@@ -130,6 +130,35 @@ export function activeDriveText(mode: Mode): string | null {
   return null;
 }
 
+export interface SafetyBadge {
+  text: string;
+  title: string;
+  /** "read" is green. "write" is amber. */
+  tone: "read" | "write";
+}
+
+/**
+ * The header badge tells if the running operation writes to the drive.
+ * When idle, it is hidden: the step cards tell what each step does.
+ */
+export function safetyBadge(mode: Mode): SafetyBadge | null {
+  if (mode === "refreshing")
+    return {
+      text: "Rewriting files",
+      title:
+        "Refresh moves each slow file to a new place on the SSD. The file data does not change.",
+      tone: "write",
+    };
+  if (mode === "scanning" || mode === "verifying")
+    return {
+      text: "Read-only",
+      title:
+        "This operation reads files and writes a log. It does not change file data.",
+      tone: "read",
+    };
+  return null;
+}
+
 export type ActionState = "ready" | "running" | "done" | "waiting" | "locked";
 
 export interface ActionView {

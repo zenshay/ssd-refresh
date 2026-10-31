@@ -10,6 +10,7 @@ import {
   initialState,
   refreshAction,
   STANDARD_USER_NOTICE,
+  safetyBadge,
   verifyAction,
 } from "../src/store.ts";
 import { mutationStatus } from "./mutation-status.mjs";
@@ -435,6 +436,16 @@ test("the active drive card names the current operation", () => {
   assert.equal(activeDriveText("refreshing"), "Refreshing…");
   assert.equal(activeDriveText("verifying"), "Verifying…");
   assert.equal(activeDriveText("idle"), null);
+});
+
+test("the header badge never says read-only while refresh writes", () => {
+  assert.equal(safetyBadge("idle"), null);
+  assert.equal(safetyBadge("scanning").text, "Read-only");
+  assert.equal(safetyBadge("verifying").text, "Read-only");
+  const refresh = safetyBadge("refreshing");
+  assert.equal(refresh.tone, "write");
+  assert.doesNotMatch(refresh.text, /read-only/i);
+  assert.match(refresh.title, /file data does not change/);
 });
 
 test("verify names a refreshed drive that is not selected", () => {
