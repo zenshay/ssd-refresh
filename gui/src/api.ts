@@ -80,6 +80,8 @@ export interface VerifyOutcome {
   dataSafety: DataSafety;
   /** Files that verify could not compare. dataSafety does not cover them. */
   uncheckedFiles: number;
+  /** Files whose data changed without a writer. Above 0 only when dataSafety is NO. */
+  mismatchedFiles: number;
   /** The Faster result of the rewritten files. Empty when no file was measured. */
   faster: Verdict;
   /** The time since the refresh, in seconds. */
@@ -116,6 +118,10 @@ export function validateVerifyOutcome(value: unknown): VerifyOutcome {
     !count(r.processedFiles) ||
     !count(r.uncheckedFiles) ||
     r.uncheckedFiles > r.processedFiles ||
+    !count(r.mismatchedFiles) ||
+    r.mismatchedFiles > r.processedFiles ||
+    // NO and the count of changed files must agree.
+    (r.dataSafety === "NO") !== r.mismatchedFiles > 0 ||
     !count(r.ageSecs) ||
     !count(r.waitSecs) ||
     typeof r.stopped !== "boolean" ||

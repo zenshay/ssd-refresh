@@ -70,11 +70,12 @@ function verifyNotice(
   const drive = (root: string) => root.slice(0, 2);
   const unsafe = results.filter((r) => r.outcome.dataSafety === "NO");
   if (unsafe.length > 0) {
+    const changed = unsafe.reduce((n, r) => n + r.outcome.mismatchedFiles, 0);
     return {
       kind: "error",
       title: `Data safe: NO on ${unsafe.map((r) => drive(r.root)).join(", ")}`,
       body: [
-        "Verify found file data that changed, but no program wrote to the file.",
+        `Verify found ${countOf(changed, "file")} with changed data, but no program wrote to ${changed === 1 ? "it" : "them"}.`,
         "Do not delete the files or the logs. The verify log (Folder button) lists each file.",
         "Click Report to tell us. Attach the verify log.",
       ].join("\n"),

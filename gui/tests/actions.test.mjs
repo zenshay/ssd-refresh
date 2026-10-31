@@ -267,6 +267,8 @@ const verified = (overrides = {}) => ({
   processedFiles: 12,
   dataSafety: "YES",
   uncheckedFiles: 0,
+  // The core gives NO a count above 0, and the other verdicts 0.
+  mismatchedFiles: overrides.dataSafety === "NO" ? 1 : 0,
   faster: "YES",
   ageSecs: 2 * 86400,
   speed: { beforeMbps: 10, nowMbps: 400, slowBefore: 12, slowNow: 0 },
@@ -292,6 +294,11 @@ test("verify IPC rejects invalid safety claims and data", () => {
     { uncheckedFiles: 13 },
     // YES needs at least one file that verify compared.
     { uncheckedFiles: 12 },
+    { mismatchedFiles: undefined },
+    { mismatchedFiles: 13 },
+    // Changed files without NO, or NO without changed files.
+    { mismatchedFiles: 1 },
+    { dataSafety: "NO", mismatchedFiles: 0 },
     { stopped: true },
     { ageSecs: -1 },
     { waitSecs: NaN },
@@ -559,13 +566,18 @@ test("verify reports changed data as an error and stops", async () => {
     backend({
       startVerify: async (logPath) => {
         calls.push(logPath);
-        return verified({ dataSafety: "NO" });
+        return verified({ dataSafety: "NO", mismatchedFiles: 2 });
       },
     }),
   ).runVerify();
   assert.deepEqual(calls, ["x.refresh.csv"]);
   assert.equal(store.get().notice.kind, "error");
   assert.equal(store.get().notice.title, "Data safe: NO on X:");
+  // The user must know how many files changed.
+  assert.match(
+    store.get().notice.body,
+    /^Verify found 2 files with changed data, but no program wrote to them\./,
+  );
   // The user must know what to keep and where to report.
   assert.match(store.get().notice.body, /Do not delete the files or the logs/);
   assert.match(store.get().notice.body, /Click Report/);

@@ -30,6 +30,7 @@ The summary, IPC data, and frontend preserve this verdict.
 Failed reads and incomplete checks produce `UNKNOWN`.
 Files that verify cannot compare do not change the verdict. Examples: no hash, no metadata, a program wrote the file during the refresh, the file is deleted.
 The summary and `VerifyOutcome::unchecked_files` count these files. The refresh compared each moved file right after the move.
+`VerifyOutcome::mismatched_files` counts the files whose data changed without a writer. It is above 0 only when the verdict is `NO`. The frontend rejects a result where the two do not agree.
 Scan reports produce `NOT_CHECKED`, because they do not record a refresh data check.
 Short reads produce a read error before hash or speed comparison.
 The core accepts old CSV reports. Files without metadata become files that verify cannot compare; the core does not reject an old format.

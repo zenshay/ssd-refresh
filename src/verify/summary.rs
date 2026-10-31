@@ -67,6 +67,8 @@ pub(super) struct Summary {
     pub(super) data_safety: DataSafety,
     /// Files that the run could not compare (see `Unchecked`). YES does not cover them.
     pub(super) unchecked: usize,
+    /// Files whose data changed without a writer (MISMATCH). Above 0 means Data safe: NO.
+    pub(super) mismatched: usize,
     /// The result of the first Faster line: the rewritten group, or the only group.
     pub(super) faster: &'static str,
     /// The speed of the first group with slow files: the rewritten group, or the only group.
@@ -599,6 +601,7 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         data_safety,
         // A scan report moved no file, so the note about the refresh does not apply.
         unchecked: if is_log { unchecked.total() } else { 0 },
+        mismatched: if is_log { bad.len() } else { 0 },
         faster,
         speed,
         wait_secs,
@@ -877,6 +880,8 @@ mod tests {
         ];
         let s = summary(&items, &results);
         assert_eq!(s.data_safety, DataSafety::No);
+        // The GUI shows this count in the NO notice.
+        assert_eq!(s.mismatched, 1);
         assert!(
             s.text
                 .contains("Data safe:          NO   1 file has a different SHA-256"),

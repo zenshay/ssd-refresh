@@ -151,6 +151,8 @@ pub struct VerifyOutcome {
     pub data_safety: &'static str,
     /// Files that verify could not compare. `data_safety` does not cover them.
     pub unchecked_files: usize,
+    /// Files whose data changed without a writer. Above 0 only when `data_safety` is NO.
+    pub mismatched_files: usize,
     /// `YES`, `NO`, `NOT DECIDED`, `n/a`, or empty when no file was measured.
     pub faster: &'static str,
     /// The time since the refresh, in seconds.
@@ -179,6 +181,7 @@ impl VerifyOutcome {
             processed_files: result.processed_files,
             data_safety: result.data_safety.as_str(),
             unchecked_files: result.unchecked_files,
+            mismatched_files: result.mismatched_files,
             faster: result.faster,
             age_secs: result.age_secs,
             speed: result.speed.map(|s| SpeedDto {
@@ -248,6 +251,7 @@ mod tests {
                     Core {
                         data_safety,
                         unchecked_files: usize::from(data_safety == DataSafety::Unknown),
+                        mismatched_files: usize::from(data_safety == DataSafety::No),
                         processed_files: 1,
                         faster: "n/a",
                         ..Default::default()
@@ -258,6 +262,10 @@ mod tests {
                 assert_eq!(
                     json["uncheckedFiles"],
                     usize::from(data_safety == DataSafety::Unknown)
+                );
+                assert_eq!(
+                    json["mismatchedFiles"],
+                    usize::from(data_safety == DataSafety::No)
                 );
                 assert!(json.get("dataSafe").is_none());
                 json

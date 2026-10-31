@@ -50,6 +50,7 @@ const verify = (patch) => ({
   processedFiles: 300,
   dataSafety: "YES",
   uncheckedFiles: 0,
+  mismatchedFiles: 0,
   faster: "YES",
   ageSecs: 21 * DAY,
   speed: { beforeMbps: 25, nowMbps: 414, slowBefore: 300, slowNow: 3 },
@@ -124,7 +125,10 @@ export const SCENARIOS = {
     steps: [{ click: "#btn-verify", until: NOTICE }],
   },
   "verify-no": {
-    data: { volumes: [refreshed], verify: verify({ dataSafety: "NO" }) },
+    data: {
+      volumes: [refreshed],
+      verify: verify({ dataSafety: "NO", mismatchedFiles: 2 }),
+    },
     steps: [{ click: "#btn-verify", until: NOTICE }],
   },
   "multi-drive-failing": {
