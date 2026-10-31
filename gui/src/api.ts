@@ -65,6 +65,8 @@ export interface ScanOutcome {
 export interface RefreshOutcome {
   logPath: string;
   movedFiles: number;
+  /** Files that the refresh could not move. Their data did not change. */
+  errorFiles: number;
   stopped: boolean;
 }
 

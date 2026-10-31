@@ -324,10 +324,14 @@ body {
   box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
 }
 
+/* In the narrow sidebar the actions move to a second line.
+   Each label stays on one line, so "Deselect All" does not break. */
 .card-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 4px 8px;
   margin-bottom: 12px;
 }
 
@@ -335,6 +339,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 10px;
+  white-space: nowrap;
 }
 
 .card-title {
@@ -354,6 +359,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
 }
 
 .header-sep {
@@ -451,8 +457,9 @@ body {
 
 .drive-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 4px 6px;
   min-width: 0;
 }
 
@@ -662,6 +669,18 @@ body {
 
 .action-hint {
   grid-column: 1 / -1;
+}
+
+/* A narrow card (the minimum window) drops the icon, so the title keeps one line.
+   Content width: 161 px at 980 px, 195 px at 1080 px (default), 268 px at 1440 px. */
+.action-card {
+  container-type: inline-size;
+}
+
+@container (max-width: 175px) {
+  .action-icon {
+    display: none;
+  }
 }
 
 .action-title {
@@ -1274,7 +1293,6 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  word-break: break-all;
 }
 
 .log-time {

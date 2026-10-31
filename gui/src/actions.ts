@@ -72,8 +72,12 @@ function verifyNotice(
   if (unsafe.length > 0) {
     return {
       kind: "error",
-      title: "Data changed without a program",
-      body: `Data safe: NO on ${unsafe.map((r) => drive(r.root)).join(", ")}. Keep the logs and report this error.`,
+      title: `Data safe: NO on ${unsafe.map((r) => drive(r.root)).join(", ")}`,
+      body: [
+        "Verify found file data that changed, but no program wrote to the file.",
+        "Do not delete the files or the logs. The verify log (Folder button) lists each file.",
+        "Click Report to tell us. Attach the verify log.",
+      ].join("\n"),
     };
   }
   if (cancelled || results.some((r) => r.outcome.stopped)) {
@@ -130,10 +134,43 @@ function verifyNotice(
     lines.push(
       `${countOf(unchecked, "file")} could not be compared. The refresh did not cause this. ` +
         "Usually these are temporary files, logs or caches that programs write often. " +
-        "You do not need to do anything.",
+        "You do not need to do anything. The verify log (Folder button) shows examples.",
     );
   lines.push(nextStep(results.map((r) => r.outcome)));
   return { kind, title, body: lines.join("\n") };
+}
+
+/** Why the speed right after a refresh is not the result. */
+const FAST_AT_FIRST =
+  "Right after a refresh, files read fast. This speed does not show if they stay fast.";
+
+function refreshNotice(
+  moved: number,
+  errors: number,
+  stopped: boolean,
+): Notice {
+  // A file with ERROR was not moved. The refresh did not change its data.
+  const errorLine =
+    errors > 0
+      ? ` ${countOf(errors, "file")} could not be moved. Their data did not change. The refresh log (Folder button) has the reason for each file.`
+      : "";
+  if (stopped)
+    return {
+      kind: "info",
+      title: "Refresh stopped",
+      body: `${countOf(moved, "file")} ${wasWere(moved)} moved before the stop.${errorLine} Scan again to check remaining files.`,
+    };
+  if (errors > 0)
+    return {
+      kind: "warn",
+      title: `${countOf(moved, "file")} rewritten, ${fmtCount(errors)} not moved`,
+      body: `${errorLine.trim()}\n${FAST_AT_FIRST} Run Verify after 1, 7 and 30 days.`,
+    };
+  return {
+    kind: "ok",
+    title: `${countOf(moved, "file")} rewritten`,
+    body: `${FAST_AT_FIRST} Run Verify after 1, 7 and 30 days.`,
+  };
 }
 
 /** With fewer slow files, all of them must have the same result (src/verify.rs MIN_SLOW_FILES). */
@@ -173,7 +210,7 @@ export function nextStep(outcomes: VerifyOutcome[], now = Date.now()): string {
       minute: "2-digit",
       hour12: false,
     });
-    return `Next step: verify again after ${at}. New data is always fast at first.`;
+    return `Next step: verify again after ${at}. ${FAST_AT_FIRST} Faster shows YES or NO 12 hours after the refresh.`;
   }
   return "The log has the full summary.";
 }
@@ -345,7 +382,7 @@ export function createActions(
       confirmed = await confirm({
         title: `Rewrite ${countOf(slowCount, "slow file")} across ${driveNames}?`,
         body:
-          "The file system safely moves each slow file to fresh NAND blocks. Unchanged and fast files are not touched. Programs can continue running." +
+          "Windows moves each slow file to a new place on the SSD. The file data does not change. Unchanged and fast files are not touched. Programs can continue running." +
           (fastAfterWait > 0
             ? ` ${countOf(fastAfterWait, "file")} ${wasWere(fastAfterWait)} fast after the wait. The refresh reads each one again and skips it if it is fast.`
             : ""),
@@ -368,6 +405,7 @@ export function createActions(
     });
 
     let totalMoved = 0;
+    let totalErrors = 0;
     const attemptedRoots = new Set<string>();
     let wasStopped = false;
 
@@ -389,6 +427,7 @@ export function createActions(
         store.set({ scans: nextScans });
         const outcome = await backend.startRefresh(scanResult.reportPath, root);
         totalMoved += outcome.movedFiles;
+        totalErrors += outcome.errorFiles;
         // The new log is now the newest refresh of this drive. Verify reads it.
         const lastRefresh = {
           logPath: outcome.logPath,
@@ -432,17 +471,7 @@ export function createActions(
       progress: null,
       stopping: false,
       scans: nextScans,
-      notice: wasStopped
-        ? {
-            kind: "info",
-            title: "Refresh stopped",
-            body: `${countOf(totalMoved, "file")} ${wasWere(totalMoved)} moved before the stop. Scan again to check remaining files.`,
-          }
-        : {
-            kind: "ok",
-            title: `${countOf(totalMoved, "file")} rewritten successfully`,
-            body: "New data always reads fast at first. Run Verify after 1, 7 and 30 days.",
-          },
+      notice: refreshNotice(totalMoved, totalErrors, wasStopped),
     });
   }
 

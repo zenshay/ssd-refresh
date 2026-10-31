@@ -1,6 +1,6 @@
 // One source of truth. Views read this state and never keep a second copy.
 import type { Progress, ScanOutcome, Volume } from "./api";
-import { countOf, fmtAge, fmtCount } from "./format";
+import { countOf, fmtCount, refreshedText } from "./format";
 
 export type Mode = "idle" | "scanning" | "refreshing" | "verifying";
 export type NoticeKind = "ok" | "info" | "warn" | "error";
@@ -181,8 +181,12 @@ export function scanAction(s: State): ActionView {
   return {
     state: allDone ? "done" : "ready",
     title,
-    hint: count > 1 ? `Scans ${count} selected drives sequentially.` : baseHint,
-    label: allDone ? "Done · scan again" : "Ready",
+    hint: allDone
+      ? "Scan done. Click to scan again. Changes nothing."
+      : count > 1
+        ? `Scans ${count} selected drives sequentially.`
+        : baseHint,
+    label: allDone ? "Scanned" : "Ready",
     disabled: false,
   };
 }
@@ -225,7 +229,7 @@ export function refreshAction(s: State): ActionView {
     return {
       state: "locked",
       title,
-      hint: `SMART says ${failingVolume.root.slice(0, 2)} is failing. Refresh is locked for safety.`,
+      hint: `SMART says ${failingVolume.root.slice(0, 2)} is failing. Back it up. Deselect it to refresh the other drives.`,
       label: "Blocked",
       disabled: true,
     };
@@ -237,7 +241,7 @@ export function refreshAction(s: State): ActionView {
     return {
       state: "locked",
       title,
-      hint: "Needs administrator rights. Open the app as administrator.",
+      hint: "Needs administrator rights. Restart as administrator.",
       label: "Locked",
       disabled: true,
     };
@@ -323,8 +327,8 @@ export function verifyAction(
         : title,
     hint:
       age < MIN_VERIFY_AGE_SECS
-        ? `Refreshed ${fmtAge(age)} ago. Speed result after 12 hours.`
-        : `Refreshed ${fmtAge(age)} ago. Read-only. Changes nothing.`,
+        ? `${refreshedText(age)}. Speed result after 12 hours.`
+        : `${refreshedText(age)}. Read-only. Changes nothing.`,
     label: "Ready",
     disabled: false,
   };

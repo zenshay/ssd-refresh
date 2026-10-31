@@ -6,7 +6,6 @@ import {
   refreshAction,
   type Store,
   scanAction,
-  totalSlowAcrossSelected,
   verifyAction,
 } from "../store";
 
@@ -37,10 +36,11 @@ export function mountWorkflow(store: Store, actions: Actions): void {
   store.subscribe((s) => {
     app.dataset.mode = s.mode;
     // Tell the user which step is next. The next step gets the strong color.
-    const hasSlow = totalSlowAcrossSelected(s) > 0;
-    app.dataset.next = hasSlow && s.mode === "idle" ? "refresh" : "scan";
+    // A locked refresh (SMART failing, no administrator rights) is not the next step.
+    const refreshView = refreshAction(s);
+    app.dataset.next = refreshView.state === "ready" ? "refresh" : "scan";
     paint(scan, scanAction(s));
-    paint(refresh, refreshAction(s));
+    paint(refresh, refreshView);
     paint(verify, verifyAction(s));
 
     const chipText = {

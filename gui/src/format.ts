@@ -49,3 +49,10 @@ export function fmtAge(secs: number): string {
   if (s >= 3600) return countOf(Math.floor(s / 3600), "hour");
   return countOf(Math.floor(s / 60), "minute");
 }
+
+/** "Refreshed just now" or "Refreshed 3 days ago". The drive card and Verify use the same text. */
+export function refreshedText(ageSecs: number): string {
+  return ageSecs < 60
+    ? "Refreshed just now"
+    : `Refreshed ${fmtAge(ageSecs)} ago`;
+}

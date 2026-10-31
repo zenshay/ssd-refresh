@@ -103,7 +103,8 @@ export function mountProgress(store: Store, actions: Actions): void {
       stepChip.hidden = false;
       stepIcon.hidden = true;
       titleEl.textContent = "Operation Progress";
-      subtitleEl.textContent = "Standby · Select drives and click Safe Scan";
+      // Stays true after an operation too. The notice shows the result.
+      subtitleEl.textContent = "Standby · No operation is running";
       bar.style.width = "0%";
       track.classList.remove("indeterminate");
       statFiles.textContent = "--";

@@ -78,7 +78,7 @@ const storeFor = () =>
 const backend = (overrides = {}) => ({
   listVolumes: async () => [],
   startScan: async (root) => scan(root),
-  startRefresh: async () => ({ movedFiles: 2, stopped: false }),
+  startRefresh: async () => ({ movedFiles: 2, errorFiles: 0, stopped: false }),
   startVerify: async () => ({}),
   togglePause: async () => true,
   stop: async () => {},
@@ -106,7 +106,7 @@ test("stop keeps reports for drives that did not run", async () => {
     backend({
       startRefresh: async (_, root) => {
         calls.push(root);
-        return { movedFiles: 1, stopped: true };
+        return { movedFiles: 1, errorFiles: 0, stopped: true };
       },
     }),
   ).runRefresh();
@@ -402,7 +402,8 @@ test("the verify notice puts the speed first, one fact per line", () => {
   const soon = verified({ faster: "NOT DECIDED", waitSecs: 12 * 3600 });
   assert.equal(
     nextStep([soon], now),
-    "Next step: verify again after Oct 31, 12:08. New data is always fast at first.",
+    "Next step: verify again after Oct 31, 12:08. Right after a refresh, files read fast. " +
+      "This speed does not show if they stay fast. Faster shows YES or NO 12 hours after the refresh.",
   );
   assert.equal(nextStep([verified()]), "The log has the full summary.");
 });
@@ -553,7 +554,10 @@ test("verify reports changed data as an error and stops", async () => {
   ).runVerify();
   assert.deepEqual(calls, ["x.refresh.csv"]);
   assert.equal(store.get().notice.kind, "error");
-  assert.match(store.get().notice.body, /Data safe: NO on X:/);
+  assert.equal(store.get().notice.title, "Data safe: NO on X:");
+  // The user must know what to keep and where to report.
+  assert.match(store.get().notice.body, /Do not delete the files or the logs/);
+  assert.match(store.get().notice.body, /Click Report/);
 });
 
 test("refresh makes its log the newest refresh of the drive", async () => {
@@ -570,6 +574,7 @@ test("refresh makes its log the newest refresh of the drive", async () => {
       startRefresh: async () => ({
         logPath: "x.refresh.csv",
         movedFiles: 2,
+        errorFiles: 0,
         stopped: false,
       }),
     }),
@@ -577,5 +582,31 @@ test("refresh makes its log the newest refresh of the drive", async () => {
   assert.equal(store.get().volumes[0].lastRefresh.logPath, "x.refresh.csv");
   assert.equal(store.get().volumes[1].lastRefresh, null);
   assert.equal(verifyAction(store.get()).disabled, false);
+  assert.equal(store.get().notice.kind, "ok");
+  assert.equal(store.get().notice.title, "2 files rewritten");
   assert.match(store.get().notice.body, /Run Verify after 1, 7 and 30 days/);
+});
+
+test("refresh with error files is a warning, not a success", async () => {
+  const store = storeFor();
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startRefresh: async (_, root) => ({
+        logPath: `${root}refresh.csv`,
+        movedFiles: 287,
+        errorFiles: root === "X:" ? 13 : 0,
+        stopped: false,
+      }),
+    }),
+  ).runRefresh();
+  const notice = store.get().notice;
+  assert.equal(notice.kind, "warn");
+  assert.equal(notice.title, "574 files rewritten, 13 not moved");
+  assert.match(
+    notice.body,
+    /^13 files could not be moved\. Their data did not change\./,
+  );
+  assert.doesNotMatch(notice.title, /success/);
 });
