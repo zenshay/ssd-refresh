@@ -18,6 +18,10 @@ on:
         type: choice
         default: all
         options: [all, dev16, dev64, dev256, fat1, thin1, thin16, off16, nightly1, nightly4, nightly8, cranelift]
+      risk_compare:
+        description: Measure the stable baseline on the same runner first
+        type: boolean
+        default: false
   pull_request:
   # Refresh default-branch caches only when build inputs or workflows change.
   push:
@@ -214,7 +218,16 @@ jobs:
           pnpm --dir gui run build
           if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
       - name: Measure candidate and run all checks
-        run: '& ./scripts/compile-risk.ps1 -Variant $env:RISK_VARIANT -Samples ([int]$env:RISK_SAMPLES)'
+        env:
+          RISK_COMPARE: ${{ inputs.risk_compare }}
+        run: |
+          if ($env:RISK_COMPARE -eq 'true') {
+            if ($env:RISK_VARIANT -notin @('dev64','dev256','thin1','thin16','off16')) { throw 'Unsupported paired case' }
+            $baseline = if ($env:RISK_VARIANT -in @('dev64','dev256')) { 'dev16' } else { 'fat1' }
+            & ./scripts/compile-risk.ps1 -Variant $baseline -Samples ([int]$env:RISK_SAMPLES)
+            if ($LASTEXITCODE -ne 0) { throw 'Paired baseline failed' }
+          }
+          & ./scripts/compile-risk.ps1 -Variant $env:RISK_VARIANT -Samples ([int]$env:RISK_SAMPLES)
       - name: Store experiment evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
