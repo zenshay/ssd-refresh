@@ -151,7 +151,19 @@ export function validateVerifyOutcome(value: unknown): VerifyOutcome {
   return value as VerifyOutcome;
 }
 
+export interface ScheduledVerify {
+  name: string;
+  state: string;
+  due: string;
+  lastRun: string;
+  result: number;
+}
+
 export const api = {
+  listSchedules: () => invoke<ScheduledVerify[]>("list_schedules"),
+  createVerifySchedule: (logPath: string) =>
+    invoke<ScheduledVerify[]>("create_verify_schedule", { logPath }),
+  removeSchedules: () => invoke<ScheduledVerify[]>("remove_schedules"),
   environment: () => invoke<{ elevated: boolean }>("environment"),
   listVolumes: () => invoke<Volume[]>("list_volumes"),
   startScan: (root: string) => invoke<ScanOutcome>("start_scan", { root }),

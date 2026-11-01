@@ -2,12 +2,14 @@ import { createActions } from "./actions";
 import { api } from "./api";
 import { createDiagnostics } from "./diagnostics";
 import { countOf } from "./format";
+import { createSchedules } from "./schedules";
 import { createStore, initialState, STANDARD_USER_NOTICE } from "./store";
 import { askConfirm, mountConfirm } from "./views/confirm";
 import { mountConsole } from "./views/console";
 import { mountDrives } from "./views/drives";
 import { mountNotice } from "./views/notice";
 import { mountProgress } from "./views/progress";
+import { mountSchedules } from "./views/schedules";
 import { mountSlowFiles } from "./views/slow_files";
 import { mountWorkflow } from "./views/workflow";
 
@@ -22,6 +24,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   mountConfirm();
   mountConsole(store, diagnostics, api);
   mountWorkflow(store, actions);
+  mountSchedules(store, createSchedules(api));
   mountDrives(store, actions);
   mountProgress(store, actions);
   mountNotice(store);

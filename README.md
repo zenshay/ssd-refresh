@@ -76,7 +76,29 @@ The `Folder` button in the app opens this folder.
 
 - You can move the app or replace it with a new version. The refresh logs stay, and Verify still works.
 - Each Windows user has a different folder.
-- To remove all data of the app, delete the app and this folder.
+- To remove all data of the app, remove schedules first. Then delete the app and this folder.
+
+### Scheduled Verify (Windows)
+
+Click **Scheduled Verify** beside **Operations**. Select one drive with a refresh log.
+Click **Schedule 1 / 7 / 30 days** to create read-only checks. Past dates are omitted.
+Windows runs each check after 1, 7 or 30 days from the last change to the refresh log.
+The app can be closed. You must be signed in. Windows waits for AC power and an idle computer.
+A check can continue when you return. Battery use stops it. Each check has a two-hour limit.
+Missed checks can run later. Two app operations cannot run at the same time for the same Windows user.
+If another operation holds the slot, the check fails. Run Verify manually after that operation ends.
+
+Click **Read status** to see task times and exit codes. A finished task does not prove a data or speed result.
+Read the verify logs in **Folder** → `reports`. Start errors appear in `scheduled-verify-error.log` in the data folder.
+Code `0` means the process finished. Code `1` means an error. Code `3` means a data mismatch.
+Windows can also return its own task error codes.
+
+Each plan keeps a copy of the app in the data folder. Moving the main app does not change the plan.
+App updates do not replace this copy. Remove and create plans again to use the updated app.
+The copy uses extra disk space for each plan. The size depends on the app build.
+Click **Remove all schedules** to remove all verify tasks for your Windows user and unused program copies.
+A verify that already started can finish. Its program copy can remain until you remove the app data folder.
+Remove schedules before you delete the app data folder. Windows Optimize keeps its own schedule.
 
 ---
 

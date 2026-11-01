@@ -1,12 +1,20 @@
 mod commands;
 mod dto;
 mod native_open;
+mod schedule;
 mod startup;
 mod state;
 mod test_settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--scheduled-verify") {
+        let data = std::env::var_os("LOCALAPPDATA")
+            .map(std::path::PathBuf::from)
+            .map(|p| p.join("com.ssdrefresh.app"));
+        std::process::exit(data.map_or(1, |dir| schedule::headless(&args, &dir)));
+    }
     if !startup::webview_ready() {
         std::process::exit(1);
     }
@@ -18,6 +26,9 @@ pub fn run() {
             commands::start_scan,
             commands::start_refresh,
             commands::start_verify,
+            commands::list_schedules,
+            commands::create_verify_schedule,
+            commands::remove_schedules,
             commands::toggle_pause,
             commands::stop_operation,
             commands::window_minimize,

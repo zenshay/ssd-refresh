@@ -1,5 +1,22 @@
 # Changes
 
+## 1.1.0 — 2026-11-01
+
+### Added
+
+- Windows GUI: Scheduled Verify creates read-only checks for days 1, 7 and 30 after a refresh. Past dates are omitted.
+- Windows runs checks while the user is signed in, on AC power, and idle. The app can be closed.
+- The schedule window shows task dates and process results. It can remove all verify schedules for the current Windows user.
+- Each plan keeps a program copy. Moving the main app does not break the plan. Recreate plans after app updates.
+- GUI operations and scheduled checks share a process lock. They cannot run at the same time for the same Windows user.
+
+### Checks and limits
+
+- Add tests for schedule settings, dates, removal, background entry, process locks, and GUI actions.
+- Add an optional Windows integration test. It creates three future tasks, checks their settings, and removes them without execution.
+- Scheduled checks have a two-hour limit. Battery use stops them. Busy or failed checks need a manual Verify.
+- Process completion does not prove a data or speed result. Read the verify logs. Long-term SSD results remain untested.
+
 ## 1.0.7
 
 - Verify: `Data safe: YES` covers only the files that verify compared. Files that verify cannot compare are counted apart and do not block YES. Examples: a program wrote the file during the refresh, the file is deleted, the file has no hash. The summary and the GUI tell the user that the refresh did not cause these files.

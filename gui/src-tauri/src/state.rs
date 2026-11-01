@@ -16,6 +16,7 @@ pub struct AppState {
 pub struct RunGuard {
     slot: Slot,
     pub ctl: Arc<Control>,
+    pub process_lock: Option<std::fs::File>,
 }
 
 fn lock(slot: &Slot) -> MutexGuard<'_, Option<Arc<Control>>> {
@@ -35,6 +36,7 @@ impl AppState {
         Ok(RunGuard {
             slot: self.slot.clone(),
             ctl,
+            process_lock: None,
         })
     }
 

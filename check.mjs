@@ -50,6 +50,14 @@ async function releaseChecks() {
 }
 
 async function applicationChecks() {
+  if (process.platform === "win32") {
+    await run("Schedule adapter tests", "powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      `& ([scriptblock]::Create([IO.File]::ReadAllText('${join(root, "test/schedule-test.ps1").replaceAll("'", "''")}'))) -Root '${root.replaceAll("'", "''")}'`,
+    ]);
+  }
   await run("Rust format", "cargo", ["fmt", ...manifest, "--all", "--check"]);
   // Tauri needs the frontend files before the GUI can compile.
   await run("Frontend build", pnpm, [
