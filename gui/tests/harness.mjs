@@ -78,6 +78,7 @@ export function installIpc(page, data) {
   return page.evaluateOnNewDocument((data) => {
     const callbacks = new Map();
     const listeners = new Map();
+    let schedules = data.schedules ?? [];
     let id = 0;
     const emit = (event, payload) =>
       callbacks.get(listeners.get(event))?.({ event, id: 1, payload });
@@ -97,6 +98,23 @@ export function installIpc(page, data) {
         if (command === "environment")
           return { elevated: data.elevated ?? true };
         if (command === "list_volumes") return data.volumes;
+        if (command === "list_schedules") return schedules;
+        if (command === "create_verify_schedule") {
+          schedules = [
+            {
+              name: "ssd-refresh-verify-S-1-5-21-1-scan-x-123.refresh-1",
+              state: "Ready",
+              due: "2026-11-02T10:00:00",
+              lastRun: "",
+              result: 267011,
+            },
+          ];
+          return schedules;
+        }
+        if (command === "remove_schedules") {
+          schedules = [];
+          return [];
+        }
         const results = {
           // data.scans: one scan result for each drive root. data.scan: the same for all.
           start_scan: data.scans?.[args?.root] ?? data.scan,

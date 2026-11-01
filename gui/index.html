@@ -65,6 +65,7 @@
         <section class="card workflow-section">
           <div class="card-header">
             <h2 class="card-title">Operations</h2>
+            <button id="schedule-open" type="button" class="schedule-link">Scheduled Verify</button>
           </div>
           <div class="workflow-grid">
             <!-- Step 1: Safe Scan -->
@@ -113,6 +114,22 @@
             </button>
           </div>
         </section>
+
+        <dialog id="schedule-panel" class="schedule-panel" aria-labelledby="schedule-title">
+          <div class="card-header"><h2 id="schedule-title" class="card-title">Scheduled Verify · Windows</h2><button id="schedule-close" type="button" class="btn btn-secondary">Close</button></div>
+          <p>Check refreshed files after 1, 7 and 30 days. Future dates only. No file data is rewritten.</p>
+          <p>Runs while you are signed in, on AC power and idle. The app can be closed. Missed checks wait for Windows.</p>
+          <p>A check can continue when you return. Battery use stops it. Each check has a 2-hour limit.</p>
+          <p>The plan stores a copy of this app in its data folder. Updates do not replace this copy. Remove and recreate plans after an update.</p>
+          <p id="schedule-target">Select one drive with a refresh log.</p>
+          <div class="schedule-buttons">
+            <button id="schedule-create" type="button" class="btn btn-primary" disabled>Schedule 1 / 7 / 30 days</button>
+            <button id="schedule-reload" type="button" class="btn btn-secondary">Read status</button>
+            <button id="schedule-remove" type="button" class="btn btn-danger" disabled>Remove all schedules</button>
+          </div>
+          <p id="schedule-message" role="status"></p>
+          <ul id="schedule-list"></ul>
+        </dialog>
 
         <!-- Realtime Operation Progress Card: Always visible with idle standby state -->
         <section id="progress-card" class="card progress-card is-idle" data-state="idle">

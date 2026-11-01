@@ -145,7 +145,7 @@ pub async fn start_scan(
     if !Path::new(&root).is_dir() {
         return Err(format!("{root} is not a folder."));
     }
-    let guard = state.begin()?;
+    let guard = begin_operation(&state, &app)?;
     let report = reports_dir(&app)?.join(report_name(&root));
     forward_progress(&guard.ctl, &app);
     let test = announce_test_settings(&app);
@@ -185,7 +185,7 @@ pub async fn start_refresh(
     sys::refresh_check(&vol)?;
     let confirm = sys::volume_label(&vol);
 
-    let guard = state.begin()?;
+    let guard = begin_operation(&state, &app)?;
     forward_progress(&guard.ctl, &app);
     let test = announce_test_settings(&app);
 
@@ -234,7 +234,7 @@ pub async fn start_verify(
     if !is_refresh_log(&from) {
         return Err("The file is not a refresh log.".into());
     }
-    let guard = state.begin()?;
+    let guard = begin_operation(&state, &app)?;
     forward_progress(&guard.ctl, &app);
     let test = announce_test_settings(&app);
 
@@ -258,6 +258,50 @@ pub async fn start_verify(
         }
     })
     .await
+}
+
+fn begin_operation(state: &AppState, app: &AppHandle) -> Result<crate::state::RunGuard, String> {
+    let mut guard = state.begin()?;
+    guard.process_lock = Some(crate::schedule::process_lock(
+        &app.path().app_local_data_dir().map_err(|e| e.to_string())?,
+    )?);
+    Ok(guard)
+}
+
+#[tauri::command]
+pub async fn list_schedules(
+    app: AppHandle,
+) -> Result<Vec<crate::schedule::ScheduledVerify>, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    run_blocking(move || crate::schedule::manage(&dir, "list", None)).await
+}
+
+#[tauri::command]
+pub async fn create_verify_schedule(
+    app: AppHandle,
+    log_path: String,
+) -> Result<Vec<crate::schedule::ScheduledVerify>, String> {
+    let from = trusted_report(&app, &log_path)?;
+    if !is_refresh_log(&from) {
+        return Err("The file is not a refresh log.".into());
+    }
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let reports = dir
+        .join("reports")
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if from.parent() != Some(reports.as_path()) {
+        return Err("The refresh log must be directly in the reports folder.".into());
+    }
+    run_blocking(move || crate::schedule::manage(&dir, "create", Some(&from))).await
+}
+
+#[tauri::command]
+pub async fn remove_schedules(
+    app: AppHandle,
+) -> Result<Vec<crate::schedule::ScheduledVerify>, String> {
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    run_blocking(move || crate::schedule::manage(&dir, "remove", None)).await
 }
 
 /// Run blocking work off the async runtime and flatten the join error.

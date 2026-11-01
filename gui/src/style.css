@@ -1376,3 +1376,47 @@ body {
     padding: 10px 14px;
   }
 }
+/* Schedule settings do not use space in the main workflow. */
+.schedule-panel {
+  margin: auto;
+  width: min(720px, 90vw);
+  max-height: 85vh;
+  overflow: auto;
+  padding: 20px;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-md);
+}
+.schedule-panel::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+.schedule-link {
+  color: var(--text-main);
+  background: transparent;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.schedule-panel p,
+.schedule-panel li {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+}
+.schedule-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.schedule-buttons button {
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.schedule-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -1,7 +1,7 @@
 {
   "name": "ssd-refresh-gui",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,9 +12,9 @@
     "format": "biome format --write src tests test-cdp.js",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node --import ./tests/register.mjs --test tests/actions.test.mjs",
+    "test": "node --import ./tests/register.mjs --test tests/actions.test.mjs tests/schedules.test.mjs",
     "test:mutation": "node tests/mutation.mjs",
-    "test:e2e": "node tests/e2e.mjs",
+    "test:e2e": "node tests/e2e.mjs && node tests/schedules-e2e.mjs",
     "test:layout": "node tests/layout.mjs",
     "screenshot": "node tests/readme-screenshot.mjs",
     "screens": "node tests/screens.mjs"
