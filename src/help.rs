@@ -181,6 +181,9 @@ Steps
       --select all). Check the volume, the file system and the permissions.
   2/3 Show what will happen and the warnings. Ask for confirmation.
   3/3 For each file, one at a time:
+      Check file IDs and writers before the baseline read and the move.
+      Skip the file if these checks or the cache flush fail.
+      --force does not bypass these checks.
       a. Tell the OS to write the cached data of the file to the disk (flush).
          Then read the file (not from the OS cache) at normal priority. Write
          the SHA-256 and the speed to the log.
@@ -195,8 +198,8 @@ Progress line in step 3 (wide window, then narrow window)
     moved     files at a new place now (includes changed)
     changed   moved, and another program wrote the file during the move. This
               is normal.
-    skipped   not slow now, cannot move, not found, or dry run
-    failed    the tool could not move or read the file. The file is not damaged.
+    skipped   fast files, missing files, failed checks, or read-only groups
+    failed    a move or data check failed. Read the log before another refresh.
 
 Statuses in the log (status column)
   OK            Moved. The SHA-256 is the same before and after.
@@ -206,15 +209,29 @@ Statuses in the log (status column)
   SKIP_FAST     Not slow now. Not moved. Use --force to move it.
   SKIP_KIND     The file system cannot move this kind of file (see detail).
   SKIP_MISSING  The file does not exist now.
+  SKIP_BUSY     The file may be open for writing. Not moved.
+  SKIP_WRITERS_UNKNOWN
+                The writer check is not available. Not moved.
+  SKIP_FLUSH    The cache flush failed. Not moved.
+  SKIP_IDENTITY The file IDs differ or are not available. Not moved.
+  SKIP_CHANGED  Metadata or layout changed before the move. Not moved.
+  SKIP_CHECK    A check before the move failed. Not moved.
+  SKIP_INCOMPLETE
+                The baseline read or hash is incomplete. Not moved.
+  SKIP_STOPPED  The run stopped before the move. Not moved.
   DRYRUN        --dry-run: measured only.
-  MOVE_FAILED   The file system did not move the file. The file is not
-                damaged (see detail).
+  MOVE_FAILED   A move failed. Some data may have moved. Read detail.
+  VERIFY_FAILED The data check after a move failed or is not complete.
+                Keep the files and log. The run stops before the next file.
   PARTIAL       The run stopped during the move. --resume moves it again.
   MISMATCH      The SHA-256 is different, and no other program wrote the file.
                 The tool stops. This must not occur. Please report it.
   CONTROL       Control group (--control-fraction): slow, read only, not
                 moved. verify compares these files with the moved files.
   ERROR         The tool could not open or read the file (see detail).
+
+  --resume retries the safety skips and VERIFY_FAILED. Check the cause first.
+  These checks do not hold a write lock. A writer can start after a check.
 
 Log columns
   before_mbps / before_slow  The speed of the read before the move. If the

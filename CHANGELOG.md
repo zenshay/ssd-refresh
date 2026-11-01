@@ -1,5 +1,17 @@
 # Changes
 
+## 1.1.1 — 2026-11-01
+
+- Refresh skips files with active or unknown writers, failed cache flushes, changed metadata, or different file IDs. These checks also apply with `--force`.
+- Read, flush, and move handles must identify the same file. Refresh checks the current path again before a move.
+- An incomplete data check after a move stops the run. Safety skips can be retried with `--resume` after the cause is resolved.
+- The GUI shows skipped and failed counts. A failed data check does not claim that no data moved.
+- Drive cards show the refresh log time. A log does not prove that files moved.
+- Add mock scenarios for admission checks, file changes, incomplete reads, move failures, and resource release.
+- Windows NTFS VHDX test: 44 checks passed with 711 synthetic files and 10,523 concurrent changes. External content checks found 0 errors.
+- Add real admission tests for writers, writable memory maps, blocked cache flush access, read-only files, and resume after a writer closes.
+- README states the tested protection and limits. The tests do not cover every writer, device, or power failure.
+
 ## 1.1.0 — 2026-11-01
 
 ### Added

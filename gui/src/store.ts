@@ -356,7 +356,7 @@ export function verifyAction(
         : title,
     hint:
       age < MIN_VERIFY_AGE_SECS
-        ? `${refreshedText(age)}. Checks data now. Speed result after 12 hours.`
+        ? `${refreshedText(age)}. Speed needs 12 hours after a move.`
         : `${refreshedText(age)}. Read-only. Changes nothing.`,
     label: "Ready",
     disabled: false,

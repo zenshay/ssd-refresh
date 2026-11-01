@@ -50,6 +50,27 @@ pub struct RefreshOutcome {
 }
 
 impl RefreshOutcome {
+    /// Files skipped before any move of that file.
+    pub fn skipped_files(&self) -> usize {
+        self.counts
+            .iter()
+            .filter(|(status, _)| status.starts_with("SKIP_"))
+            .map(|(_, count)| count)
+            .sum()
+    }
+
+    /// Files whose refresh or data check did not finish.
+    pub fn failed_files(&self) -> usize {
+        self.counts
+            .iter()
+            .filter(|(status, _)| {
+                !status.starts_with("SKIP_")
+                    && !matches!(status.as_str(), "OK" | "CHANGED" | "DRYRUN" | "CONTROL")
+            })
+            .map(|(_, count)| count)
+            .sum()
+    }
+
     pub fn record(&mut self, status: &str, moved_bytes: u64) {
         self.processed_files += 1;
         *self.counts.entry(status.to_string()).or_default() += 1;

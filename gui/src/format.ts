@@ -50,9 +50,9 @@ export function fmtAge(secs: number): string {
   return countOf(Math.floor(s / 60), "minute");
 }
 
-/** "Refreshed just now" or "Refreshed 3 days ago". The drive card and Verify use the same text. */
+/** The log time does not prove that any file moved. */
 export function refreshedText(ageSecs: number): string {
   return ageSecs < 60
-    ? "Refreshed just now"
-    : `Refreshed ${fmtAge(ageSecs)} ago`;
+    ? "Refresh log just now"
+    : `Refresh log ${fmtAge(ageSecs)} ago`;
 }

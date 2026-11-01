@@ -313,7 +313,7 @@ try {
   );
   assert.match(
     await page.$eval("#btn-verify .action-hint", (node) => node.textContent),
-    /Speed result after 12 hours/,
+    /Speed needs 12 hours after a move/,
   );
   // The drive card shows the refresh. The text must fit in the card.
   const refreshedCard = await page.$eval('[data-root="X:\\\\"]', (node) => {
@@ -323,14 +323,14 @@ try {
       fits: meta.scrollWidth <= meta.clientWidth,
     };
   });
-  assert.deepEqual(refreshedCard, { text: "Refreshed just now", fits: true });
+  assert.deepEqual(refreshedCard, { text: "Refresh log just now", fits: true });
   // Long real values must also fit at the default window size.
   assert.equal(
     await page.$eval('[data-root="X:\\\\"]', (node) => {
       const meta = node.querySelector(".drive-meta");
       meta.firstElementChild.textContent = "123.4 GB free of 1.8 TB";
       node.querySelector(".drive-refreshed").textContent =
-        "Refreshed 30 days ago";
+        "Refresh log 30 days ago";
       return meta.scrollWidth <= meta.clientWidth;
     }),
     true,

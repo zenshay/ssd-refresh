@@ -56,8 +56,13 @@ pub fn local_clock_after(secs: u64) -> Option<String> {
 /// Write the cached data of the file to the disk (fsync). A read that does not use the cache
 /// (O_DIRECT) must not see older data. On Linux, fsync also works on a read-only descriptor, so
 /// the tool does not open the file for writing.
-pub fn flush_file(p: &Path) -> io::Result<()> {
-    std::fs::File::open(p)?.sync_data()
+pub fn open_flush(p: &Path) -> io::Result<File> {
+    File::open(p)
+}
+
+/// Flush the checked file handle. Keep the same file ID as the move and read handles.
+pub fn flush_file(f: &File) -> io::Result<()> {
+    f.sync_data()
 }
 
 fn local_now() -> Option<libc::tm> {

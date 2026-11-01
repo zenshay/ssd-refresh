@@ -9,7 +9,7 @@
 [![CLI Rust 1.85+](https://img.shields.io/badge/CLI_Rust-1.85%2B-orange?logo=rust)](#build)
 [![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#platforms)
 [![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#platforms)
-[![Recorded VHDX test: 28/28](https://img.shields.io/badge/recorded_VHDX_test-28%2F28-blue)](#safety-test-windows)
+[![Recorded VHDX test: 44/44](https://img.shields.io/badge/recorded_VHDX_test-44%2F44-blue)](#safety-test-windows)
 
 <p align="center">
   <img src="gui/src-tauri/icons/128x128@2x.png" width="128" alt="ssd-refresh app icon: an SSD drive with a refresh arrow">
@@ -135,7 +135,7 @@ ssd-refresh finds only the slow files and tells the operating system to rewrite 
 |---|---|---|---|
 | **Approach** | File level. Refresh moves only slow files | Disk sectors (the full drive) | TRIM of free space only |
 | **Writes empty space?** | **NO** | YES (refresh mode writes all sectors) | NO |
-| **Concurrent access** | OS coordinates moves; failures remain possible | Depends on tool and mode | Managed by Windows |
+| **Concurrent access** | Windows: skips busy or unknown files; checks file IDs and hashes. OS coordinates moves. See [tests and limits](#safety-test-windows) | Depends on tool and mode | Managed by Windows |
 | **Run time** | Not measured. Scan reads all files. Refresh writes only slow files | Not measured. Reads all sectors | Not measured |
 | **Read-only mode?** | **YES** (`scan` does not write file data) | YES (read-only mode) | NO |
 | **Shows slow files?** | **YES** (file paths) | NO (works on sectors) | NO |
@@ -168,8 +168,12 @@ Disk refresh tools like DiskFresh read each sector and write it back. This has t
 
 ssd-refresh works on files. By default, it moves only files that remain slow.
 It uses the file system move API to coordinate concurrent access.
+On Windows, refresh skips files when writer checks, cache flushes, file IDs, or baseline data checks do not pass.
 It checks hashes and file metadata before and after each move.
-These checks reduce risk. They do not prove that all failures are prevented.
+A failed data check after a move stops the run before the next file.
+The [recorded Windows VHDX test](#result-with-file-id-and-writer-checks-2026-11-01) passed all 44 checks with no file content errors.
+These checks reduce risk. They do not hold a write lock or prevent every failure.
+The added checks apply from v1.1.1. The published v1.1.0 does not include them.
 
 The differences from other tools:
 
@@ -442,12 +446,27 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `SKIP_FAST` | Not slow now. Not moved |
 | `SKIP_KIND` | The tool cannot move this kind of file (see `detail`) |
 | `SKIP_MISSING` | The file does not exist now |
+| `SKIP_BUSY` | The file may be open for writing. Not moved |
+| `SKIP_WRITERS_UNKNOWN` | The writer check is not available. Not moved |
+| `SKIP_FLUSH` | The cache flush could not finish. Not moved |
+| `SKIP_IDENTITY` | File IDs differ or are not available. Not moved |
+| `SKIP_CHANGED` | Metadata or layout changed before the move. Not moved |
+| `SKIP_CHECK` | A check before the move failed. Not moved |
+| `SKIP_INCOMPLETE` | The baseline read or hash is incomplete. Not moved |
+| `SKIP_STOPPED` | The run stopped before the move. Not moved |
 | `DRYRUN` | `--dry-run`: measured only |
 | `MOVE_FAILED` | A file system move failed. Check `detail`; this status alone does not prove data integrity |
 | `PARTIAL` | The run stopped during the move. `--resume` moves the file again |
-| `MISMATCH` | The SHA-256 is different, and no other program wrote the file. The tool stops immediately. This must not occur. Please report it |
+| `MISMATCH` | The SHA-256 changed without a detected writer or metadata change. The tool stops. Keep the files and log |
 | `CONTROL` | Control group (`--control-fraction`): slow, read only, not moved |
 | `ERROR` | The tool could not open or read the file (see `detail`) |
+| `VERIFY_FAILED` | The data check after a move failed or is incomplete. The run stops. Keep the files and log |
+
+Refresh checks the volume and file IDs of the move, flush, and read handles.
+It checks the current path again before a move. The writer check must return no detected writer.
+`--force` does not bypass these checks. The GUI shows skipped and failed file counts.
+`--resume` retries the safety skips and `VERIFY_FAILED`. Check the cause before you resume.
+These checks do not hold a write lock. A writer can start after the last check.
 
 #### Why the SHA-256 can be different
 
@@ -455,9 +474,15 @@ When the SHA-256 is different, the tool checks two things:
 
 - Did the size, the modification time, the change time or the USN (NTFS) of the file change?
 - Did another program have the file open for writing? On Windows, the tool opens the file for a very short time and does not let other programs write. On Linux, the tool tries a read lease (`F_SETLEASE`).
-If one of the two is true, the status is `CHANGED`. If not, the status is `MISMATCH`.
+If one of the two is true, the status is `CHANGED`.
+If neither is true and the writer check is available, the status is `MISMATCH`.
+If the hash differs and the writer check is not available, the status is `VERIFY_FAILED`.
 
-Before the read before the move, the tool writes the cached data of the file to the disk (flush). A program can write a file through the cache and close it. The new data then stays in the cache for some seconds. The reads of this tool do not use the cache. Without the flush, the read before the move could show the older data from the disk. On Windows, the tool opens the file for writing (all sharing allowed, so other programs are not blocked) and calls `FlushFileBuffers`. It does not write data, and the times of the file do not change. On Linux, it calls `fsync`. If the flush fails (for example, no write permission), the tool writes this in `detail`. A different SHA-256 is then still a `MISMATCH`.
+Before the baseline read, the tool writes cached file data to disk (flush).
+This prevents the direct read from seeing older disk data after another program closes a cached write.
+The tool checks the flush handle's file ID before it calls `FlushFileBuffers` on Windows or `fsync` on Linux.
+If the flush fails, the status is `SKIP_FLUSH`. The file is not moved.
+The flush does not create new file content. It writes data that is already in the OS cache.
 
 ### Verify: is the refresh good?
 
@@ -663,7 +688,7 @@ Why administrator: to attach a virtual disk, to use `FSCTL_MOVE_FILE` and to run
 Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-refresh\test\vhdx-test.ps1 -PauseSeconds 10'
 ```
 
-The test uses a VHDX of 4 GB, not a real drive. **The drive with the VHDX needs 4 GB of free space or more.** The script checks this first. If there is less space, it stops.
+The test formats and refreshes only the NTFS volume inside a 4 GB VHDX. The VHDX causes reads and writes on the host drive. **The drive with the VHDX needs 4 GB of free space or more.** The script checks this first. If there is less space, it stops.
 
 1. Build as a normal user, in the repository folder: `cargo build --release`.
 2. Run one command in PowerShell as administrator (with the full path to your copy of the repository):
@@ -690,6 +715,26 @@ The test does these steps:
 7. Check that the tool moved data, and that the move did not change the times or the USN. Run `chkdsk /scan` and `Repair-Volume -Scan`.
 
 The volume is in a folder. Thus the test also checks that ssd-refresh sees the folder mount point as a different NTFS volume.
+
+#### Result with file ID and writer checks (2026-11-01)
+
+All 44 checks passed with the source prepared for v1.1.1 on Windows NTFS.
+The test used 711 synthetic files in a 4 GB VHDX.
+Another program made 10,523 changes to 51 files in 38 seconds.
+All 660 unchanged files kept their contents. All 51 changed files matched their last expected version.
+The external content check found 0 errors and 0 missing files.
+
+- Admission checks: active writers and writable memory maps returned `SKIP_BUSY`, with 0 bytes moved.
+- A reader that blocked cache flush access and a read-only file returned `SKIP_FLUSH`, with 0 bytes moved.
+- A stable file moved 8 MiB. After the writer closed, `--resume` also moved 8 MiB. Both checks kept the expected hash.
+- The refresh log recorded 441 files with moved data. Final statuses: OK 440, CHANGED 1, CONTROL 205, MISMATCH 0.
+- All 205 control files had 0 bytes moved by refresh. Stop, pause, and resume checks passed.
+- Cached-write regression: 20 runs, OK 20. `chkdsk /scan` and `Repair-Volume -Scan` found no problems.
+
+The VHDX was detached and deleted after the test.
+The [test script](test/run-vhdx-test.ps1) checks these conditions and writes a summary for each run.
+This single run does not prove safety for every concurrent writer, physical SSD, driver, or power failure.
+It does not measure long-term SSD speed or the added checks' effect on normal run time.
 
 #### Result with the flush and the regression test (2026-10-15 16:44)
 

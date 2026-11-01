@@ -125,6 +125,36 @@ export const SCENARIOS = {
     },
     steps: [scanStep, refreshStep, confirmStep(NOTICE)],
   },
+  "refresh-skipped": {
+    data: {
+      volumes: [fresh],
+      messages,
+      scan,
+      refresh: {
+        logPath: "G:\\synthetic-refresh.csv",
+        movedFiles: 0,
+        errorFiles: 0,
+        skippedFiles: 300,
+        stopped: false,
+      },
+    },
+    steps: [scanStep, refreshStep, confirmStep(NOTICE)],
+  },
+  "refresh-check-failed": {
+    data: {
+      volumes: [fresh],
+      messages,
+      scan,
+      refresh: {
+        logPath: "G:\\synthetic-refresh.csv",
+        movedFiles: 1,
+        errorFiles: 1,
+        skippedFiles: 0,
+        stopped: true,
+      },
+    },
+    steps: [scanStep, refreshStep, confirmStep(NOTICE)],
+  },
   "refresh-stopped": {
     data: {
       volumes: [fresh],

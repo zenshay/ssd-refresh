@@ -23,17 +23,18 @@ pub fn open_direct(p: &Path) -> io::Result<File> {
     )
 }
 
-/// Write the cached data of the file to the disk (FlushFileBuffers). A program can write a file
-/// through the cache and close it; the new data then stays in the cache for some seconds. A read
-/// that does not use the cache must not see older data. The handle allows all sharing, so it
-/// does not block other programs. The tool does not write data with it.
-pub fn flush_file(p: &Path) -> io::Result<()> {
-    let f = open_raw(
+/// Open a handle for a cache flush. The caller checks its file ID before the flush.
+pub fn open_flush(p: &Path) -> io::Result<File> {
+    open_raw(
         &long_path(p),
-        GENERIC_WRITE,
+        GENERIC_WRITE | FILE_READ_ATTRIBUTES,
         SHARE_READ | SHARE_WRITE | SHARE_DELETE,
         0,
-    )?;
+    )
+}
+
+/// Write cached data to disk through the checked handle. This does not write new file content.
+pub fn flush_file(f: &File) -> io::Result<()> {
     f.sync_all()
 }
 
@@ -72,10 +73,11 @@ pub fn meta(f: &File) -> io::Result<Meta> {
     };
     // FILE_BASIC_INFO: CreationTime, LastAccessTime, LastWriteTime, ChangeTime, FileAttributes
     let mut basic = [0i64; 5];
-    if unsafe { GetFileInformationByHandleEx(h, 0, basic.as_mut_ptr().cast(), 40) } != 0 {
-        m.mtime = basic[2] as i128;
-        m.ctime = basic[3] as i128;
+    if unsafe { GetFileInformationByHandleEx(h, 0, basic.as_mut_ptr().cast(), 40) } == 0 {
+        return Err(last_err());
     }
+    m.mtime = basic[2] as i128;
+    m.ctime = basic[3] as i128;
     // FILE_ATTRIBUTE_TAG_INFO
     let mut tag = [0u32; 2];
     if m.reparse && unsafe { GetFileInformationByHandleEx(h, 9, tag.as_mut_ptr().cast(), 8) } != 0 {
@@ -159,5 +161,39 @@ pub fn layout(f: &File, m: &Meta, block: u64) -> io::Result<Layout> {
             return Ok(l);
         }
         start = vcn;
+    }
+}
+
+#[cfg(test)]
+mod handle_tests {
+    use super::*;
+
+    #[test]
+    fn move_read_and_flush_handles_have_the_same_identity_and_metadata() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "ssd-handle-check-{}-{stamp}.dat",
+            std::process::id()
+        ));
+        std::fs::write(&path, vec![0u8; 8193]).unwrap();
+        let source = open_meta(&path).unwrap();
+        let flush = open_flush(&path).unwrap();
+        let data = open_direct(&path).unwrap();
+        let expected = meta(&source).unwrap();
+        assert_ne!(expected.id.1, 0);
+        for file in [&flush, &data] {
+            let actual = meta(file).unwrap();
+            assert_eq!(actual.id, expected.id);
+            assert_eq!(actual.key(), expected.key());
+        }
+        flush_file(&flush).unwrap();
+        assert_eq!(meta(&source).unwrap().key(), expected.key());
+        drop(data);
+        drop(flush);
+        drop(source);
+        std::fs::remove_file(path).unwrap();
     }
 }
