@@ -61,5 +61,11 @@ export function taskResult(task: ScheduledVerify): string {
   if (task.result === 0)
     return "Finished. Read the verify log for data and speed results.";
   if (task.result === 3) return "Data mismatch. Keep the files and logs.";
+  if (task.result === 2)
+    return "Unsupported: administrator or root rights are required, or the platform is not supported.";
+  if (task.result === 4)
+    return "Stopped. Read the verify log or run Verify manually.";
+  if (task.result === 5)
+    return "Incomplete: the tool could not check all data. Read the verify log or run Verify manually.";
   return `Did not finish (code ${task.result}). Read the error log or run Verify manually.`;
 }

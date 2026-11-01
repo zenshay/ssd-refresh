@@ -203,9 +203,10 @@ Progress line in step 3 (wide window, then narrow window)
 
 Statuses in the log (status column)
   OK            Moved. The SHA-256 is the same before and after.
-  CHANGED       Moved. The SHA-256 is different because another program wrote
-                the file during the move. The times or the USN changed, or the
-                file was open for writing. This is normal for files in use.
+  CHANGED       Moved. The SHA-256 differs. The size or last-write time changed,
+                or the tool detected a writer during the move.
+                Attributes, access rights, change time, or USN alone cannot
+                explain a different hash.
   SKIP_FAST     Not slow now. Not moved. Use --force to move it.
   SKIP_KIND     The file system cannot move this kind of file (see detail).
   SKIP_MISSING  The file does not exist now.
@@ -224,8 +225,8 @@ Statuses in the log (status column)
   VERIFY_FAILED The data check after a move failed or is not complete.
                 Keep the files and log. The run stops before the next file.
   PARTIAL       The run stopped during the move. --resume moves it again.
-  MISMATCH      The SHA-256 is different, and no other program wrote the file.
-                The tool stops. This must not occur. Please report it.
+  MISMATCH      The SHA-256 differs without evidence of a data write.
+                The tool stops before the next file. Keep the files and log.
   CONTROL       Control group (--control-fraction): slow, read only, not
                 moved. verify compares these files with the moved files.
   ERROR         The tool could not open or read the file (see detail).
@@ -313,26 +314,27 @@ Steps
       verify uses the time of the last change to the file.
   2/2 Read each file one time, alone, at normal priority, not from the OS
       cache. If it is slow, read it one more time. Use the faster time of
-      each extent. If a program changed the file, verify does not count it
-      (MODIFIED).
+      each extent. verify excludes a different hash if metadata changed
+      or the log has no trusted metadata baseline (MODIFIED).
 
 Summary table
   Slow before->now          slow files before the move, and now
   Median MB/s before->now   the median file speed before the move, and now
 
 Result (at the end)
-  Data safe     YES: the files that no program changed have the same SHA-256
-                as at the refresh. verify counts the files that programs
-                changed. These changes are normal. verify also counts the
-                files that it cannot compare: a program wrote them during the
-                refresh, they are deleted, or they are now of another kind.
-                These files do not stop YES. The refresh read each file again
-                right after the move and compared it.
-                NO: some files have a different SHA-256, but their size, times
-                and USN did not change. Thus no program changed them. verify
-                shows these files. The exit code is 3.
-                UNKNOWN: verify could not read some files (ERROR), the check
-                stopped, or verify could compare no file.
+  Data safe     Each verdict shows 'Compared N of M moved files'.
+                M counts all moved files before sampling. N counts their hash
+                comparisons, including mismatches.
+                YES: all compared hashes match. At least one comparison and
+                every required comparison must complete.
+                Deleted files and changed files with a trusted metadata
+                baseline do not block YES. The verdict does not cover them.
+                NO: a hash differs without recorded metadata change. Code: 3.
+                UNKNOWN: a read error, stopped or sampled run, unsupported file
+                kind, missing hash, or no comparison. Code: 5, or 4 if stopped.
+                A changed hash without a trusted metadata baseline also gives
+                UNKNOWN. Old logs can lack this baseline (meta_key).
+                Excluded files do not prove the cause of a change or deletion.
                 n/a: a scan report. The scan did not move files.
   Faster        Only for files that were slow before. YES: 80% or more of
                 these files are not slow now. With fewer than 10 of these
@@ -345,7 +347,7 @@ Result (at the end)
                 NOT DECIDED: verify shows the numbers, but no YES or NO. This
                 occurs if less than 12 hours have gone by, or if fewer than
                 10 slow files do not have the same result. The conclusion is
-                then also NOT DECIDED. The exit code stays 0.
+                then also NOT DECIDED. This does not change the exit code.
   Time since refresh
                 The time since the refresh.
 
@@ -378,13 +380,23 @@ CSV columns (with --out)
   first_start_ms     The start of the first read (Unix time in ms).
   first_worst_*      The extent with the most time above the limit: its
                      start (Unix ms), its read time (ms) and its bytes.
-  status    MEASURED. MODIFIED: a program changed the file; not counted.
-            MISMATCH: the data changed, but no program changed the file.
+  status    MEASURED. MODIFIED: a hash differs with changed or unknown metadata.
+            MISMATCH: a hash differs without recorded metadata change.
             MISSING. SKIP_KIND: cannot measure. ERROR.
 
 Examples
   ssd-refresh verify --from C-scan-refresh.csv
   ssd-refresh verify --from C-scan.csv --sample 500
 
-Exit codes: 0 finished, 1 error, 3 data not safe (MISMATCH), 4 stopped early.
+Exit codes (CLI and scheduled Verify):
+  0 completed with Data safe YES, or a complete scan-report check (n/a).
+  1 error or cancelled.
+  2 needs administrator or root, or the platform is not supported.
+  3 data mismatch (MISMATCH).
+  4 stopped.
+  5 incomplete: the tool could not check all data or could not write
+    the summary log.
+
+Scheduled Verify runs without administrator rights. It cannot check files
+that need those rights. Run Verify manually with administrator rights.
 ";

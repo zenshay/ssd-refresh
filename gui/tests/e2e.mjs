@@ -158,6 +158,8 @@ try {
           return {
             logPath: "synthetic-refresh.verify.log",
             processedFiles: 1,
+            comparedFiles: 1,
+            movedFiles: 1,
             dataSafety: "YES",
             uncheckedFiles: 0,
             mismatchedFiles: 0,
@@ -349,18 +351,19 @@ try {
     ),
     [{ logPath: "synthetic-refresh.csv" }],
   );
-  // The notice shows one fact per line. The speed is on the first line.
+  // The notice shows the comparison count before the speed.
   const noticeLines = await page.$eval(
     "#notice-body",
     // biome-ignore lint/performance/useDomNodeTextContent: innerText shows the line breaks that CSS renders.
     (node) => node.innerText.split("\n"),
   );
-  assert.deepEqual(noticeLines.slice(0, 2), [
+  assert.deepEqual(noticeLines.slice(0, 3), [
+    "Compared 1 of 1 moved files.",
     "Read speed: 12 → 480 MB/s (40.0 times faster)",
     "Slow files: 1 → 0",
   ]);
-  assert.equal(noticeLines.length, 3);
-  assert.match(noticeLines[2], /^Next step: verify again after /);
+  assert.equal(noticeLines.length, 4);
+  assert.match(noticeLines[3], /^Next step: verify again after /);
   assert.equal(
     await page.$eval("#mode-chip", (node) => node.textContent),
     "Ready",

@@ -87,10 +87,18 @@ The app can be closed. You must be signed in. Windows waits for AC power and an 
 A check can continue when you return. Battery use stops it. Each check has a two-hour limit.
 Missed checks can run later. Two app operations cannot run at the same time for the same Windows user.
 If another operation holds the slot, the check fails. Run Verify manually after that operation ends.
+Scheduled Verify runs without administrator rights. It cannot check files that need those rights.
+Run Verify manually with administrator rights to check those files.
 
 Click **Read status** to see task times and exit codes. A finished task does not prove a data or speed result.
 Read the verify logs in **Folder** → `reports`. Start errors appear in `scheduled-verify-error.log` in the data folder.
-Code `0` means the process finished. Code `1` means an error. Code `3` means a data mismatch.
+Verify uses the same exit codes in the CLI and scheduled tasks:
+`0` = completed; `1` = error or cancelled; `2` = unsupported; `3` = data mismatch; `4` = stopped; `5` = incomplete.
+Code `2` means administrator or root rights are required, or the platform is not supported.
+Code `5` means verify could not check all data or could not write its summary log.
+Codes `0` through `4` did not change. Code `5` is new.
+For a refresh log, code `0` requires Data safe `YES`.
+A scan report has Data safe `n/a` and can return `0` when complete.
 Windows can also return its own task error codes.
 
 Each plan keeps a copy of the app in the data folder. Moving the main app does not change the plan.
@@ -442,7 +450,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | Status | Meaning |
 |---|---|
 | `OK` | Moved. The SHA-256 is the same before and after |
-| `CHANGED` | Moved. Another program wrote the file during the move, thus the SHA-256 is different. This is normal for files in use |
+| `CHANGED` | Moved. The SHA-256 differs, with a size or last-write time change, or a detected writer during the move |
 | `SKIP_FAST` | Not slow now. Not moved |
 | `SKIP_KIND` | The tool cannot move this kind of file (see `detail`) |
 | `SKIP_MISSING` | The file does not exist now |
@@ -457,7 +465,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `DRYRUN` | `--dry-run`: measured only |
 | `MOVE_FAILED` | A file system move failed. Check `detail`; this status alone does not prove data integrity |
 | `PARTIAL` | The run stopped during the move. `--resume` moves the file again |
-| `MISMATCH` | The SHA-256 changed without a detected writer or metadata change. The tool stops. Keep the files and log |
+| `MISMATCH` | The SHA-256 differs without evidence of a data write. The tool stops before the next file. Keep the files and log |
 | `CONTROL` | Control group (`--control-fraction`): slow, read only, not moved |
 | `ERROR` | The tool could not open or read the file (see `detail`) |
 | `VERIFY_FAILED` | The data check after a move failed or is incomplete. The run stops. Keep the files and log |
@@ -472,11 +480,13 @@ These checks do not hold a write lock. A writer can start after the last check.
 
 When the SHA-256 is different, the tool checks two things:
 
-- Did the size, the modification time, the change time or the USN (NTFS) of the file change?
+- Did the file size or last-write time change?
 - Did another program have the file open for writing? On Windows, the tool opens the file for a very short time and does not let other programs write. On Linux, the tool tries a read lease (`F_SETLEASE`).
 If one of the two is true, the status is `CHANGED`.
+An attribute or access control change alone does not explain a different SHA-256.
+Change time and USN changes alone do not explain it either.
 If neither is true and the writer check is available, the status is `MISMATCH`.
-If the hash differs and the writer check is not available, the status is `VERIFY_FAILED`.
+Without either sign of a data write, an unavailable writer check produces `VERIFY_FAILED`.
 
 Before the baseline read, the tool writes cached file data to disk (flush).
 This prevents the direct read from seeing older disk data after another program closes a cached write.
@@ -523,7 +533,7 @@ Summary
 ```
 
 - "Before" is the read before the move (or the scan result for a scan report). "Now" is this run.
-- If a program changed a file, the file has new data. `verify` does not count it (`MODIFIED`).
+- If metadata changed or a hash difference lacks a trusted baseline, `verify` excludes the file (`MODIFIED`).
 - `--sample N` reads a maximum of N files per group. The same path always gets the same choice. Thus the next run reads the same files.
 - `verify --from C-scan.csv` checks the slow files of a scan report. It shows if one read made them fast.
 
@@ -533,9 +543,8 @@ After the table, `verify` answers the three questions (the numbers are only an e
 
 ```
 Result
-  Data safe:          YES  597 of 597 files that no program changed have the same SHA-256 as at
-                           refresh. 3 files were changed by other programs after the refresh.
-                           This is normal.
+  Data safe:          YES  Compared 597 of 600 moved files. 597 files have the same SHA-256 as at refresh.
+                           3 files have different metadata. The verdict does not cover these files.
   Speed (rewritten):  25 MB/s before, 414 MB/s now (16.5 times faster).
   Slow (rewritten):   340 before, 3 now.
   Faster (rewritten): YES  80% or more of the slow files are not slow now.
@@ -549,7 +558,7 @@ Result
 
 | Line | Content |
 |---|---|
-| Data safe | `YES`: the files that no program changed have the same SHA-256 as at the refresh. `NO`: some files have a different SHA-256, but their size, times and USN did not change. Thus no program changed them. `verify` shows these files. The exit code is 3. `UNKNOWN`: `verify` could not read some files, the check stopped, or `verify` could compare no file. Files that `verify` cannot compare do not stop `YES` (see below) |
+| Data safe | `YES`: all compared hashes match, and the coverage rule below passes. `NO`: a hash differs without recorded metadata change. Exit code: `3`. `UNKNOWN`: the check lacks the evidence required for `YES`. Exit code: `5`, or `4` if stopped. Each verdict shows `Compared N of M moved files` |
 | Speed | The read speed of the files that were slow before the refresh, before and now |
 | Slow files | The number of these files that were slow before, and that are slow now |
 | Faster | `YES`: 80% or more of these files are not slow now. With fewer than 10 of these files, all must have the same result: all not slow is `YES`, all slow is `NO`. See [NOT DECIDED](#not-decided) |
@@ -563,11 +572,14 @@ Result
 
 `verify` reads all slow files of the refresh log, not a sample. Thus a drive with 3 slow files can get `YES` or `NO`. One file with a wrong measurement can change this result. Run `verify` again after 7 and 30 days to compare.
 
-If a Faster line is `NOT DECIDED`, the conclusion is also `NOT DECIDED`. `NOT DECIDED` is not an error: the exit code is 0. Data safe does not change: `verify` always checks it.
+If a Faster line is `NOT DECIDED`, the conclusion is also `NOT DECIDED`.
+This speed result does not change the exit code. The data verdict and summary log still control that code.
 
-- How `verify` knows that no program changed a file: before the read of the SHA-256, the refresh log writes the size, the times and the USN of each file (column `meta_key`). If the SHA-256 is different now, but these values are the same, no program wrote the file. `verify` does not use this test for files that another program had open for writing during the refresh, or for files with status `CHANGED`. For these files, a different SHA-256 is a normal change.
-- Files that `verify` cannot compare: files that a program wrote during the refresh, deleted files, and files that are now compressed, sparse or of another kind. `verify` counts them under Data safe and shows up to 5 examples. The CSV from `--out` has all of them. These files do not stop `YES`, and they are not an error of the refresh: right after each move, the refresh read the file again and compared the SHA-256. Usually they are temporary files, logs or caches that programs write often.
-- Logs from older versions have no `meta_key`. If a file is different in such a log, `verify` cannot compare it. `verify` counts it with the other files that it cannot compare.
+- Coverage: `M` counts all moved files in the source log before sampling. `N` counts moved files with a hash comparison, including mismatches.
+- `YES` needs at least one hash comparison and every required comparison. Read errors, a stopped or sampled run, unsupported file kinds, and missing hashes produce `UNKNOWN`.
+- Deleted files do not block `YES`. Changed files do not block `YES` when a trusted metadata baseline identifies the change. The verdict does not cover these files.
+- Without a trusted metadata baseline, a changed hash produces `UNKNOWN`. Old logs can lack that baseline (`meta_key`).
+- Verify lists files it cannot compare and shows up to 5 examples. The `--out` CSV has all results. These records do not prove what caused a change or deletion.
 - The speed is all bytes divided by all read time, before and now. It uses only the files that were slow before. `verify` shows it as `N.N times faster` or `N.N times slower`.
 - With a control group, there is one Faster line for each group, and a conclusion. Examples: "Rewriting made the files 3.1 times faster than reading only", "Reading only was enough on this drive".
 - For a scan report, Data safe is `n/a`. The scan did not move files.

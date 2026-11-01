@@ -78,11 +78,15 @@ export type DataSafety = "YES" | "NO" | "UNKNOWN" | "NOT_CHECKED";
 export interface VerifyOutcome {
   logPath: string;
   processedFiles: number;
+  /** Moved files with a completed hash comparison. */
+  comparedFiles: number;
+  /** All moved files in the refresh log, before sampling. */
+  movedFiles: number;
   /** This is separate from completion and speed. */
   dataSafety: DataSafety;
   /** Files that verify could not compare. dataSafety does not cover them. */
   uncheckedFiles: number;
-  /** Files whose data changed without a writer. Above 0 only when dataSafety is NO. */
+  /** Files with changed data and no recorded data write. Above 0 only when dataSafety is NO. */
   mismatchedFiles: number;
   /** The Faster result of the rewritten files. Empty when no file was measured. */
   faster: Verdict;
@@ -118,6 +122,10 @@ export function validateVerifyOutcome(value: unknown): VerifyOutcome {
     typeof r.logPath !== "string" ||
     r.logPath.length === 0 ||
     !count(r.processedFiles) ||
+    !count(r.comparedFiles) ||
+    !count(r.movedFiles) ||
+    r.comparedFiles > r.movedFiles ||
+    r.comparedFiles > r.processedFiles ||
     !count(r.uncheckedFiles) ||
     r.uncheckedFiles > r.processedFiles ||
     !count(r.mismatchedFiles) ||

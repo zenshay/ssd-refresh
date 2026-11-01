@@ -87,10 +87,18 @@ app 裡的 `Folder` 按鈕會開啟這個資料夾。
 使用者回來後，複查可以繼續。改用電池時會停止。每次最多執行 2 小時。
 錯過的工作可以延後執行。同一個 Windows 使用者一次只能執行一項操作。
 若其他操作占用執行位置，排程會失敗。請等該操作結束，再手動執行 Verify。
+排程 Verify 沒有系統管理員權限，無法檢查需要此權限的檔案。
+請以系統管理員權限手動執行 Verify，檢查這些檔案。
 
 按下 **Read status** 查看預定時間與執行代碼。工作完成不代表資料或速度檢查通過。
 從 **Folder** → `reports` 讀取 verify log。啟動錯誤記在資料夾根目錄的 `scheduled-verify-error.log`。
-代碼 `0` 表示程序完成，`1` 表示錯誤，`3` 表示資料不符。Windows 也可能回傳自己的錯誤代碼。
+CLI 與排程 Verify 使用相同結束代碼：`0` 表示完成，`1` 表示錯誤或取消，`2` 表示不支援，`3` 表示資料不符，`4` 表示中途停止，`5` 表示檢查不完整。
+代碼 `2` 表示需要管理員或 root 權限，或平台不支援。
+代碼 `5` 表示 Verify 無法檢查全部資料，或無法寫入摘要記錄。
+代碼 `0` 至 `4` 維持不變。代碼 `5` 是新增項目。
+來源是刷新記錄時，代碼 `0` 要求 Data safe 為 `YES`。
+完整檢查掃描報告時，Data safe 為 `n/a`，結束代碼可以是 `0`。
+Windows 也可能回傳自己的工作錯誤代碼。
 
 每份計畫會在資料夾保留一份程式副本。主程式搬家不影響排程。
 更新主程式不會更新副本。更新後請移除並重新建立計畫。
@@ -437,7 +445,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | 狀態 | 意思 |
 |---|---|
 | `OK` | 已搬移，前後雜湊一致 |
-| `CHANGED` | 已搬移，但搬移期間有其他程式寫入這個檔案，所以雜湊不同。使用中的檔案屬正常 |
+| `CHANGED` | 已搬移且雜湊不同。檔案大小或最後寫入時間改變，或搬移期間偵測到寫入者 |
 | `SKIP_FAST` | 重新測量後已經不慢，沒有搬 |
 | `SKIP_KIND` | 不能搬的種類（見 `detail`） |
 | `SKIP_MISSING` | 檔案已經不存在 |
@@ -452,7 +460,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `DRYRUN` | `--dry-run`：只測量 |
 | `MOVE_FAILED` | 檔案系統搬移失敗。請看 `detail`；這個狀態本身不能證明資料完整 |
 | `PARTIAL` | 中途停止；`--resume` 會重搬 |
-| `MISMATCH` | 雜湊變了，而且沒有偵測到其他寫入者。程式立刻停止。這不應該發生，請回報 |
+| `MISMATCH` | 雜湊不同，但沒有資料寫入的證據。程式在下一個檔案開始前停止。請保留檔案與記錄 |
 | `CONTROL` | 對照組（`--control-fraction`）：仍然慢，只讀取，刻意不搬 |
 | `ERROR` | 開不了或讀不了（見 `detail`） |
 | `VERIFY_FAILED` | 搬移後無法完成資料檢查。程式停止，請保留檔案與記錄 |
@@ -467,11 +475,12 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 雜湊不同時，程式檢查兩件事：
 
-- 檔案的大小、修改時間、變更時間、USN（NTFS）有沒有變。
+- 檔案大小或最後寫入時間有沒有變。
 - 有沒有其他程式開著寫入。Windows 會用「不允許別人寫入」的共用模式開檔一瞬間測試；Linux 用讀取租約（`F_SETLEASE`）測試。
 任一項成立就記成 `CHANGED`。
+只有屬性、存取權限、變更時間或 USN 改變，不能解釋雜湊不同。
 兩項都不成立，而且寫入者檢查有結果時，記成 `MISMATCH`。
-雜湊不同且無法判定寫入者時，記成 `VERIFY_FAILED`。
+沒有上述資料寫入證據，而且無法判定寫入者時，記成 `VERIFY_FAILED`。
 
 基準讀取前，工具會先把作業系統快取中的檔案資料寫回磁碟（flush）。
 這能避免其他程式透過快取寫入並關檔後，直接讀取仍取得磁碟上的舊資料。
@@ -514,7 +523,7 @@ Summary
 ```
 
 - 「before」是搬移前那次讀取（掃描報告則是掃描結果）。「now」是這次重讀。
-- 被程式改過的檔案存的是新資料。`verify` 不把它列入比較（`MODIFIED`）。
+- 中繼資料有變，或雜湊不同卻缺少可信基準時，`verify` 不把檔案列入比較（`MODIFIED`）。
 - `--sample N`：每組最多讀 N 個檔案。抽樣由路徑決定，之後重跑會讀同一批。
 - `verify --from C-scan.csv`：檢查掃描報告裡的慢檔，看只讀一遍是否已經讓它們恢復。
 
@@ -524,9 +533,8 @@ Summary
 
 ```
 Result
-  Data safe:          YES  597 of 597 files that no program changed have the same SHA-256 as at
-                           refresh. 3 files were changed by other programs after the refresh.
-                           This is normal.
+  Data safe:          YES  Compared 597 of 600 moved files. 597 files have the same SHA-256 as at refresh.
+                           3 files have different metadata. The verdict does not cover these files.
   Speed (rewritten):  25 MB/s before, 414 MB/s now (16.5 times faster).
   Slow (rewritten):   340 before, 3 now.
   Faster (rewritten): YES  80% or more of the slow files are not slow now.
@@ -540,7 +548,7 @@ Result
 
 | 項目 | 內容 |
 |---|---|
-| Data safe（資料安全） | `YES`：沒被程式改過的檔案，SHA-256 都和刷新時一樣。`NO`：有檔案的 SHA-256 不同，但大小、時間戳記和 USN 都沒變，也就是沒有程式改過它。`verify` 會列出這些檔案，結束代碼是 3。`UNKNOWN`：有檔案讀不到、檢查中途停止，或沒有任何檔案能比對。無法比對的檔案不會讓結果變成 `UNKNOWN`（見下方） |
+| Data safe（資料安全） | `YES`：已比對的雜湊全部相同，且符合下方涵蓋範圍規則。`NO`：雜湊不同，但記錄的中繼資料未變，結束代碼是 `3`。`UNKNOWN`：證據不足以判定 `YES`，結束代碼是 `5`；中途停止時是 `4`。每個判定旁都顯示 `Compared N of M moved files`，表示 M 個已搬移檔案中比對了 N 個 |
 | Speed（速度） | 刷新前就慢的檔案，刷新前與現在的讀取速度 |
 | Slow files（慢檔案） | 這些檔案刷新前有幾個慢、現在有幾個慢 |
 | Faster（變快） | 其中 80% 以上現在不慢，才是 `YES`。這些檔案少於 10 個時，全部的結果要一致：全部不慢是 `YES`，全部仍慢是 `NO`。另見下方的 `NOT DECIDED` |
@@ -554,11 +562,14 @@ Result
 
 `verify` 讀取 refresh log 裡的全部慢檔案，不是抽樣。所以只有 3 個慢檔案的磁碟也能得到 `YES` 或 `NO`。一個量錯的檔案就可能改變這個結果，所以在第 7 天與第 30 天再執行一次 `verify` 來比對。
 
-任何一行 Faster 是 `NOT DECIDED` 時，結論也是 `NOT DECIDED`。`NOT DECIDED` 不算錯誤，結束代碼是 0。Data safe 不受影響，`verify` 一定會判斷。
+任何一行 Faster 是 `NOT DECIDED` 時，結論也是 `NOT DECIDED`。
+速度判定不影響結束代碼。資料判定與摘要記錄寫入結果仍決定結束代碼。
 
-- 怎麼知道「沒有程式改過」：刷新記錄在讀取 SHA-256 之前，會記下每個檔案的大小、時間戳記和 USN（`meta_key` 欄）。現在 SHA-256 不同、這些值卻都相同，就代表沒有程式寫過它。刷新時有其他程式開著寫入的檔案，以及狀態是 `CHANGED` 的檔案，不用這個方法判斷。這些檔案的 SHA-256 不同，一律算正常修改。
-- 無法比對的檔案：刷新時有程式正在寫入的檔案、已刪除的檔案，以及現在變成壓縮、疏鬆或其他類型的檔案。`verify` 會在 Data safe 底下列出數量和最多 5 個範例，`--out` 的 CSV 有完整清單。這些檔案不會擋下 `YES`，也不是刷新造成的錯誤：每個檔案搬移完，工具都馬上重讀一次並比對 SHA-256。這些通常是程式經常寫入的暫存檔、記錄檔或快取，不必處理。
-- 舊版的刷新記錄沒有 `meta_key`。這種記錄裡 SHA-256 不同的檔案，`verify` 無法比對，會和其他無法比對的檔案一起列出。
+- 涵蓋範圍：M 是來源記錄中全部已搬移檔案的數量，抽樣不會減少 M。N 是已比對雜湊的已搬移檔案數量，也計入雜湊不符。
+- `YES` 至少需要一次雜湊比對，而且所有必要比對都要完成。讀取錯誤、中途停止、抽樣、不支援的檔案類型或缺少雜湊，都會得到 `UNKNOWN`。
+- 已刪除的檔案不阻止 `YES`。有可信的中繼資料基準能辨識變更時，已修改的檔案也不阻止 `YES`。判定不涵蓋這些檔案。
+- 缺少可信的中繼資料基準時，雜湊不同會得到 `UNKNOWN`。舊記錄可能沒有此基準（`meta_key`）。
+- Verify 會列出無法比對的檔案，並顯示最多 5 個範例。`--out` 的 CSV 有全部結果。這些記錄不能證明修改或刪除的原因。
 - 速度＝總位元組數÷總讀取時間，比較刷新前和現在。只算刷新前就慢的檔案。結果顯示成 `N.N times faster` 或 `N.N times slower`。
 - 有對照組時，每組各有一行 Faster，最後加一句結論。例如「Rewriting made the files 3.1 times faster than reading only」，或「Reading only was enough on this drive」。
 - 來源是掃描報告時，Data safe 顯示 `n/a`。掃描沒有搬移檔案。

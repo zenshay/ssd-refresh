@@ -6,10 +6,25 @@ use std::collections::BTreeMap;
 pub enum RunStatus {
     #[default]
     Completed,
+    Incomplete,
     InvalidInput,
     Unsupported,
     DataMismatch,
     Stopped,
+}
+
+impl RunStatus {
+    /// Exit codes shared by the CLI and scheduled runs.
+    pub fn exit_code(self) -> i32 {
+        match self {
+            Self::Completed => 0,
+            Self::InvalidInput => 1,
+            Self::Unsupported => 2,
+            Self::DataMismatch => 3,
+            Self::Stopped => 4,
+            Self::Incomplete => 5,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -106,10 +121,14 @@ impl DataSafety {
 pub struct VerifyOutcome {
     pub status: RunStatus,
     pub data_safety: DataSafety,
-    /// Files that the run could not compare: changed while a program wrote them during the
-    /// refresh, deleted, or of another kind now. `data_safety` does not cover them.
+    /// Moved files with a hash comparison in this run.
+    pub compared_files: usize,
+    /// All moved files in the source log, before sampling.
+    pub moved_files: usize,
+    /// Files excluded from comparison because metadata is unknown, data is missing, or the kind changed.
+    /// This also includes missing hashes. `data_safety` does not cover these files.
     pub unchecked_files: usize,
-    /// Files whose data changed without a writer. Above 0 only when `data_safety` is NO.
+    /// Files with changed data and no recorded data write. Above 0 only when `data_safety` is NO.
     pub mismatched_files: usize,
     pub processed_files: usize,
     pub summary: String,

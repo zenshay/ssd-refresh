@@ -131,7 +131,6 @@ fn valid_stem(stem: &str) -> bool {
 pub fn headless(args: &[String], data: &Path) -> i32 {
     use ssd_refresh::{
         control::Control,
-        outcome::RunStatus,
         verify::{self, VerifyOptions},
     };
     let run = || -> Result<i32, String> {
@@ -163,11 +162,7 @@ pub fn headless(args: &[String], data: &Path) -> i32 {
             read: Default::default(),
         };
         let result = verify::run(&opts, Control::new(None)).map_err(|e| e.to_string())?;
-        match result.status {
-            RunStatus::Completed => Ok(0),
-            RunStatus::DataMismatch => Ok(3),
-            status => Err(format!("Verify did not finish: {status:?}")),
-        }
+        Ok(result.status.exit_code())
     };
     match run() {
         Ok(code) => code,
@@ -239,7 +234,7 @@ mod tests {
         let lock = process_lock(&dir).unwrap();
         assert_eq!(headless(&args, &dir), 1);
         drop(lock);
-        assert_eq!(headless(&args, &dir), 0);
+        assert_eq!(headless(&args, &dir), 5);
         let outside = dir.join("scan-x-123.refresh.csv");
         std::fs::copy(&source, &outside).unwrap();
         assert_eq!(
@@ -251,6 +246,7 @@ mod tests {
         );
         for path in [
             source,
+            dir.join("reports/scan-x-123.refresh.verify.log"),
             outside,
             dir.join("operation.lock"),
             dir.join("scheduled-verify-error.log"),

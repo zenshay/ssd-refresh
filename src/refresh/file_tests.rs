@@ -46,6 +46,12 @@ enum Fault {
     PartialMove,
     Mismatch,
     WriterDuringMove,
+    MtimeDuringMove,
+    SizeDuringMove,
+    CtimeDuringMove,
+    SequenceDuringMove,
+    UnknownWriterCtimeDuringMove,
+    UnknownWriterSequenceDuringMove,
     PostShort,
     PostPartial,
     PostMissingHash,
@@ -177,9 +183,17 @@ impl FileOps for Mock {
         }
         if (self.fault == Fault::FlushChange && self.flushes > 0)
             || (self.fault == Fault::ReadChange && self.reads > 0)
-            || (self.fault == Fault::WriterDuringMove && self.moves > 0)
+            || (self.fault == Fault::MtimeDuringMove && self.moves > 0)
         {
             meta.mtime += 1;
+        }
+        if self.moves > 0 {
+            match self.fault {
+                Fault::SizeDuringMove => meta.size += 1,
+                Fault::CtimeDuringMove | Fault::UnknownWriterCtimeDuringMove => meta.ctime += 1,
+                Fault::SequenceDuringMove | Fault::UnknownWriterSequenceDuringMove => meta.seq += 1,
+                _ => {}
+            }
         }
         Ok(meta)
     }
@@ -203,7 +217,12 @@ impl FileOps for Mock {
         match (self.fault, self.writer_checks) {
             (Fault::Busy, 1) | (Fault::LateBusy, 2) | (Fault::WriterDuringMove, 3) => Some(true),
             (Fault::WritersUnknown, 1) | (Fault::LateUnknown, 2) => None,
-            (Fault::UnknownAfterMove, 3) => None,
+            (
+                Fault::UnknownAfterMove
+                | Fault::UnknownWriterCtimeDuringMove
+                | Fault::UnknownWriterSequenceDuringMove,
+                3,
+            ) => None,
             _ => Some(false),
         }
     }
@@ -214,7 +233,7 @@ impl FileOps for Mock {
         }
         Ok(())
     }
-    fn read(&mut self, _: &Handle, _: &Meta, _: &Layout) -> io::Result<(ReadResult, bool)> {
+    fn read(&mut self, _: &Handle, meta: &Meta, _: &Layout) -> io::Result<(ReadResult, bool)> {
         self.reads += 1;
         if self.fault == Fault::ReadError {
             return Err(io::Error::other("Synthetic read error"));
@@ -231,7 +250,15 @@ impl FileOps for Mock {
         let changed_hash = post
             && matches!(
                 self.fault,
-                Fault::Mismatch | Fault::WriterDuringMove | Fault::UnknownAfterMove
+                Fault::Mismatch
+                    | Fault::WriterDuringMove
+                    | Fault::MtimeDuringMove
+                    | Fault::SizeDuringMove
+                    | Fault::CtimeDuringMove
+                    | Fault::SequenceDuringMove
+                    | Fault::UnknownWriterCtimeDuringMove
+                    | Fault::UnknownWriterSequenceDuringMove
+                    | Fault::UnknownAfterMove
             );
         let result = ReadResult {
             file_bytes: if self.fault == Fault::PartialBaseline
@@ -239,7 +266,7 @@ impl FileOps for Mock {
             {
                 4096
             } else {
-                8193
+                meta.size
             },
             disk_bytes: if self.sparse { 4096 } else { 8193 },
             disk_secs: 0.1,
@@ -426,6 +453,28 @@ fn outcomes_after_a_move_keep_failures_and_data_changes_separate() {
 }
 
 #[test]
+fn only_data_write_evidence_explains_a_hash_difference() {
+    for (fault, expected) in [
+        (Fault::WriterDuringMove, "CHANGED"),
+        (Fault::MtimeDuringMove, "CHANGED"),
+        (Fault::SizeDuringMove, "CHANGED"),
+        (Fault::CtimeDuringMove, "MISMATCH"),
+        (Fault::SequenceDuringMove, "MISMATCH"),
+        (Fault::UnknownWriterCtimeDuringMove, "VERIFY_FAILED"),
+        (Fault::UnknownWriterSequenceDuringMove, "VERIFY_FAILED"),
+    ] {
+        let mut mock = Mock::new(fault, Control::new(None));
+        let row = execute(&mut mock, &options());
+        assert_eq!(row.status, expected, "{fault:?}: {}", row.detail);
+        assert_ne!(row.sha_before, row.sha_after);
+        assert_eq!(mock.moves, 1);
+        if expected == "VERIFY_FAILED" {
+            assert!(row.meta_key.is_empty());
+        }
+    }
+}
+
+#[test]
 fn fast_control_and_dry_run_do_not_call_move() {
     for expected in ["SKIP_FAST", "CONTROL", "DRYRUN"] {
         let mut mock = Mock::new(Fault::None, Control::new(None));
@@ -455,6 +504,8 @@ fn mismatch_or_failed_post_check_stops_before_the_second_file() {
     use crate::progress::{Phase, Progress};
     for (fault, expected) in [
         (Fault::Mismatch, RunStatus::DataMismatch),
+        (Fault::CtimeDuringMove, RunStatus::DataMismatch),
+        (Fault::SequenceDuringMove, RunStatus::DataMismatch),
         (Fault::PostReadError, RunStatus::Stopped),
     ] {
         let ctl = Control::new(None);

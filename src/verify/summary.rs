@@ -65,9 +65,10 @@ pub(super) struct Summary {
     /// The text that the tool shows and adds to the log
     pub(super) text: String,
     pub(super) data_safety: DataSafety,
+    pub(super) compared: usize,
     /// Files that the run could not compare (see `Unchecked`). YES does not cover them.
     pub(super) unchecked: usize,
-    /// Files whose data changed without a writer (MISMATCH). Above 0 means Data safe: NO.
+    /// Hash differences without recorded metadata change. Above 0 means Data safe: NO.
     pub(super) mismatched: usize,
     /// The result of the first Faster line: the rewritten group, or the only group.
     pub(super) faster: &'static str,
@@ -115,13 +116,14 @@ pub(super) struct SummaryInput<'a> {
     pub(super) age: u64,
     /// `--sample` removed files. Then `items` does not have all slow files.
     pub(super) sampled: bool,
+    pub(super) moved_files: usize,
 }
 
 /// The files that a verify run cannot compare with the refresh log, by reason.
 #[derive(Default)]
 struct Unchecked<'a> {
-    /// Changed, and a program wrote the file during the refresh (no usable metadata).
-    writing: usize,
+    /// Changed, and the log has no trusted metadata baseline.
+    no_meta: usize,
     /// Changed, and the log is from an older version without metadata.
     old: usize,
     /// Deleted or moved after the refresh.
@@ -142,7 +144,7 @@ impl<'a> Unchecked<'a> {
             let it = &s.items[*i];
             let counter = match r.status {
                 "MODIFIED" if !s.has_meta => &mut u.old,
-                "MODIFIED" if it.meta_key.is_none() => &mut u.writing,
+                "MODIFIED" if it.meta_key.is_none() => &mut u.no_meta,
                 "MISSING" => &mut u.missing,
                 "SKIP_KIND" => &mut u.kind,
                 "MEASURED" if it.sha.is_empty() => &mut u.no_hash,
@@ -157,10 +159,10 @@ impl<'a> Unchecked<'a> {
     }
 
     fn total(&self) -> usize {
-        self.writing + self.old + self.missing + self.kind + self.no_hash
+        self.no_meta + self.old + self.missing + self.kind + self.no_hash
     }
 
-    /// The note below the Data safe line. It tells the user why these files are not a problem.
+    /// The note below the Data safe line lists files without a hash comparison.
     fn text(&self) -> String {
         let total = self.total();
         if total == 0 {
@@ -168,11 +170,10 @@ impl<'a> Unchecked<'a> {
         }
         let n = |c: usize| c as u64;
         let mut why = Vec::new();
-        if self.writing > 0 {
+        if self.no_meta > 0 {
             why.push(format!(
-                "{} changed, and a program was writing {} during the refresh",
-                count_of(n(self.writing), "file"),
-                agree(n(self.writing), "it", "them")
+                "{} changed, and the log has no trusted metadata for comparison",
+                count_of(n(self.no_meta), "file")
             ));
         }
         if self.old > 0 {
@@ -206,7 +207,7 @@ impl<'a> Unchecked<'a> {
             27,
             27,
             &format!(
-                "The tool could not compare {}: {}. The refresh did not cause this: right after each move, the tool read the file again and checked it. Usually these are temporary files, logs or caches that programs write often. You do not need to do anything. {}:",
+                "The tool could not compare {}: {}. The verdict does not cover these files. {}:",
                 count_of(n(total), "file"),
                 why.join("; "),
                 if total == 1 { "The file" } else { "Examples" }
@@ -266,7 +267,7 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         count(g, "MODIFIED").to_string()
     });
     if is_log {
-        add("Changed, no program", &|g| count(g, "MISMATCH").to_string());
+        add("Hash mismatch", &|g| count(g, "MISMATCH").to_string());
     }
     add("Not found", &|g| count(g, "MISSING").to_string());
     add("Errors", &|g| count(g, "ERROR").to_string());
@@ -317,15 +318,23 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         .filter(|(i, r)| r.status == "MEASURED" && !items[*i].sha.is_empty())
         .count();
     let modified = all("MODIFIED");
-    // Files that this run cannot compare. YES does not cover them, but they do not block YES:
-    // the refresh read each moved file again right after the move, so the move did not change them.
+    let compared = results
+        .iter()
+        .filter(|(i, r)| {
+            items[*i].group == Group::Rewritten
+                && !items[*i].sha.is_empty()
+                && matches!(r.status, "MEASURED" | "MISMATCH")
+        })
+        .count();
+    let coverage = format!("Compared {compared} of {} moved files.", s.moved_files);
+    // Missing files and files with changed, known metadata remain outside the verdict.
     let unchecked = Unchecked::find(s);
-    let changed_note = if modified > unchecked.writing + unchecked.old {
-        let normal = (modified - unchecked.writing - unchecked.old) as u64;
+    let changed_note = if modified > unchecked.no_meta + unchecked.old {
+        let normal = (modified - unchecked.no_meta - unchecked.old) as u64;
         format!(
-            " {} {} changed by other programs after the refresh. This is normal.",
+            " {} {} different metadata. The verdict does not cover these files.",
             count_of(normal, "file"),
-            agree(normal, "was", "were")
+            agree(normal, "has", "have")
         )
     } else {
         String::new()
@@ -336,7 +345,12 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         DataSafety::NotChecked
     } else if !bad.is_empty() {
         DataSafety::No
-    } else if errors > 0 || stopped || matched == 0 {
+    } else if errors > 0
+        || stopped
+        || matched == 0
+        || s.sampled
+        || unchecked.kind + unchecked.no_hash + unchecked.old + unchecked.no_meta > 0
+    {
         DataSafety::Unknown
     } else {
         DataSafety::Yes
@@ -350,17 +364,16 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         t += &result_line(
             "Data safe:",
             "n/a",
-            "This is a scan report. The scan did not move files.",
+            &format!("{coverage} This is a scan report. The scan did not move files."),
         );
     } else if !bad.is_empty() {
         t += &result_line(
             "Data safe:",
             data_safety.as_str(),
             &format!(
-                "{} {} a different SHA-256, but no program changed {}. Keep the logs. Report this problem. {}:",
+                "{coverage} {} {} a different SHA-256 without a recorded data write. Keep the logs. Report this problem. {}:",
                 count_of(bad.len() as u64, "file"),
                 agree(bad.len() as u64, "has", "have"),
-                agree(bad.len() as u64, "it", "them"),
                 agree(bad.len() as u64, "The file", "The files")
             ),
         );
@@ -383,13 +396,13 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         } else if stopped {
             "The check stopped before it read all files. Run verify again.".to_string()
         } else {
-            "No file had data that the tool could compare.".to_string()
+            "The tool could not compare all required files.".to_string()
         };
         t += &result_line(
             "Data safe:",
             data_safety.as_str(),
             &format!(
-                "{why} {} {} the same SHA-256 as at refresh.{changed_note}{sample_note}",
+                "{coverage} {why} {} {} the same SHA-256 as at refresh.{changed_note}{sample_note}",
                 count_of(matched as u64, "file"),
                 agree(matched as u64, "has", "have")
             ),
@@ -399,7 +412,7 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
             "Data safe:",
             data_safety.as_str(),
             &format!(
-                "{matched} of {} that no program changed {} the same SHA-256 as at refresh.{changed_note}{sample_note}",
+                "{coverage} {} {} the same SHA-256 as at refresh.{changed_note}{sample_note}",
                 count_of(matched as u64, "file"),
                 agree(matched as u64, "has", "have")
             ),
@@ -599,6 +612,7 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
     Summary {
         text: t,
         data_safety,
+        compared,
         // A scan report moved no file, so the note about the refresh does not apply.
         unchecked: if is_log { unchecked.total() } else { 0 },
         mismatched: if is_log { bad.len() } else { 0 },
@@ -644,6 +658,10 @@ mod tests {
             has_meta: true,
             age: 21 * 86400,
             sampled: false,
+            moved_files: items
+                .iter()
+                .filter(|it| it.group == Group::Rewritten)
+                .count(),
         })
     }
 
@@ -655,8 +673,53 @@ mod tests {
     }
 
     #[test]
-    fn files_that_cannot_be_compared_do_not_block_yes() {
-        // a: same SHA-256. b: changed, a program wrote it during the refresh. c: deleted.
+    fn coverage_rule_checks_each_exclusion_and_keeps_the_source_total() {
+        for (status_name, baseline, hash, expected) in [
+            ("MISSING", true, true, DataSafety::Yes),
+            ("MODIFIED", true, true, DataSafety::Yes),
+            ("MODIFIED", false, true, DataSafety::Unknown),
+            ("SKIP_KIND", true, true, DataSafety::Unknown),
+            ("MEASURED", true, false, DataSafety::Unknown),
+            ("ERROR", true, true, DataSafety::Unknown),
+        ] {
+            let mut items = vec![
+                item("same", Group::Rewritten, 10.0, true),
+                item("other", Group::Rewritten, 10.0, true),
+            ];
+            if !baseline {
+                items[1].meta_key = None;
+            }
+            if !hash {
+                items[1].sha.clear();
+            }
+            let results = vec![(0, measured(false, 400.0)), (1, status(status_name))];
+            let result = summary(&items, &results);
+            assert_eq!(result.data_safety, expected, "{status_name}");
+            assert_eq!(result.compared, 1);
+            assert!(result.text.contains("Compared 1 of 2 moved files"));
+        }
+        let items = vec![
+            item("moved", Group::Rewritten, 10.0, true),
+            item("control", Group::ReadOnly, 10.0, true),
+        ];
+        let results = vec![(0, measured(false, 400.0)), (1, measured(false, 400.0))];
+        let sampled = build_summary(&SummaryInput {
+            items: &items,
+            results: &results,
+            is_log: true,
+            has_meta: true,
+            age: 86400,
+            sampled: true,
+            moved_files: 20,
+        });
+        assert_eq!(sampled.data_safety, DataSafety::Unknown);
+        assert_eq!(sampled.compared, 1);
+        assert!(sampled.text.contains("Compared 1 of 20 moved files"));
+    }
+
+    #[test]
+    fn uncheckable_files_block_yes_and_remove_causal_claims() {
+        // a: same SHA-256. b: changed, no trusted metadata. c: deleted.
         // d: now compressed. e: the log has no SHA-256.
         let mut items: Vec<Item> = ["a", "b", "c", "d", "e"]
             .iter()
@@ -672,37 +735,34 @@ mod tests {
             (4, measured(false, 400.0)),
         ];
         let s = summary(&items, &results);
-        assert_eq!(s.data_safety, DataSafety::Yes, "{}", s.text);
+        assert_eq!(s.data_safety, DataSafety::Unknown, "{}", s.text);
         assert_eq!(s.unchecked, 4);
-        assert!(
-            s.text
-                .contains("Data safe:          YES  1 of 1 file that no program changed has"),
-            "{}",
-            s.text
-        );
+        assert!(s.text.contains("Compared 1 of 5 moved files"), "{}", s.text);
         for part in [
             "could not compare 4 files",
-            "1 file changed, and a program was writing it during the refresh",
+            "1 file changed, and the log has no trusted metadata for comparison",
             "1 file was deleted or moved",
             "1 file is now compressed, sparse or of another kind",
             "1 file has no SHA-256 in the log",
-            "The refresh did not cause this",
-            "You do not need to do anything",
         ] {
             let flat = s.text.split_whitespace().collect::<Vec<_>>().join(" ");
             assert!(flat.contains(part), "{part}\n{}", s.text);
         }
+        assert!(!s.text.contains("The refresh did not cause this"));
+        assert!(!s.text.contains("You do not need to do anything"));
+        assert!(!s.text.contains("a program was writing"));
+        assert!(!s.text.contains("Changed, no program"));
         assert!(!s.text.contains("changed by other programs"), "{}", s.text);
-        // A change of a file with metadata is a normal change, and it is not in the note.
+        // A changed file with known metadata is excluded from the verdict.
         items[1].meta_key = Some("known".into());
         let s = summary(&items, &results);
-        assert_eq!((s.data_safety, s.unchecked), (DataSafety::Yes, 3));
+        assert_eq!((s.data_safety, s.unchecked), (DataSafety::Unknown, 3));
         assert!(
             s.text
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" ")
-                .contains("1 file was changed by other programs"),
+                .contains("1 file has different metadata"),
             "{}",
             s.text
         );
@@ -718,6 +778,7 @@ mod tests {
             has_meta: false,
             age: 86400,
             sampled: false,
+            moved_files: 1,
         };
         // An older log without metadata: no file is proven, but the note still explains why.
         let changed = vec![(0, status("MODIFIED"))];
@@ -730,17 +791,21 @@ mod tests {
             old.text
         );
         assert!(old.text.contains("older version"), "{}", old.text);
-        assert!(
-            old.text.contains("The refresh did not cause this"),
-            "{}",
-            old.text
-        );
+        assert!(!old.text.contains("The refresh did not cause this"));
         // A read error, or a run that stopped before the last file.
         let error = vec![(0, status("ERROR"))];
         input.results = &error;
         let s = build_summary(&input);
         assert_eq!(s.data_safety, DataSafety::Unknown);
-        assert!(s.text.contains("status ERROR"), "{}", s.text);
+        assert!(
+            s.text
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .contains("status ERROR"),
+            "{}",
+            s.text
+        );
         input.results = &[];
         assert_eq!(build_summary(&input).data_safety, DataSafety::Unknown);
         input.is_log = false;
@@ -761,7 +826,7 @@ mod tests {
         input.has_meta = true;
         input.sampled = true;
         let s = build_summary(&input);
-        assert_eq!(s.data_safety, DataSafety::Yes);
+        assert_eq!(s.data_safety, DataSafety::Unknown);
         assert!(s.text.contains("--sample"), "{}", s.text);
         assert_eq!(DataSafety::Unknown.as_str(), "UNKNOWN");
     }
@@ -803,7 +868,7 @@ mod tests {
         assert_eq!(s.data_safety, DataSafety::Yes);
         assert!(
             s.text
-                .contains("Data safe:          YES  10 of 10 files that no program changed"),
+                .contains("Data safe:          YES  Compared 10 of 10 moved files"),
             "{}",
             s.text
         );
@@ -884,7 +949,7 @@ mod tests {
         assert_eq!(s.mismatched, 1);
         assert!(
             s.text
-                .contains("Data safe:          NO   1 file has a different SHA-256"),
+                .contains("Data safe:          NO   Compared 2 of 2 moved files"),
             "{}",
             s.text
         );
@@ -1003,6 +1068,7 @@ mod tests {
             has_meta: true,
             age: 21 * 86400,
             sampled: true,
+            moved_files: 3,
         });
         assert_eq!(s.faster, "NOT DECIDED", "{}", s.text);
         // One file is enough when it has a result: it is all the slow files.
@@ -1025,6 +1091,7 @@ mod tests {
             has_meta: true,
             age: 0,
             sampled: false,
+            moved_files: MIN_SLOW_FILES,
         });
         assert!(
             s.text
@@ -1067,6 +1134,7 @@ mod tests {
             has_meta: true,
             age: 0,
             sampled: false,
+            moved_files: 2,
         });
         assert_eq!(s.wait_secs, MIN_AGE_HOURS * 3600);
         assert!(s.text.contains("Verify again:"), "{}", s.text);

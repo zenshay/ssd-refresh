@@ -48,6 +48,8 @@ const messages = [
 const verify = (patch) => ({
   logPath: "G:\\synthetic-refresh.verify.log",
   processedFiles: 300,
+  comparedFiles: 300,
+  movedFiles: 300,
   dataSafety: "YES",
   uncheckedFiles: 0,
   mismatchedFiles: 0,

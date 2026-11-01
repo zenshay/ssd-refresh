@@ -77,6 +77,12 @@ function verifyNotice(
   cancelled: boolean,
 ): Notice {
   const drive = (root: string) => root.slice(0, 2);
+  const coverage = (outcome: VerifyOutcome) =>
+    `Compared ${fmtCount(outcome.comparedFiles)} of ${fmtCount(outcome.movedFiles)} moved files.`;
+  const coverageLines = results.map(
+    ({ root, outcome }) =>
+      `${results.length > 1 ? `${drive(root)}  ` : ""}${coverage(outcome)}`,
+  );
   const unsafe = results.filter((r) => r.outcome.dataSafety === "NO");
   if (unsafe.length > 0) {
     const changed = unsafe.reduce((n, r) => n + r.outcome.mismatchedFiles, 0);
@@ -84,7 +90,8 @@ function verifyNotice(
       kind: "error",
       title: `Data safe: NO on ${unsafe.map((r) => drive(r.root)).join(", ")}`,
       body: [
-        `Verify found ${countOf(changed, "file")} with changed data, but no program wrote to ${changed === 1 ? "it" : "them"}.`,
+        ...coverageLines,
+        `Verify found ${countOf(changed, "file")} with changed data without a recorded data write.`,
         "Do not delete the files or the logs. The verify log (Folder button) lists each file.",
         "Click Report to tell us. Attach the verify log.",
       ].join("\n"),
@@ -94,7 +101,10 @@ function verifyNotice(
     return {
       kind: "info",
       title: "Verify stopped",
-      body: "The log has the summary of the files read until the stop. Nothing changed on the drive(s).",
+      body: [
+        ...coverageLines,
+        "The log has the summary of the files read until the stop. Nothing changed on the drive(s).",
+      ].join("\n"),
     };
   }
   const verdicts = results.map((r) => r.outcome.faster);
@@ -118,7 +128,7 @@ function verifyNotice(
     : safety === "YES"
       ? "Data safe: YES on all drives"
       : `Data safe: ${safety}`;
-  // One short line per fact. The speed comes first: the user wants to see it.
+  // Show the comparison count beside the data verdict.
   const lines: string[] = [];
   if (safety !== "YES")
     lines.push(
@@ -127,6 +137,7 @@ function verifyNotice(
   for (const { root, outcome } of results) {
     const prefix = one ? "" : `${drive(root)}  `;
     if (!one) lines.push(`${prefix}Data safe: ${outcome.dataSafety}`);
+    lines.push(`${prefix}${coverage(outcome)}`);
     const sp = outcome.speed;
     if (!sp) {
       lines.push(`${prefix}No file was slow before.`);
@@ -138,13 +149,10 @@ function verifyNotice(
       `${prefix}Slow files: ${fmtCount(sp.slowBefore)} → ${fmtCount(sp.slowNow)}`,
     );
   }
-  // Data safe: NO returned above, so these files are not a data error.
   const unchecked = results.reduce((n, r) => n + r.outcome.uncheckedFiles, 0);
   if (unchecked > 0)
     lines.push(
-      `${countOf(unchecked, "file")} could not be compared. The refresh did not cause this. ` +
-        "Usually these are temporary files, logs or caches that programs write often. " +
-        "You do not need to do anything. The verify log (Folder button) shows examples.",
+      `${countOf(unchecked, "file")} could not be compared. The verify log (Folder button) lists the reasons.`,
     );
   // The README rule: YES needs 80% or more of the slow files to be fast now.
   if (verdicts.includes("NO"))
