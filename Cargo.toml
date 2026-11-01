@@ -29,8 +29,8 @@ ctrlc = "3"
 libc = "0.2"
 
 [profile.release]
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 16
 strip = true
 
 [profile.dev]

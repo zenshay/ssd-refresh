@@ -37,6 +37,25 @@ Windows can call the native ast-grep program from its npm platform package. The 
 Keep the two-lane limit. Measure full checks before you add more workers or new test tools.
 Do not treat a skipped check as a passed check.
 
+### Build modes
+
+Use different modes for different tasks. All modes use the same source and lock files.
+
+| Task | Command | Settings |
+|---|---|---|
+| Local bug fix | `cargo check --workspace --all-targets` | Development mode; reuse local incremental data |
+| Local tests | `cargo test --workspace --all-targets` | Test mode inherits development settings |
+| Full local or PR check | `node check.mjs` | All existing checks; no release build |
+| Release binary | `cargo build --release` | ThinLTO, 16 code generation units, stripped symbols |
+
+Generate GUI frontend assets before Cargo commands that include GUI targets.
+`git commit` and `git push` do not wait for remote checks.
+PR merge waits for required checks. Release builds start after a version tag passes checks.
+Do not use `--release` for each local edit. Use it when you need to test the release binary.
+Local and remote release commands share the release profile to reduce differences between tested and shipped code.
+The manual `release_builds` workflow input validates Windows x64 and ARM64 without creating a release.
+Normal PR runs skip that extra work. ARM64 cross-compilation does not test an ARM64 device.
+
 ### Contracts for shared work
 
 Before implementation, name the affected input checks, result guarantees, and failure behavior.

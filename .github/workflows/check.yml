@@ -2,6 +2,11 @@ name: Check
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      release_builds:
+        description: Validate optimized Windows builds without creating a release
+        type: boolean
+        default: false
   pull_request:
   # Refresh default-branch caches only when build inputs or workflows change.
   push:
@@ -22,6 +27,53 @@ concurrency:
   group: check-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  release-builds:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_builds
+    runs-on: windows-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: "1.99.0"
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          shared-key: windows-release-${{ matrix.target }}
+          cache-bin: false
+          save-if: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          package_json_file: gui/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 24
+      - name: Prepare frontend
+        run: |
+          pnpm --dir gui install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend install failed' }
+          pnpm --dir gui run build
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
+      - name: Build optimized GUI and CLI
+        run: cargo build --locked --release --target ${{ matrix.target }} -p ssd-refresh-gui -p ssd-refresh --bin ssd-refresh-gui --bin ssd-refresh
+      - name: Test optimized Windows x64 code
+        if: matrix.arch == 'x64'
+        run: cargo test --locked --release --workspace --all-targets --target ${{ matrix.target }}
+      - name: Check ARM64 test compilation
+        if: matrix.arch == 'arm64'
+        run: cargo check --locked --release --workspace --all-targets --target ${{ matrix.target }}
+
   check:
     strategy:
       fail-fast: false
