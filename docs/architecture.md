@@ -146,6 +146,8 @@ The workflow steps call `node scripts/release.mjs <command>`. No step needs Powe
 The Windows ZIP files come from a small writer in that script. It uses UTF-8 names and `/` separators.
 It has no ZIP64 support, so it stops when a file or an archive is 4 GiB or larger.
 The workflow creates a draft. A version with a suffix also marks the draft as a prerelease.
+The draft description starts with the matching version section from `CHANGELOG.md`.
+Build and check details follow the changes. Missing, duplicate, or empty version sections stop the draft job.
 Review its files and check results before you publish it.
 You can repeat a failed run while the release remains a draft.
 Use a new version tag after publication.

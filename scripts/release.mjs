@@ -320,9 +320,44 @@ export function expectedPackages(tag) {
   ];
 }
 
+// Get one version section. Do not publish a release without its changes.
+export function changelogForTag(text, tag) {
+  if (!tagPattern.test(tag)) throw new Error("Invalid release tag.");
+  const version = tag.slice(1);
+  const lines = text
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .split("\n");
+  const matches = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith("## ")) continue;
+    const name = lines[i].slice(3).trim().split(/\s/)[0];
+    if (name === version || name === tag) matches.push(i);
+  }
+  if (matches.length !== 1) {
+    throw new Error(`Expected one changelog section for ${tag}.`);
+  }
+  const start = matches[0];
+  let end = start + 1;
+  while (end < lines.length && !lines[end].startsWith("## ")) end++;
+  if (
+    !lines
+      .slice(start + 1, end)
+      .join("\n")
+      .trim()
+  ) {
+    throw new Error(`The changelog section for ${tag} is empty.`);
+  }
+  return lines.slice(start, end).join("\n").trim();
+}
+
 // Check the package list and write release-metadata.json, SHA256SUMS, and release-notes.txt.
 export function evidence(options) {
   const { env, cwd } = context(options);
+  const changes = changelogForTag(
+    readText(join(cwd, "CHANGELOG.md")),
+    env.RELEASE_TAG,
+  );
   const out = join(cwd, "dist-out");
   for (const license of ["LICENSE-MIT", "LICENSE-APACHE"]) {
     copyFileSync(join(cwd, license), join(out, license));
@@ -356,6 +391,10 @@ export function evidence(options) {
   writeText(
     join(cwd, "release-notes.txt"),
     `${[
+      changes,
+      "",
+      "## Build and checks",
+      "",
       `Commit: ${env.GITHUB_SHA}`,
       `Checks: ${run}`,
       "Hardware tests in this run: NO.",

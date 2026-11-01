@@ -16,6 +16,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import {
   cargoVersion,
+  changelogForTag,
   evidence,
   expectedPackages,
   guard,
@@ -318,9 +319,42 @@ for (const [name, message] of [
 }
 
 // Package evidence.
+expect("changelog keeps only the exact version and its subheadings", () => {
+  const section = "## 1.1.0 — 2026-11-01\n\n### Added\n\n- Scheduled Verify.";
+  assert.equal(
+    changelogForTag(
+      `# Changes\n\n${section}\n\n## 1.0.7\n\n- Old change.\n`,
+      "v1.1.0",
+    ),
+    section,
+  );
+  assert.equal(
+    changelogForTag("## 1.0.2\r\n\r\n- Change.\r\n", "v1.0.2"),
+    "## 1.0.2\n\n- Change.",
+  );
+  assert.equal(
+    changelogForTag("## v1.1.0-rc.1\n\n- Test.\n", "v1.1.0-rc.1"),
+    "## v1.1.0-rc.1\n\n- Test.",
+  );
+});
+for (const [name, text] of [
+  ["missing", "## 1.0.20\n\n- Other version."],
+  ["duplicate", "## 1.0.2\n\n- One.\n\n## 1.0.2\n\n- Two."],
+  ["empty", "## 1.0.2\n\n## 1.0.1\n\n- Old."],
+]) {
+  expect(
+    `changelog ${name} rejected`,
+    () => changelogForTag(text, "v1.0.2"),
+    name === "empty" ? "is empty" : "Expected one changelog section",
+  );
+}
 const packageNames = expectedPackages("v1.0.2");
 function packageFixture(name, omit, empty = false, extra = false) {
   const directory = fixture(name);
+  writeFileSync(
+    join(directory, "CHANGELOG.md"),
+    "# Changes\n\n## 1.0.2\n\n- Synthetic release change.\n\n## 1.0.1\n\n- Old change.\n",
+  );
   for (const license of ["LICENSE-MIT", "LICENSE-APACHE"]) {
     writeFileSync(join(directory, license), `Synthetic ${license}`);
   }
@@ -340,6 +374,18 @@ function packageFixture(name, omit, empty = false, extra = false) {
 const hash = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
 const good = packageFixture("packages");
+const missingNotes = packageFixture("missing-version-notes");
+writeFileSync(
+  join(missingNotes, "CHANGELOG.md"),
+  "## 9.0.0\n\n- Other version.\n",
+);
+expect(
+  "package evidence rejects missing version notes before it writes output",
+  () => evidence({ env: baseEnv, cwd: missingNotes }),
+  "Expected one changelog section",
+);
+assert.ok(!existsSync(join(missingNotes, "release-notes.txt")));
+assert.ok(!existsSync(join(missingNotes, "dist-out/release-metadata.json")));
 expect("package evidence", () => evidence({ env: baseEnv, cwd: good }));
 const metadata = JSON.parse(
   readFileSync(join(good, "dist-out/release-metadata.json"), "utf8"),
@@ -368,7 +414,9 @@ for (const line of sums) {
 }
 assert.ok(sums.at(-1).endsWith("  release-metadata.json"));
 const notes = readFileSync(join(good, "release-notes.txt"), "utf8");
-assert.ok(notes.startsWith(`Commit: ${sha}\n`));
+assert.ok(notes.startsWith("## 1.0.2\n\n- Synthetic release change.\n"));
+assert.ok(notes.includes(`\n## Build and checks\n\nCommit: ${sha}\n`));
+assert.ok(!notes.includes("Old change."));
 assert.ok(notes.includes("Hardware tests in this run: NO."));
 count += 1;
 console.log("PASS: commit and all checksums");
