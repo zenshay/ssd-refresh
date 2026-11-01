@@ -77,7 +77,6 @@ try {
         Cargo "rebuild-$i" (@('build','--locked','--offline','-p','ssd-refresh-gui','-p','ssd-refresh','--bin','ssd-refresh','--bin','ssd-refresh-gui','--example','compile_probe') + $profile)
     }
     [IO.File]::WriteAllBytes($common,$original)
-    [IO.File]::WriteAllBytes($cargoConfig,$originalConfig)
     if ($release) {
         $env:SSD_REFRESH_CONTRACT_OUTPUT = Join-Path $output 'release-contract.json'
         Cargo 'release-tests' @('test','--locked','--offline','--release','--workspace','--all-targets')
@@ -106,6 +105,7 @@ try {
     Write-Output "RESULT: NO $($result.error)"
 } finally {
     [IO.File]::WriteAllBytes($common,$original)
+    [IO.File]::WriteAllBytes($cargoConfig,$originalConfig)
     $json = $result | ConvertTo-Json -Depth 12 -Compress
     [IO.File]::WriteAllText((Join-Path $output 'result.json'),$json+"`n",[Text.UTF8Encoding]::new($false))
     Write-Output "RISK_RESULT: $json"
