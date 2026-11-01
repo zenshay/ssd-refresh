@@ -362,7 +362,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
             ctl.paragraph(
                 2,
                 &format!(
-                    "The scan reads each file again, one at a time, at {} I/O priority. No other read of this tool uses the disk at that time. The scan does this two times. Round 2 starts {} s or more after the start of round 1. Thus one short pause of the disk cannot change both rounds. If a read is slow, the scan reads the file again at once. For each extent, the scan uses the fastest of all reads, with the normal extra time of {} ms. A file is SLOW only if it is slow after this step. If round 1 finds no slow file, there is no round 2.",
+                    "The scan reads each file again, one at a time, at {} I/O priority. No other read of this tool uses the disk at that time. The scan does this two times. Round 2 starts {} s or more after the start of round 1. Thus one short pause of the disk cannot change both rounds. If a read is slow, the scan reads the file again at once. The scan keeps one whole read: fewer slow extents, then less total time above the limits. Each extent gets the normal extra time of {} ms. A file is SLOW only if it is slow after this step. If round 1 finds no slow file, there is no round 2.",
                     priority_words(o.read.measure_priority),
                     RECHECK_GAP.as_secs(),
                     o.read.allowance_ms
@@ -559,7 +559,7 @@ impl Row {
 }
 
 /// Step 3, round 3: wait, then read each slow file one more time. If the first read is slow,
-/// read it again and keep the faster time of each extent (one short pause must not decide).
+/// read it again and keep the better whole read (one short pause must not decide).
 /// The result goes to `after_wait_*`. It does not change `slow`. If the user stops the scan,
 /// round 3 ends. Files that round 3 did not read keep empty `after_wait_*` values.
 /// It returns true if the user stopped the scan in round 3.
@@ -664,21 +664,36 @@ fn read_after_wait(
     let data = sys::open_direct(&path)?;
     sys::set_read_priority(q, &data, o.read.measure_priority);
     let (res, _) = read_file_confirmed(q, &data, m.size, &l, true, false, &o.read, ctl)?;
+    res.complete_read(m.size)?;
     Ok(res)
 }
 
-fn fill_result(row: &mut Row, res: &ReadResult) {
+fn fill_result(row: &mut Row, res: &ReadResult) -> io::Result<()> {
+    if let Err(e) = res.complete_read(row.size) {
+        row.status = "ERROR".into();
+        row.error = e.to_string();
+        row.disk_bytes = 0;
+        row.read_ms = 0.0;
+        row.mbps = 0.0;
+        row.min_mbps = None;
+        row.slow = false;
+        row.slow_bytes = 0;
+        row.sha.clear();
+        row.confirmed = false;
+        return Err(e);
+    }
     row.disk_bytes = res.disk_bytes;
     row.read_ms = res.disk_secs * 1000.0;
     row.mbps = res.mbps();
     row.min_mbps = res.min_extent_mbps();
     row.slow = res.is_slow();
     row.slow_bytes = res.slow_bytes();
+    row.sha = res.sha256.map(|h| hex(&h)).unwrap_or_default();
+    Ok(())
 }
 
 /// Step 3: read a file on the check list again, at the measure priority. If this read is slow,
-/// read the file again at once (see `keep_faster_if_slow`). For each extent, keep the fastest
-/// time of all reads. Then decide again if the file is slow.
+/// read the file again at once (see `keep_faster_if_slow`). Keep one whole read.
 fn recheck(
     row: &mut Row,
     first: &mut ReadResult,
@@ -694,20 +709,20 @@ fn recheck(
         let l = sys::layout(&mf, &m, vol.block)?;
         let data = sys::open_direct(&path)?;
         sys::set_read_priority(q, &data, o.read.measure_priority);
-        read_file_confirmed(q, &data, m.size, &l, true, false, &o.read, ctl).map(|(r, _)| r)
+        let (res, _) = read_file_confirmed(q, &data, m.size, &l, true, false, &o.read, ctl)?;
+        row.size = m.size;
+        row.extents = l.on_disk().count();
+        row.kind = Kind::classify(&m, &l).name().into();
+        Ok(res)
     })();
     match r {
         Ok(second) => {
-            if first.extents.len() == second.extents.len() {
-                first.keep_faster(&second, &o.read);
-            } else {
-                *first = second; // the file changed after the first read: use the new layout
-            }
+            first.keep_faster(&second, &o.read);
             row.confirmed = true;
         }
         Err(e) => row.error = format!("the second read failed: {e}"),
     }
-    fill_result(row, first);
+    let _ = fill_result(row, first);
 }
 
 /// Step 2 for one file. If the file goes on the check list, it also gives the read result.
@@ -745,8 +760,7 @@ fn scan_one(
         let data = sys::open_direct(path)?;
         sys::set_read_priority(q, &data, o.read.io_priority);
         let res = read_file(q, &data, m.size, &l, true, o.hash, opts, ctl)?;
-        row.sha = res.sha256.map(|h| hex(&h)).unwrap_or_default();
-        fill_result(&mut row, &res);
+        fill_result(&mut row, &res)?;
         if res.is_slow() {
             check = Some(res);
         }
@@ -801,6 +815,41 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn incomplete_scan_reads_have_no_hash_or_measurement() {
+        for (short_read, file_bytes) in [(true, 8192), (false, 4096)] {
+            let mut row = Row {
+                size: 8192,
+                status: "OK".into(),
+                sha: "old hash".into(),
+                mbps: 100.0,
+                min_mbps: Some(100.0),
+                read_ms: 10.0,
+                confirmed: true,
+                ..Default::default()
+            };
+            let res = ReadResult {
+                file_bytes,
+                short_read,
+                disk_bytes: 8192,
+                disk_secs: 0.01,
+                sha256: Some([7; 32]),
+                ..Default::default()
+            };
+            assert_eq!(
+                fill_result(&mut row, &res).unwrap_err().kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+            assert_eq!(row.status, "ERROR");
+            assert!(row.sha.is_empty());
+            assert_eq!(row.disk_bytes, 0);
+            assert_eq!(row.read_ms, 0.0);
+            assert_eq!(row.mbps, 0.0);
+            assert_eq!(row.min_mbps, None);
+            assert!(!row.confirmed);
+        }
+    }
 
     #[test]
     fn row_values_follow_the_report_width() {

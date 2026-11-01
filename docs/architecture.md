@@ -41,6 +41,23 @@ The summary and `VerifyOutcome::unchecked_files` count excluded files. Their rec
 The frontend rejects a result where the count and verdict do not agree.
 Scan reports produce `NOT_CHECKED`, because they do not record a refresh data check.
 Short reads produce a read error before hash or speed comparison.
+Scan also rejects a file-byte count that differs from the expected size.
+Incomplete scan reads have status `ERROR`, no hash, and zero measurement values.
+They do not count as measured files.
+
+Read comparisons select one whole read: fewer slow extents, then less total positive excess time.
+Equal results keep the earlier read. Times, start times, byte counts and speeds come from the selected read.
+The hash stays from the first read only when file identity, size and the full extent map match.
+The map includes logical offsets, lengths, disk locations and layout flags.
+If the source changes or has no recorded identity, the new read replaces the old result, including its hash.
+The scan updates the row size and extent count for the new read.
+CSV column names do not change. Measurement columns no longer combine times from different reads.
+
+The reader finishes one extent before it sends requests for the next extent.
+Requests within one extent use the configured queue depth.
+Each extent uses its own first issue and last completion, less pauses, with a minimum of one nanosecond.
+Extent times do not overlap or move backward. The reader sums these times for file speed.
+The queue empties at each extent boundary. Many small extents can reduce throughput; no disk benchmark measures this cost yet.
 The core accepts old CSV reports. A missing metadata baseline blocks `YES` only when the hash differs.
 
 Verify returns `Incomplete` for `UNKNOWN` or a failed summary-log write. A mismatch takes priority and returns `DataMismatch`.
