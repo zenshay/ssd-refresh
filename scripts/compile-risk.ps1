@@ -50,7 +50,7 @@ function Measure-Step([string]$Name, [string]$Program, [string[]]$Arguments) {
     Write-Output "MEASURE: $Name $($measure.seconds)s exit=$($process.ExitCode)"
     if ($process.ExitCode -ne 0) { Get-Content $err -Tail 35; throw "Failed: $Name" }
 }
-function Cargo([string]$Name, [string[]]$Arguments) {
+function Invoke-Cargo([string]$Name, [string[]]$Arguments) {
     $extra = if ($Variant -eq 'cranelift') { @('-Zcodegen-backend') } else { @() }
     Measure-Step $Name (Get-Command cargo).Source ($extra + $Arguments)
 }
@@ -66,20 +66,20 @@ try {
     if ($Variant -eq 'cranelift') {
         [IO.File]::AppendAllText($cargoConfig,"`n[unstable]`ncodegen-backend = true`n",[Text.UTF8Encoding]::new($false))
         $env:RUSTFLAGS = '-C linker=rust-lld.exe'
-        Cargo 'contract-probe' @('test','--locked','--offline','-p','ssd-refresh','--lib','panic_stops_the_worker_and_releases_control')
+        Invoke-Cargo 'contract-probe' @('test','--locked','--offline','-p','ssd-refresh','--lib','panic_stops_the_worker_and_releases_control')
         $result.optimized_tests = 'YES'
     }
-    Cargo 'cold-gui' (@('build','--locked','--offline','-p','ssd-refresh-gui','--timings') + $profile)
-    Cargo 'cold-cli-probe' (@('build','--locked','--offline','-p','ssd-refresh','--bin','ssd-refresh','--example','compile_probe') + $profile)
+    Invoke-Cargo 'cold-gui' (@('build','--locked','--offline','-p','ssd-refresh-gui','--timings') + $profile)
+    Invoke-Cargo 'cold-cli-probe' (@('build','--locked','--offline','-p','ssd-refresh','--bin','ssd-refresh','--example','compile_probe') + $profile)
     for ($i=1; $i -le $Samples; $i++) {
         $text = [Text.Encoding]::UTF8.GetString($original) + "`n// Compiler experiment sample $i.`n"
         [IO.File]::WriteAllText($common,$text,[Text.UTF8Encoding]::new($false))
-        Cargo "rebuild-$i" (@('build','--locked','--offline','-p','ssd-refresh-gui','-p','ssd-refresh','--bin','ssd-refresh','--bin','ssd-refresh-gui','--example','compile_probe') + $profile)
+        Invoke-Cargo "rebuild-$i" (@('build','--locked','--offline','-p','ssd-refresh-gui','-p','ssd-refresh','--bin','ssd-refresh','--bin','ssd-refresh-gui','--example','compile_probe') + $profile)
     }
     [IO.File]::WriteAllBytes($common,$original)
     if ($release) {
         $env:SSD_REFRESH_CONTRACT_OUTPUT = Join-Path $output 'release-contract.json'
-        Cargo 'release-tests' @('test','--locked','--offline','--release','--workspace','--all-targets')
+        Invoke-Cargo 'release-tests' @('test','--locked','--offline','--release','--workspace','--all-targets')
         Measure-Step 'release-ipc' (Get-Command node).Source @('--import','./gui/tests/register.mjs','./gui/tests/verify-contract.mjs',$env:SSD_REFRESH_CONTRACT_OUTPUT)
         Remove-Item Env:SSD_REFRESH_CONTRACT_OUTPUT
         $result.optimized_tests = 'YES'
