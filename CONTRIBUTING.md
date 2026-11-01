@@ -39,6 +39,8 @@ Do not treat a skipped check as a passed check.
 
 ### Build modes
 
+See [decision 0001](docs/decisions/0001-build-profiles.md) for the measurements, tradeoffs, and reversal steps.
+
 Use different modes for different tasks. All modes use the same source and lock files.
 
 | Task | Command | Settings |
