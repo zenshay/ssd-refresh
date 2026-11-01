@@ -230,6 +230,11 @@ Cross-compilation does not confirm operation on a physical device.
 
 ### Build
 
+For daily edits, use development mode. It reuses local incremental data.
+Use `--release` when you need the release binary. It uses ThinLTO and 16 code generation units.
+PR checks use development and test modes. Tag releases use release mode.
+See [Build modes](CONTRIBUTING.md#build-modes) for the commands and workflow boundaries.
+
 CLI source requires Rust 1.85 or newer.
 The current GUI dependency set requires Rust 1.90 or newer.
 Development and release builds use Rust 1.99.0. `rust-toolchain.toml` selects it when commands run from the repository folder.

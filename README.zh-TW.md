@@ -229,6 +229,10 @@ Linux ARM64 可以從原始碼建置；上述 Linux 發行檔只有 x64。
 ### 建置
 
 CLI 原始碼需要 Rust 1.85 以上。
+日常修 bug 使用開發模式，重用本機的增量編譯資料，不必每次加 `--release`。
+PR 執行完整開發與測試檢查；版本標籤才觸發發版建置。
+發版模式採用 ThinLTO 與 16 份編譯分工。本機 `--release` 與遠端發版使用相同設定。
+流程與指令見 [Build modes](CONTRIBUTING.md#build-modes)。
 GUI 目前的相依套件需要 Rust 1.90 以上。
 開發與發佈使用 Rust 1.99.0。在專案目錄執行指令時，`rust-toolchain.toml` 會選用此版本。
 日常檢查使用 `--locked`，不會自動更新依賴版本。
