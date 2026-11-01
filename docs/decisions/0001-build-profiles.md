@@ -45,6 +45,8 @@ Each comparison below used one runner for its baseline and candidate.
 Rebuild values are medians of three samples with incremental compilation disabled.
 The workload changes a comment in shared Rust source and rebuilds the GUI, CLI, and a synthetic example.
 It is not a measurement of every real edit or the complete release workflow.
+Runtime loops process 8 MiB of synthetic SHA256 input or 10,000 CSV rows for at least 700 ms.
+Compiler memory is sampled every 200 ms. It is not a guaranteed peak for the whole machine.
 
 | Candidate | Its paired baseline | Candidate rebuild | Saving |
 |---|---:|---:|---:|
