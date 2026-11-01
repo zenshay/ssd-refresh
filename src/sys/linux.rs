@@ -34,20 +34,28 @@ struct MoveExtent {
     moved_len: u64,
 }
 
-/// Reads that bypass the page cache. Falls back to normal reads where O_DIRECT is not
-/// supported (for example tmpfs); timings are then optimistic.
-pub fn open_direct(p: &Path) -> io::Result<File> {
-    match OpenOptions::new()
+/// Returns the read handle and its effective cache mode.
+pub fn open_direct(p: &Path) -> io::Result<super::ReadHandle> {
+    let direct = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_DIRECT | libc::O_NOATIME)
-        .open(p)
-    {
-        Ok(f) => Ok(f),
+        .open(p);
+    let direct = match direct {
         Err(e) if e.raw_os_error() == Some(libc::EPERM) => OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_DIRECT)
             .open(p),
-        Err(e) if e.raw_os_error() == Some(libc::EINVAL) => File::open(p),
+        result => result,
+    };
+    match direct {
+        Ok(file) => Ok(super::ReadHandle {
+            file,
+            cached: false,
+        }),
+        Err(e) if e.raw_os_error() == Some(libc::EINVAL) => Ok(super::ReadHandle {
+            file: File::open(p)?,
+            cached: true,
+        }),
         Err(e) => Err(e),
     }
 }
@@ -354,8 +362,16 @@ impl Relocator {
                     len,
                     moved_len: 0,
                 };
-                if unsafe { libc::ioctl(orig.as_raw_fd(), EXT4_IOC_MOVE_EXT as _, &mut me) } != 0 {
-                    let err = io::Error::last_os_error();
+                let result =
+                    unsafe { libc::ioctl(orig.as_raw_fd(), EXT4_IOC_MOVE_EXT as _, &mut me) };
+                let error = (result != 0).then(io::Error::last_os_error);
+                if error.is_none() && me.moved_len > 0 {
+                    st.moved_bytes += me.moved_len * bs;
+                    st.moves += 1;
+                }
+                // Free old blocks and unused allocation, also after a partial move or retry.
+                release_donor_range(&donor, start * bs, len * bs)?;
+                if let Some(err) = error {
                     failures += 1;
                     st.failures += 1;
                     if failures > 10
@@ -373,12 +389,25 @@ impl Relocator {
                     break; // after the end (the file became smaller during the move)
                 }
                 start += me.moved_len;
-                st.moved_bytes += me.moved_len * bs;
-                st.moves += 1;
             }
         }
-        Ok(true) // closing the donor frees the old blocks, which now belong to it
+        Ok(true)
     }
+}
+
+fn release_donor_range(donor: &File, offset: u64, len: u64) -> io::Result<()> {
+    if unsafe {
+        libc::fallocate(
+            donor.as_raw_fd(),
+            libc::FALLOC_FL_PUNCH_HOLE | libc::FALLOC_FL_KEEP_SIZE,
+            offset as libc::off_t,
+            len as libc::off_t,
+        )
+    } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 
 /// How refresh moves data on this platform (shown before a refresh starts).
@@ -396,6 +425,42 @@ pub fn list_volumes() -> Vec<VolumeInfo> {
 #[cfg(test)]
 mod tests {
     use super::check_move_identity;
+
+    #[test]
+    fn unsupported_direct_reads_report_cached_mode() {
+        let handle = super::open_direct(std::path::Path::new("/proc/version")).unwrap();
+        assert!(handle.cached);
+    }
+
+    #[test]
+    fn donor_ranges_release_blocks_without_root() {
+        use std::io::{Read, Seek, SeekFrom, Write};
+        use std::os::unix::fs::MetadataExt;
+        let path = std::env::temp_dir().join(format!("ssd-donor-punch-{}", std::process::id()));
+        let mut donor = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        let chunk = 1 << 20;
+        donor.set_len(4 * chunk).unwrap();
+        for i in 0..4 {
+            donor.seek(SeekFrom::Start(i * chunk)).unwrap();
+            donor.write_all(&vec![7; chunk as usize]).unwrap();
+            donor.sync_all().unwrap();
+            assert!(donor.metadata().unwrap().blocks() > 0);
+            super::release_donor_range(&donor, i * chunk, chunk).unwrap();
+            assert_eq!(donor.metadata().unwrap().len(), 4 * chunk);
+            assert_eq!(donor.metadata().unwrap().blocks(), 0);
+        }
+        donor.seek(SeekFrom::Start(0)).unwrap();
+        let mut bytes = Vec::new();
+        donor.read_to_end(&mut bytes).unwrap();
+        assert!(bytes.iter().all(|&b| b == 0));
+        drop(donor);
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn move_identity_accepts_the_checked_file() {

@@ -17,10 +17,10 @@ extern "C" {
     fn setiopolicy_np(iotype: libc::c_int, scope: libc::c_int, policy: libc::c_int) -> libc::c_int;
 }
 
-pub fn open_direct(p: &Path) -> io::Result<File> {
+pub fn open_direct(p: &Path) -> io::Result<super::ReadHandle> {
     let f = File::open(p)?;
-    unsafe { libc::fcntl(f.as_raw_fd(), libc::F_NOCACHE, 1) };
-    Ok(f)
+    let cached = unsafe { libc::fcntl(f.as_raw_fd(), libc::F_NOCACHE, 1) } != 0;
+    Ok(super::ReadHandle { file: f, cached })
 }
 
 pub fn has_other_writers(_p: &Path) -> Option<bool> {

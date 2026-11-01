@@ -21,6 +21,7 @@ fn record_case(line: String) {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Fault {
+    Cached,
     None,
     Busy,
     WritersUnknown,
@@ -261,6 +262,7 @@ impl FileOps for Mock {
                     | Fault::UnknownAfterMove
             );
         let result = ReadResult {
+            cached: self.fault == Fault::Cached,
             source: None,
             file_bytes: if self.fault == Fault::PartialBaseline
                 || (post && self.fault == Fault::PostPartial)
@@ -372,6 +374,7 @@ fn unsafe_baselines_never_call_move_even_with_force() {
             (Fault::LayoutError, "SKIP_CHECK"),
             (Fault::LayoutChange, "SKIP_CHANGED"),
             (Fault::ShortBaseline, "SKIP_INCOMPLETE"),
+            (Fault::Cached, "SKIP_CACHED"),
             (Fault::PartialBaseline, "SKIP_INCOMPLETE"),
             (Fault::MissingHash, "SKIP_INCOMPLETE"),
             (Fault::Stop, "SKIP_STOPPED"),

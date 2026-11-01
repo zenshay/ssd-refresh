@@ -130,6 +130,7 @@ struct Unchecked<'a> {
     missing: usize,
     /// Now compressed, sparse or of another kind that the tool cannot read the same way.
     kind: usize,
+    cached: usize,
     /// The log has no SHA-256 for the file.
     no_hash: usize,
     examples: Vec<&'a str>,
@@ -147,6 +148,7 @@ impl<'a> Unchecked<'a> {
                 "MODIFIED" if it.meta_key.is_none() => &mut u.no_meta,
                 "MISSING" => &mut u.missing,
                 "SKIP_KIND" => &mut u.kind,
+                "SKIP_CACHED" => &mut u.cached,
                 "MEASURED" if it.sha.is_empty() => &mut u.no_hash,
                 _ => continue,
             };
@@ -159,7 +161,7 @@ impl<'a> Unchecked<'a> {
     }
 
     fn total(&self) -> usize {
-        self.no_meta + self.old + self.missing + self.kind + self.no_hash
+        self.no_meta + self.old + self.missing + self.kind + self.cached + self.no_hash
     }
 
     /// The note below the Data safe line lists files without a hash comparison.
@@ -170,6 +172,12 @@ impl<'a> Unchecked<'a> {
         }
         let n = |c: usize| c as u64;
         let mut why = Vec::new();
+        if self.cached > 0 {
+            why.push(format!(
+                "{} used the OS cache",
+                count_of(n(self.cached), "file")
+            ));
+        }
         if self.no_meta > 0 {
             why.push(format!(
                 "{} changed, and the log has no trusted metadata for comparison",
@@ -271,7 +279,9 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
     }
     add("Not found", &|g| count(g, "MISSING").to_string());
     add("Errors", &|g| count(g, "ERROR").to_string());
-    add("Cannot measure", &|g| count(g, "SKIP_KIND").to_string());
+    add("Cannot measure", &|g| {
+        (count(g, "SKIP_KIND") + count(g, "SKIP_CACHED")).to_string()
+    });
 
     let mut t = String::new();
     t += "Summary\n";
@@ -349,7 +359,8 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         || stopped
         || matched == 0
         || s.sampled
-        || unchecked.kind + unchecked.no_hash + unchecked.old + unchecked.no_meta > 0
+        || unchecked.kind + unchecked.cached + unchecked.no_hash + unchecked.old + unchecked.no_meta
+            > 0
     {
         DataSafety::Unknown
     } else {
@@ -673,12 +684,25 @@ mod tests {
     }
 
     #[test]
+    fn cached_verify_results_do_not_enter_the_speed_verdict() {
+        let items = vec![item("cached", Group::Rewritten, 10.0, true)];
+        let results = vec![(0, super::super::cached_outcome(Ok(())))];
+        let s = summary(&items, &results);
+        assert_eq!(s.faster, "n/a");
+        assert!(s.speed.is_none_or(|speed| speed.slow_before == 0));
+        assert_eq!(s.data_safety, DataSafety::Unknown);
+        assert_eq!(s.unchecked, 1);
+        assert!(s.text.contains("used the OS cache"));
+    }
+
+    #[test]
     fn coverage_rule_checks_each_exclusion_and_keeps_the_source_total() {
         for (status_name, baseline, hash, expected) in [
             ("MISSING", true, true, DataSafety::Yes),
             ("MODIFIED", true, true, DataSafety::Yes),
             ("MODIFIED", false, true, DataSafety::Unknown),
             ("SKIP_KIND", true, true, DataSafety::Unknown),
+            ("SKIP_CACHED", true, true, DataSafety::Unknown),
             ("MEASURED", true, false, DataSafety::Unknown),
             ("ERROR", true, true, DataSafety::Unknown),
         ] {

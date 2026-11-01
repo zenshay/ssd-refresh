@@ -3,8 +3,8 @@ use super::{in_control_group, RefreshOptions, Row, Run};
 use crate::common::{hex, Kind, Layout, Meta};
 use crate::control::Control;
 use crate::reader::{read_file_confirmed, ReadOptions, ReadResult};
+use crate::sys::ReadHandle;
 use crate::sys::{self, MoveStats, Relocator};
-use std::fs::File;
 use std::io;
 use std::path::Path;
 
@@ -43,31 +43,37 @@ struct SystemOps<'a> {
 }
 
 impl FileOps for SystemOps<'_> {
-    type Handle = File;
-    fn open_meta(&mut self, path: &Path) -> io::Result<File> {
-        sys::open_meta(path)
+    type Handle = ReadHandle;
+    fn open_meta(&mut self, path: &Path) -> io::Result<ReadHandle> {
+        Ok(ReadHandle {
+            file: sys::open_meta(path)?,
+            cached: false,
+        })
     }
-    fn open_data(&mut self, path: &Path) -> io::Result<File> {
+    fn open_data(&mut self, path: &Path) -> io::Result<ReadHandle> {
         sys::open_direct(path)
     }
-    fn open_flush(&mut self, path: &Path) -> io::Result<File> {
-        sys::open_flush(path)
+    fn open_flush(&mut self, path: &Path) -> io::Result<ReadHandle> {
+        Ok(ReadHandle {
+            file: sys::open_flush(path)?,
+            cached: false,
+        })
     }
-    fn meta(&mut self, file: &File) -> io::Result<Meta> {
+    fn meta(&mut self, file: &ReadHandle) -> io::Result<Meta> {
         sys::meta(file)
     }
-    fn layout(&mut self, file: &File, meta: &Meta) -> io::Result<Layout> {
+    fn layout(&mut self, file: &ReadHandle, meta: &Meta) -> io::Result<Layout> {
         sys::layout(file, meta, self.block)
     }
     fn writers(&mut self, path: &Path) -> Option<bool> {
         sys::has_other_writers(path)
     }
-    fn flush(&mut self, file: &File) -> io::Result<()> {
+    fn flush(&mut self, file: &ReadHandle) -> io::Result<()> {
         sys::flush_file(file)
     }
     fn read(
         &mut self,
-        file: &File,
+        file: &ReadHandle,
         meta: &Meta,
         layout: &Layout,
     ) -> io::Result<(ReadResult, bool)> {
@@ -82,7 +88,7 @@ impl FileOps for SystemOps<'_> {
     fn relocate(
         &mut self,
         path: &Path,
-        file: &File,
+        file: &ReadHandle,
         layout: &Layout,
         stats: &mut MoveStats,
         log: &dyn Fn(&str),
@@ -267,6 +273,14 @@ fn process_file<O: FileOps>(
         return Ok(());
     }
     let (pre, first_slow) = ops.read(&data, &m1, &l1)?;
+    if pre.cached {
+        skip(
+            row,
+            "SKIP_CACHED",
+            "The read used the OS cache. No data was moved.",
+        );
+        return Ok(());
+    }
     row.before_mbps = pre.mbps();
     row.before_slow = pre.is_slow();
     row.before_first_slow = first_slow;

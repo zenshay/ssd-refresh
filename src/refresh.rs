@@ -325,7 +325,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             &ctl,
             &prog,
             |path, log| r.process(path, log),
-            |row| w.row(row.values(width)),
+            |row| w.refresh_row(row.values(width)),
         )?;
         prog.finish();
 

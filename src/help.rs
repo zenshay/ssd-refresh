@@ -141,6 +141,11 @@ Report columns
   Compare reads only when file ID, size and extent maps match.
   A changed file uses the new read and discards the old hash.
   Incomplete reads have status ERROR, no hash, and no measurement.
+  Cached fallback reads have status SKIP_CACHED, with no disk speed.
+  These files do not count as fast or slow. CSV columns do not change.
+  Resume keeps complete records, including fields with quoted newlines.
+  Scan synchronizes output every 128 rows, after step 2, and at completion
+  or stop. Storage hardware determines protection during power loss.
   Requests run in parallel within one extent. Extents run in order.
   Small extents can reduce speed because the queue empties between them.
   after_wait_slow
@@ -221,6 +226,7 @@ Statuses in the log (status column)
   SKIP_WRITERS_UNKNOWN
                 The writer check is not available. Not moved.
   SKIP_FLUSH    The cache flush failed. Not moved.
+  SKIP_CACHED   The read used the OS cache. Not moved, even with --force.
   SKIP_IDENTITY The file IDs differ or are not available. Not moved.
   SKIP_CHANGED  Metadata or layout changed before the move. Not moved.
   SKIP_CHECK    A check before the move failed. Not moved.
@@ -239,6 +245,10 @@ Statuses in the log (status column)
   ERROR         The tool could not open or read the file (see detail).
 
   --resume retries the safety skips and VERIFY_FAILED. Check the cause first.
+  Each refresh row calls sync_data before the next file starts.
+  Power loss between a move and its row can leave the move without a row.
+  Linux releases each temporary donor range after its move request.
+  A release error stops further moves for that file.
   These checks do not hold a write lock. A writer can start after a check.
   Windows reloads free-space data once before it reports insufficient space.
   Linux checks the reopened file device and inode before it moves data.
@@ -399,6 +409,7 @@ CSV columns (with --out)
   status    MEASURED. MODIFIED: a hash differs with changed or unknown metadata.
             MISMATCH: a hash differs after a flush, without metadata change.
             ERROR: also a data difference without a completed cache flush.
+            SKIP_CACHED: the read used the OS cache. No speed verdict.
             detail records No cache flush when the flush fails.
             MISSING. SKIP_KIND: cannot measure. ERROR.
 

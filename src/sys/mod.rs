@@ -1,13 +1,26 @@
 //! Platform-specific code. Every platform provides the same set of items:
 //!
 //! - `open_meta`: a handle for attributes only (layout queries, moves)
-//! - `open_direct`: a read handle that bypasses the OS cache
+//! - `open_direct`: a read handle with its effective OS cache mode
 //! - `meta`, `layout`: file information and on-disk layout
 //! - `volume`: the volume a path is on
 //! - `IoQueue`: keeps several reads in flight at once
 //! - `Relocator`: asks the file system to move a file's data (supported file systems only)
 
 use std::alloc::{alloc_zeroed, dealloc, Layout as AllocLayout};
+
+pub struct ReadHandle {
+    pub file: std::fs::File,
+    pub cached: bool,
+}
+
+impl std::ops::Deref for ReadHandle {
+    type Target = std::fs::File;
+
+    fn deref(&self) -> &Self::Target {
+        &self.file
+    }
+}
 
 #[cfg(windows)]
 mod windows;
