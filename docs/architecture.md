@@ -1,6 +1,6 @@
 # Architecture
 
-See [decision records](decisions/README.md) for accepted choices and their evidence.
+See [decision records](https://github.com/zenshay/ssd-refresh/tree/main/docs/decisions) for accepted choices and their evidence.
 
 The CLI and Tauri adapters call the same operations.
 Operations return typed results and send messages and progress through `Control`.

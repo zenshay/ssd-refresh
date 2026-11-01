@@ -1,0 +1,234 @@
+{
+  "schema": 1,
+  "date": "2026-11-01",
+  "source_reference": "e9d61ed",
+  "environment": {
+    "os": "Windows",
+    "architecture": "x64",
+    "administrator": false,
+    "node": "v24.22.1",
+    "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1"
+  },
+  "full_local_check": {
+    "command": "node check.mjs --offline",
+    "exit": 0,
+    "layout_pairs": 42,
+    "mutants_killed": 18,
+    "raw_output_sha256": "2681cb6c94cac2e0e45fe835fa5a1bfb0a16c9a9fdf5c0b316a974e2f5d3aef5",
+    "component_seconds": [
+      {
+        "name": "Successful child",
+        "seconds": 0.1
+      },
+      {
+        "name": "Failed child",
+        "seconds": 0.11
+      },
+      {
+        "name": "Missing child",
+        "seconds": 0.01
+      },
+      {
+        "name": "Check runner regression tests",
+        "seconds": 0.39
+      },
+      {
+        "name": "Line ending regression tests",
+        "seconds": 0.13
+      },
+      {
+        "name": "Line endings",
+        "seconds": 0.36
+      },
+      {
+        "name": "Release workflow regression tests",
+        "seconds": 1.17
+      },
+      {
+        "name": "Release package tests",
+        "seconds": 0.46
+      },
+      {
+        "name": "Path and architecture regression tests",
+        "seconds": 50.02
+      },
+      {
+        "name": "Architecture",
+        "seconds": 1.99
+      },
+      {
+        "name": "Rust audit regression tests",
+        "seconds": 0.13
+      },
+      {
+        "name": "Package notice regression tests",
+        "seconds": 0.21
+      },
+      {
+        "name": "Rust format",
+        "seconds": 0.65
+      },
+      {
+        "name": "Frontend build",
+        "seconds": 2.95
+      },
+      {
+        "name": "Rust tests",
+        "seconds": 39.17
+      },
+      {
+        "name": "Verify IPC contract",
+        "seconds": 0.96
+      },
+      {
+        "name": "Rust lint",
+        "seconds": 15.06
+      },
+      {
+        "name": "CLI help",
+        "seconds": 0.7
+      },
+      {
+        "name": "Shared script lint",
+        "seconds": 0.51
+      },
+      {
+        "name": "Frontend typecheck",
+        "seconds": 1.35
+      },
+      {
+        "name": "Frontend lint",
+        "seconds": 0.3
+      },
+      {
+        "name": "Frontend test",
+        "seconds": 1.03
+      },
+      {
+        "name": "Frontend test:e2e",
+        "seconds": 11.52
+      },
+      {
+        "name": "Frontend test:layout",
+        "seconds": 31.55
+      },
+      {
+        "name": "Targeted mutation tests",
+        "seconds": 60.02
+      }
+    ]
+  },
+  "optimized_local_steps": [
+    {
+      "exit": 0,
+      "name": "adoption-release-build",
+      "seconds": 343.264
+    },
+    {
+      "exit": 0,
+      "name": "adoption-release-tests",
+      "seconds": 40.858
+    },
+    {
+      "exit": 0,
+      "name": "adoption-release-ipc",
+      "seconds": 0.876
+    },
+    {
+      "exit": 0,
+      "name": "adoption-release-help",
+      "seconds": 0.162
+    }
+  ],
+  "recorded_commands": {
+    "build": "cargo build --locked --offline --release --target x86_64-pc-windows-msvc -p ssd-refresh -p ssd-refresh-gui --bin ssd-refresh --bin ssd-refresh-gui",
+    "tests": "cargo test --locked --offline --release --workspace --all-targets --target x86_64-pc-windows-msvc",
+    "ipc": "node --import ./gui/tests/register.mjs ./gui/tests/verify-contract.mjs [generated fixture]",
+    "help": "ssd-refresh.exe help"
+  },
+  "real_packaging": {
+    "before": {
+      "status": "NO",
+      "decision_links": "BROKEN"
+    },
+    "after": {
+      "status": "YES",
+      "decision_links": "YES",
+      "packages": [
+        {
+          "kind": "gui",
+          "sha256": "7237453484a93600cb7d30096e2cc417d8431c877da66a9dec52fda4d62ce08e",
+          "bytes": 10133504,
+          "pe_machine": "x64",
+          "system_extraction": "YES"
+        },
+        {
+          "kind": "cli",
+          "sha256": "8cf944639b52cb388720312de3ca9f68a8aa123864fa16edc85e65bbd35e7a33",
+          "bytes": 995328,
+          "pe_machine": "x64",
+          "system_extraction": "YES"
+        }
+      ]
+    },
+    "actual_binaries": true,
+    "stubbed": false,
+    "isolated_output": true,
+    "system_zip_reader": "tar.exe",
+    "extracted_cli_help_exit": 0
+  },
+  "native_gui": {
+    "method": "CDP attached to the packaged WebView2 app",
+    "status": "YES",
+    "binary_sha256": "7237453484a93600cb7d30096e2cc417d8431c877da66a9dec52fda4d62ce08e",
+    "ipc_mocked": false,
+    "notice_dismissed": true,
+    "environment": {
+      "elevated": false
+    },
+    "baseline": {
+      "width": 1080,
+      "height": 780,
+      "ready": "complete",
+      "refreshDisabled": true,
+      "standby": true,
+      "volumeCount": 5
+    },
+    "maximized": {
+      "width": 2048,
+      "height": 1112
+    },
+    "restored": {
+      "width": 1080,
+      "height": 780,
+      "standby": true
+    },
+    "native_close": true,
+    "storage_buttons_disabled_by_test": true,
+    "page_errors": [],
+    "desktop_capture_tool": "Window capture timed out; not used as a product failure",
+    "early_probe_counter": "Observer assertion failed; replaced with native results and size observations"
+  },
+  "not_run": [
+    {
+      "item": "Privileged VHDX create, mount and write tests",
+      "reason": "Current execution context has no administrator rights"
+    },
+    {
+      "item": "Real drive scan, refresh and verify",
+      "reason": "This validation does not use user storage data"
+    },
+    {
+      "item": "ARM64 hardware execution",
+      "reason": "No ARM64 device is available in this validation"
+    },
+    {
+      "item": "New version-tag release workflow",
+      "reason": "No version tag or release is created for validation"
+    },
+    {
+      "item": "Power-loss recovery and comparative local speedup",
+      "reason": "No such experiment was performed"
+    }
+  ]
+}

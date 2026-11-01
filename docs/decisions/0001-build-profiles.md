@@ -5,6 +5,7 @@
 - Implementation: [PR #55](https://github.com/zenshay/ssd-refresh/pull/55)
 - Adopted commit: `98e99a9e72d8598c1891abe50d3e68ffca10719d`
 - Translation: [繁體中文](0001-build-profiles.zh-TW.md)
+- Follow-up: [Additional local, package, and native GUI validation](0001-build-validation.md)
 
 ## Decision
 
