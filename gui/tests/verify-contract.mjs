@@ -15,6 +15,11 @@ for (const [index, safety] of [
 ].entries()) {
   const outcome = validateVerifyOutcome(fixtures[index]);
   assert.equal(outcome.dataSafety, safety);
+  assert.equal(outcome.movedFiles, 1);
+  assert.equal(
+    outcome.comparedFiles,
+    safety === "YES" || safety === "NO" ? 1 : 0,
+  );
   const store = createStore({
     ...initialState,
     selectedRoots: ["X:"],
@@ -30,6 +35,11 @@ for (const [index, safety] of [
   }).runVerify();
   const notice = store.get().notice;
   assert.match(notice.title, new RegExp(`Data safe: ${safety}`));
+  assert.match(
+    notice.body,
+    new RegExp(`Compared ${outcome.comparedFiles} of 1 moved files\\.`),
+  );
+  assert.doesNotMatch(notice.body, /did not cause|do not need to do anything/);
   // The Rust fixture gives NO one changed file. The notice must show the count.
   assert.equal(outcome.mismatchedFiles, safety === "NO" ? 1 : 0);
   if (safety === "NO") {
@@ -40,9 +50,6 @@ for (const [index, safety] of [
   // The Rust fixture gives UNKNOWN one file that verify could not compare.
   assert.equal(outcome.uncheckedFiles, safety === "UNKNOWN" ? 1 : 0);
   if (safety === "UNKNOWN")
-    assert.match(
-      notice.body,
-      /1 file could not be compared\. The refresh did not cause this\./,
-    );
+    assert.match(notice.body, /1 file could not be compared\. The verify log/);
 }
 console.log("VERIFY CONTRACT: YES (4 Rust DTO results and frontend notices)");

@@ -101,8 +101,8 @@ struct Item {
 
 #[derive(Default)]
 struct Outcome {
-    /// MEASURED, MODIFIED (a program changed the file), MISMATCH (the data changed but no
-    /// program changed the file), MISSING, SKIP_KIND, ERROR
+    /// MEASURED, MODIFIED (different data with changed or unknown metadata),
+    /// MISMATCH (different hash with unchanged metadata), MISSING, SKIP_KIND, ERROR
     status: &'static str,
     now_mbps: f64,
     now_min: Option<f64>,
@@ -231,8 +231,11 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
     }
     if items.is_empty() {
         ctl.message("  There are no files to verify.");
-        return Ok(VerifyOutcome::default());
     }
+    let moved_files = items
+        .iter()
+        .filter(|it| it.group == Group::Rewritten)
+        .count();
 
     // The time: the time column of the refresh log. Older logs have no time column; then the
     // tool uses the time of the last change to the source file.
@@ -305,7 +308,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         ),
     );
     ctl.cli_note(2, "Use the same --threshold as for the scan.");
-    ctl.paragraph(2, "If a program changed a file, the file has new data. The tool does not count it (status MODIFIED).");
+    ctl.paragraph(2, "The tool excludes files with a different hash and changed metadata (status MODIFIED). The verdict does not cover these files.");
     ctl.cli_note(2, "Keys: p + Enter = pause or continue. q + Enter = stop. The summary then shows the files read until that time.");
 
     let mut w = match &o.out {
@@ -410,6 +413,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         has_meta: header.iter().any(|h| h == "meta_key"),
         age,
         sampled,
+        moved_files,
     });
     let mut text = s.text;
     if stopped {
@@ -443,6 +447,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         .open(&o.log)
         .and_then(|mut f| f.write_all(block.as_bytes()));
     ctl.message("");
+    let log_failed = logged.is_err();
     match logged {
         Ok(()) => ctl.message(&format!(
             "Log: {} (this summary is at the end of the file)",
@@ -457,15 +462,11 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         ctl.message(&format!("CSV: {} (one row per file)", out.display()));
     }
     Ok(VerifyOutcome {
-        status: if s.data_safety == crate::outcome::DataSafety::No {
-            RunStatus::DataMismatch
-        } else if stopped {
-            RunStatus::Stopped
-        } else {
-            RunStatus::Completed
-        },
+        status: completion_status(s.data_safety, stopped, log_failed),
         processed_files: results.len(),
         data_safety: s.data_safety,
+        compared_files: s.compared,
+        moved_files,
         unchecked_files: s.unchecked,
         mismatched_files: s.mismatched,
         summary: text,
@@ -474,6 +475,23 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         speed: s.speed,
         wait_secs: s.wait_secs,
     })
+}
+
+fn completion_status(
+    safety: crate::outcome::DataSafety,
+    stopped: bool,
+    log_failed: bool,
+) -> RunStatus {
+    use crate::outcome::DataSafety;
+    if safety == DataSafety::No {
+        RunStatus::DataMismatch
+    } else if stopped {
+        RunStatus::Stopped
+    } else if safety == DataSafety::Unknown || log_failed {
+        RunStatus::Incomplete
+    } else {
+        RunStatus::Completed
+    }
 }
 
 /// 90061 s → "1 day"; 7200 s → "2 hours"; 300 s → "5 minutes"
@@ -494,7 +512,7 @@ fn measure(
     ctl: &Control,
 ) -> io::Result<Outcome> {
     let path = Path::new(&it.path);
-    if !path.exists() {
+    if !path.try_exists()? {
         return Ok(Outcome {
             status: "MISSING",
             ..Default::default()
@@ -525,16 +543,16 @@ fn measure(
         m.size != it.size
     };
     if differs {
-        // The data is different. Compare the metadata (size, times, USN) with the metadata at the
-        // refresh, before and after this read. If it is the same, no program changed the file:
-        // the data changed by itself. If not, a program changed the file. That is normal.
+        // Compare the logged metadata with the metadata before and after this read.
+        // Changed metadata does not prove what caused the hash difference.
         let m_after = sys::meta(&mf)?;
         let no_write = it.meta_key.as_deref() == Some(m.key().as_str()) && m_after.key() == m.key();
         if no_write {
             return Ok(Outcome {
                 status: "MISMATCH",
                 reads: 1,
-                detail: "the SHA-256 is different, but the size, times and USN are the same as at the refresh: no program changed the file".into(),
+                detail: "The SHA-256 differs, but the size, times and USN match the refresh log."
+                    .into(),
                 ..Default::default()
             });
         }
@@ -542,7 +560,7 @@ fn measure(
         return Ok(Outcome {
             status: "MODIFIED",
             reads: 1,
-            detail: format!("the {what} is different: a program changed the file"),
+            detail: format!("The {what} differs. The metadata changed or has no trusted baseline."),
             ..Default::default()
         });
     }
@@ -597,6 +615,94 @@ fn complete_read(result: ReadResult) -> io::Result<ReadResult> {
 
 #[cfg(test)]
 mod read_contract_tests {
+    #[test]
+    fn path_check_errors_are_not_missing_files() {
+        let item = super::Item {
+            path: "invalid\0path".into(),
+            group: super::Group::Rewritten,
+            size: 0,
+            before_mbps: 0.0,
+            before_slow: false,
+            sha: "baseline".into(),
+            meta_key: None,
+        };
+        let options = super::ReadOptions::default();
+        let mut queue = super::sys::IoQueue::new(options.qd, options.chunk);
+        let result = super::measure(
+            &item,
+            &mut queue,
+            &mut None,
+            &options,
+            &crate::control::Control::new(None),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn unknown_or_failed_summary_log_never_reports_success() {
+        use crate::outcome::{DataSafety, RunStatus};
+        for (safety, stopped, log_failed, expected) in [
+            (DataSafety::Yes, false, false, 0),
+            (DataSafety::Unknown, false, false, 5),
+            (DataSafety::Yes, false, true, 5),
+            (DataSafety::NotChecked, false, true, 5),
+            (DataSafety::Yes, true, false, 4),
+            (DataSafety::Unknown, true, false, 4),
+            (DataSafety::No, false, true, 3),
+        ] {
+            assert_eq!(
+                super::completion_status(safety, stopped, log_failed).exit_code(),
+                expected
+            );
+        }
+        assert_eq!(RunStatus::InvalidInput.exit_code(), 1);
+        assert_eq!(RunStatus::Unsupported.exit_code(), 2);
+    }
+
+    #[test]
+    fn empty_refresh_log_is_incomplete() {
+        let path =
+            std::env::temp_dir().join(format!("ssd-empty-verify-{}.csv", std::process::id()));
+        std::fs::write(&path, format!("{}\n", crate::refresh::HEADER.join(","))).unwrap();
+        let result = super::run(
+            &super::VerifyOptions {
+                from: path.clone(),
+                log: path.with_extension("log"),
+                out: None,
+                sample: 0,
+                select_all: false,
+                read: Default::default(),
+            },
+            crate::control::Control::new(None),
+        )
+        .unwrap();
+        assert_eq!(result.data_safety, crate::outcome::DataSafety::Unknown);
+        assert_eq!(result.status.exit_code(), 5);
+        std::fs::remove_file(path.with_extension("log")).unwrap();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn summary_log_write_failure_marks_a_complete_run_incomplete() {
+        let path = std::env::temp_dir().join(format!("ssd-log-failure-{}.csv", std::process::id()));
+        std::fs::write(&path, format!("{}\n", crate::report::SCAN_HEADER.join(","))).unwrap();
+        let mut options = super::VerifyOptions {
+            from: path.clone(),
+            log: path.with_extension("log"),
+            out: None,
+            sample: 0,
+            select_all: false,
+            read: Default::default(),
+        };
+        let complete = super::run(&options, crate::control::Control::new(None)).unwrap();
+        assert_eq!(complete.status.exit_code(), 0);
+        std::fs::remove_file(&options.log).unwrap();
+        options.log = path.parent().unwrap().to_owned();
+        let incomplete = super::run(&options, crate::control::Control::new(None)).unwrap();
+        assert_eq!(incomplete.status.exit_code(), 5);
+        std::fs::remove_file(path).unwrap();
+    }
+
     #[test]
     fn incomplete_reads_are_not_hash_evidence() {
         for short_read in [true, false] {

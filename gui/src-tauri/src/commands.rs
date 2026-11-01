@@ -251,9 +251,10 @@ pub async fn start_verify(
         };
         let result = verify::run(&opts, ctl).map_err(|e| format!("The verify failed: {e}"))?;
         match result.status {
-            RunStatus::Completed | RunStatus::Stopped | RunStatus::DataMismatch => {
-                Ok(VerifyOutcome::from_core(&log, result))
-            }
+            RunStatus::Completed
+            | RunStatus::Incomplete
+            | RunStatus::Stopped
+            | RunStatus::DataMismatch => Ok(VerifyOutcome::from_core(&log, result)),
             status => Err(format!("The verify could not run: {status:?}")),
         }
     })

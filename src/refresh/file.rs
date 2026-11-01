@@ -382,8 +382,11 @@ fn finish_move<O: FileOps>(
     } else {
         m2.key()
     };
-    let explained = row.writers == Some(true) || row.meta_changed;
-    if row.sha_before != row.sha_after && row.writers.is_none() && !row.meta_changed {
+    // Change time and sequence changes do not prove a data write.
+    // Without data write evidence, a hash difference remains a mismatch.
+    let data_write = m3.size != m1.size || m3.mtime != m1.mtime;
+    let explained = row.writers == Some(true) || data_write;
+    if row.sha_before != row.sha_after && row.writers.is_none() && !data_write {
         row.status = "VERIFY_FAILED".into();
         row.meta_key.clear();
         row.detail +=
@@ -392,7 +395,7 @@ fn finish_move<O: FileOps>(
     }
     if row.sha_before != row.sha_after && !explained {
         row.status = "MISMATCH".into();
-        row.detail += "The SHA-256 changed without a detected writer or metadata change.";
+        row.detail += "The SHA-256 changed without data write evidence. Keep the files and log.";
         return Ok(());
     }
     if row.status == "MOVE_FAILED" {
@@ -407,7 +410,8 @@ fn finish_move<O: FileOps>(
         row.status = "OK".into();
     } else {
         row.status = "CHANGED".into();
-        row.detail += "another program changed the file during the move (this is normal)";
+        row.detail +=
+            "The hash changed with a detected writer, size change, or last-write time change.";
     }
     Ok(())
 }

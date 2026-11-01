@@ -53,8 +53,8 @@ impl Meta {
             || self.seq != before.seq
     }
 
-    /// The fields `changed_since` compares, as text ("size:mtime:ctime:seq"), for logs. Two
-    /// snapshots with the same key were taken with no write to the file in between.
+    /// The fields `changed_since` compares, as text ("size:mtime:ctime:seq"), for logs.
+    /// Equal keys show equal metadata. They do not prove that no data write occurred.
     pub fn key(&self) -> String {
         format!("{}:{}:{}:{}", self.size, self.mtime, self.ctime, self.seq)
     }

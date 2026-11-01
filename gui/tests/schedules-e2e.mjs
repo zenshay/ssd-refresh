@@ -17,6 +17,10 @@ try {
     { width: 980, height: 640 },
   );
   await page.click("#schedule-open");
+  assert.match(
+    await page.$eval("#schedule-panel", (el) => el.textContent),
+    /Scheduled Verify cannot read files that need administrator rights\. Run Verify manually for those files\./,
+  );
   await page.waitForFunction(
     () => !document.querySelector("#schedule-create").disabled,
   );

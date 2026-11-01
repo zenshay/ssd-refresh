@@ -28,18 +28,36 @@ Tauri adapter --+             |
 The core owns the data safety verdict. Completion and read speed are separate facts.
 `DataSafety` has four values: `YES`, `NO`, `UNKNOWN`, and `NOT_CHECKED`.
 The summary, IPC data, and frontend preserve this verdict.
-`YES` covers only the files that verify compared. It needs at least one compared file.
-Failed reads and incomplete checks produce `UNKNOWN`.
-Files that verify cannot compare do not change the verdict. Examples: no hash, no metadata, a program wrote the file during the refresh, the file is deleted.
-The summary and `VerifyOutcome::unchecked_files` count these files. The refresh compared each moved file right after the move.
-`VerifyOutcome::mismatched_files` counts the files whose data changed without a writer. It is above 0 only when the verdict is `NO`. The frontend rejects a result where the two do not agree.
+The summary, IPC data, and GUI show `Compared N of M moved files` beside the verdict.
+`moved_files` counts all rewritten-group source entries before sampling. `compared_files` counts their hash comparisons, including mismatches.
+`YES` needs at least one hash comparison across the groups and every required comparison.
+It covers only the compared files. Every existing moved file with unchanged metadata must have a hash comparison.
+Read errors, a stopped or sampled run, unsupported file kinds, and missing hashes produce `UNKNOWN`.
+Path access errors count as read errors. They must not appear as deleted files.
+Deleted files and changed files with a trusted metadata baseline do not block `YES`. The verdict does not cover them.
+A changed hash without a trusted metadata baseline produces `UNKNOWN`.
+The summary and `VerifyOutcome::unchecked_files` count excluded files. Their records do not prove the cause of a change or deletion.
+`VerifyOutcome::mismatched_files` counts hash differences without recorded metadata change. It is above 0 only when the verdict is `NO`.
+The frontend rejects a result where the count and verdict do not agree.
 Scan reports produce `NOT_CHECKED`, because they do not record a refresh data check.
 Short reads produce a read error before hash or speed comparison.
-The core accepts old CSV reports. Files without metadata become files that verify cannot compare; the core does not reject an old format.
+The core accepts old CSV reports. A missing metadata baseline blocks `YES` only when the hash differs.
+
+Verify returns `Incomplete` for `UNKNOWN` or a failed summary-log write. A mismatch takes priority and returns `DataMismatch`.
+CLI and scheduled verify share exit codes: `0` Completed, `1` InvalidInput, `2` Unsupported, `3` DataMismatch, `4` Stopped, `5` Incomplete.
+Code `1` covers errors and cancellation. Code `2` covers missing administrator or root rights and unsupported platforms.
+Code `5` is new. Codes `0` through `4` did not change.
+For refresh logs, code `0` requires `YES`.
+A complete scan-report check can return `0` with `NOT_CHECKED`.
+Scheduled Verify keeps Windows `RunLevel Limited`. It cannot check files that need administrator rights.
+Run Verify manually with administrator rights for those files.
 
 The refresh confirmation gate contains all move handles and file processing.
 Wrong confirmation calls the work function zero times.
 The file loop records `MISMATCH` and returns `DataMismatch` before the next file starts.
+Only a size change, last-write time change, or detected writer during the move can explain a different hash.
+Attribute, access control, change time, and USN changes alone cannot explain it.
+Without data-write evidence, a known absence of writers produces `MISMATCH`. An unknown writer result produces `VERIFY_FAILED`.
 A report write error also prevents the next file from starting.
 Tests use synthetic file results and counters. They do not move file data.
 

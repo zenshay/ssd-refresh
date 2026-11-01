@@ -58,5 +58,11 @@ test("task completion never claims that file data is safe", () => {
   assert.match(taskResult(task), /Read the verify log/);
   assert.match(taskResult({ ...task, result: 3 }), /Data mismatch/);
   assert.match(taskResult({ ...task, result: 1 }), /Did not finish/);
+  assert.match(taskResult({ ...task, result: 2 }), /Unsupported/);
+  assert.match(taskResult({ ...task, result: 4 }), /Stopped/);
+  assert.match(
+    taskResult({ ...task, result: 5 }),
+    /Incomplete: the tool could not check all data/,
+  );
   assert.equal(taskResult({ ...task, lastRun: "" }), "Not run");
 });

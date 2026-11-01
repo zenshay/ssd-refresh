@@ -1,5 +1,17 @@
 # Changes
 
+## Unreleased
+
+### Fixed
+
+- Add exit code `5` for incomplete verify checks and failed summary-log writes. CLI and scheduled checks use the same codes.
+- Codes `0` through `4` did not change. Code `2` remains Unsupported. Code `4` remains Stopped.
+- Verify shows `Compared N of M moved files` beside each data verdict. Missing evidence blocks `YES` under the documented coverage rule.
+- Remove claims that excluded files are safe or that refresh did not cause their changes.
+- Verify reports path access errors as errors, rather than missing files.
+- A size change, last-write time change, or detected writer can explain a different refresh hash. Other metadata changes cannot.
+- Scheduled Verify documents its limited rights. Run Verify manually with administrator rights for protected files.
+
 ## 1.1.1 — 2026-11-01
 
 - Refresh skips files with active or unknown writers, failed cache flushes, changed metadata, or different file IDs. These checks also apply with `--force`.

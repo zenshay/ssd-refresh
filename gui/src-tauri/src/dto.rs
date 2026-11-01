@@ -149,11 +149,13 @@ pub struct VerifyOutcome {
     /// The text log. Each verify run adds its summary to the end.
     pub log_path: String,
     pub processed_files: usize,
+    pub compared_files: usize,
+    pub moved_files: usize,
     /// YES, NO, UNKNOWN, or NOT_CHECKED. This is not the operation status.
     pub data_safety: &'static str,
     /// Files that verify could not compare. `data_safety` does not cover them.
     pub unchecked_files: usize,
-    /// Files whose data changed without a writer. Above 0 only when `data_safety` is NO.
+    /// Files with changed data and no recorded data write. Above 0 only when `data_safety` is NO.
     pub mismatched_files: usize,
     /// `YES`, `NO`, `NOT DECIDED`, `n/a`, or empty when no file was measured.
     pub faster: &'static str,
@@ -181,6 +183,8 @@ impl VerifyOutcome {
         Self {
             log_path: path.to_string_lossy().into_owned(),
             processed_files: result.processed_files,
+            compared_files: result.compared_files,
+            moved_files: result.moved_files,
             data_safety: result.data_safety.as_str(),
             unchecked_files: result.unchecked_files,
             mismatched_files: result.mismatched_files,
@@ -256,12 +260,22 @@ mod tests {
                         unchecked_files: usize::from(data_safety == DataSafety::Unknown),
                         mismatched_files: usize::from(data_safety == DataSafety::No),
                         processed_files: 1,
+                        compared_files: usize::from(matches!(
+                            data_safety,
+                            DataSafety::Yes | DataSafety::No
+                        )),
+                        moved_files: 1,
                         faster: "n/a",
                         ..Default::default()
                     },
                 );
                 let json = serde_json::to_value(result).unwrap();
                 assert_eq!(json["dataSafety"], data_safety.as_str());
+                assert_eq!(json["movedFiles"], 1);
+                assert_eq!(
+                    json["comparedFiles"],
+                    usize::from(matches!(data_safety, DataSafety::Yes | DataSafety::No))
+                );
                 assert_eq!(
                     json["uncheckedFiles"],
                     usize::from(data_safety == DataSafety::Unknown)

@@ -14,13 +14,7 @@ const FALLBACK_WIDTH: usize = 48;
 const VERBOSE_WIDTH: usize = 90;
 
 pub fn exit_code(status: RunStatus) -> i32 {
-    match status {
-        RunStatus::Completed => 0,
-        RunStatus::InvalidInput => 1,
-        RunStatus::Unsupported => 2,
-        RunStatus::DataMismatch => 3,
-        RunStatus::Stopped => 4,
-    }
+    status.exit_code()
 }
 
 pub fn install(control: &Arc<Control>) {
@@ -350,11 +344,12 @@ mod tests {
     }
 
     #[test]
-    fn cli_exit_codes_remain_the_same() {
+    fn cli_exit_codes_match_scheduled_codes() {
         for (status, code) in [
             (RunStatus::Completed, 0),
             (RunStatus::InvalidInput, 1),
             (RunStatus::Unsupported, 2),
+            (RunStatus::Incomplete, 5),
             (RunStatus::DataMismatch, 3),
             (RunStatus::Stopped, 4),
         ] {

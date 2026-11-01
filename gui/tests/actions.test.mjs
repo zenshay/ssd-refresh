@@ -286,6 +286,8 @@ const volume = (root, lastRefresh = null) => ({
 const verified = (overrides = {}) => ({
   logPath: "synthetic.verify.log",
   processedFiles: 12,
+  comparedFiles: 12,
+  movedFiles: 12,
   dataSafety: "YES",
   uncheckedFiles: 0,
   // The core gives NO a count above 0, and the other verdicts 0.
@@ -309,6 +311,15 @@ test("verify IPC rejects invalid safety claims and data", () => {
     { dataSafety: "unexpected" },
     { dataSafety: undefined },
     { processedFiles: 0 },
+    { comparedFiles: undefined },
+    { movedFiles: undefined },
+    { comparedFiles: -1 },
+    { comparedFiles: 1.5 },
+    { comparedFiles: 13 },
+    { movedFiles: -1 },
+    { movedFiles: 1.5 },
+    { movedFiles: Number.MAX_SAFE_INTEGER + 1 },
+    { movedFiles: 11 },
     { uncheckedFiles: undefined },
     { uncheckedFiles: -1 },
     { uncheckedFiles: 1.5 },
@@ -353,7 +364,7 @@ test("unknown safety never becomes a positive notice", async () => {
   }
 });
 
-test("files that verify could not compare get a calm note, not a warning", async () => {
+test("verify shows coverage and does not claim why files were not compared", async () => {
   const run = async (outcome) => {
     const store = createStore({
       ...initialState,
@@ -367,21 +378,27 @@ test("files that verify could not compare get a calm note, not a warning", async
     ).runVerify();
     return store.get().notice;
   };
-  const calm =
-    /3 files could not be compared\. The refresh did not cause this\..*You do not need to do anything\./;
-  const yes = await run(verified({ uncheckedFiles: 3 }));
+  const note = /3 files could not be compared\. The verify log/;
+  const yes = await run(verified({ uncheckedFiles: 3, comparedFiles: 9 }));
   assert.equal(yes.kind, "ok");
   assert.match(yes.title, /Data safe: YES/);
-  assert.match(yes.body, calm);
+  assert.match(yes.body, note);
+  assert.match(yes.body, /Compared 9 of 12 moved files\./);
+  assert.doesNotMatch(
+    yes.body,
+    /did not cause|Usually|do not need to do anything|normal/,
+  );
   const unknown = await run(
     verified({ dataSafety: "UNKNOWN", uncheckedFiles: 3 }),
   );
   assert.equal(unknown.kind, "info");
-  assert.match(unknown.body, calm);
+  assert.match(unknown.body, note);
+  assert.match(unknown.body, /Compared 12 of 12 moved files\./);
   const none = await run(verified());
   assert.doesNotMatch(none.body, /could not be compared/);
   const bad = await run(verified({ dataSafety: "NO", uncheckedFiles: 3 }));
   assert.equal(bad.kind, "error");
+  assert.match(bad.body, /Compared 12 of 12 moved files\./);
   assert.doesNotMatch(bad.body, /did not cause this/);
 });
 
@@ -402,7 +419,7 @@ test("a slower result warns even when data safety is not YES", async () => {
   assert.equal(store.get().notice.kind, "warn");
 });
 
-test("the verify notice puts the speed first, one fact per line", () => {
+test("the verify notice keeps each speed fact on one line", () => {
   assert.equal(speedChange(1298, 255), "1298 → 255 MB/s (5.1 times slower)");
   assert.equal(speedChange(10, 400), "10 → 400 MB/s (40.0 times faster)");
   // Few slow files and too soon: a later verify can decide when all files agree.
@@ -435,6 +452,55 @@ test("the verify notice puts the speed first, one fact per line", () => {
       "This speed does not show if they stay fast. Faster shows YES or NO 12 hours after the refresh.",
   );
   assert.equal(nextStep([verified()]), "The log has the full summary.");
+});
+
+test("verify IPC accepts sample coverage and control-only comparisons", () => {
+  assert.equal(
+    validateVerifyOutcome(verified({ movedFiles: 100 })).movedFiles,
+    100,
+  );
+  assert.equal(
+    validateVerifyOutcome(verified({ movedFiles: 0, comparedFiles: 0 }))
+      .dataSafety,
+    "YES",
+  );
+});
+
+test("verify shows each drive coverage and retains coverage after a stop", async () => {
+  for (const stopped of [false, true]) {
+    const store = createStore({
+      ...initialState,
+      volumes: [
+        volume("X:", { logPath: "x.refresh.csv", unixSecs: 1 }),
+        volume("Y:", { logPath: "y.refresh.csv", unixSecs: 1 }),
+      ],
+      selectedRoots: ["X:", "Y:"],
+    });
+    await createActions(
+      store,
+      async () => true,
+      backend({
+        startVerify: async () =>
+          verified({
+            movedFiles: 100,
+            stopped,
+            dataSafety: stopped ? "UNKNOWN" : "YES",
+          }),
+      }),
+    ).runVerify();
+    assert.match(store.get().notice.body, /Compared 12 of 100 moved files\./);
+    if (stopped) assert.equal(store.get().notice.title, "Verify stopped");
+    else {
+      assert.match(
+        store.get().notice.body,
+        /X: {2}Compared 12 of 100 moved files\./,
+      );
+      assert.match(
+        store.get().notice.body,
+        /Y: {2}Compared 12 of 100 moved files\./,
+      );
+    }
+  }
 });
 
 test("verify is locked until a selected drive has a refresh log", () => {
@@ -565,7 +631,7 @@ test("verify reads only the drives with a refresh log", async () => {
   assert.equal(store.get().notice.title, "Data safe: YES. Faster: NOT DECIDED");
   assert.equal(
     store.get().notice.body.split("\n")[0],
-    "Read speed: 10 → 400 MB/s (40.0 times faster)",
+    "Compared 12 of 12 moved files.",
   );
   assert.match(store.get().notice.body, /\nSlow files: 12 → 0\n/);
   assert.match(store.get().notice.body, /Next step: verify again after /);
@@ -597,7 +663,7 @@ test("verify reports changed data as an error and stops", async () => {
   // The user must know how many files changed.
   assert.match(
     store.get().notice.body,
-    /^Verify found 2 files with changed data, but no program wrote to them\./,
+    /Verify found 2 files with changed data without a recorded data write\./,
   );
   // The user must know what to keep and where to report.
   assert.match(store.get().notice.body, /Do not delete the files or the logs/);
