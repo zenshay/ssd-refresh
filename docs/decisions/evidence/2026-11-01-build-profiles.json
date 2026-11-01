@@ -1,0 +1,1671 @@
+{
+  "schema": 1,
+  "date": "2026-11-01",
+  "decision": "ThinLTO with 16 release code generation units",
+  "adoption": {
+    "pr": 55,
+    "commit": "98e99a9e72d8598c1891abe50d3e68ffca10719d",
+    "validation_run": 41281946938,
+    "main_validation_run": 41282453857,
+    "validation": "YES",
+    "main_cache_preparation": "YES"
+  },
+  "experiment_cost": {
+    "jobs": 19,
+    "runner_seconds": 13302,
+    "wall_seconds": 3322
+  },
+  "paired_studies": [
+    {
+      "run": 41265833094,
+      "source": "fee7fac1f6b2ef44862299253e756a69e60dbe60",
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41265833094/job/124728332029",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "logical_processors": 4,
+      "variants": [
+        {
+          "variant": "nightly1",
+          "rust": "rustc 1.101.0-nightly (92b5b8c87 2026-10-29)\nbinary: rustc\ncommit-hash: 92b5b8c87c61b20adc9001b41baf587634a74734\ncommit-date: 2026-10-29\nhost: x86_64-pc-windows-msvc\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4",
+          "validation_scope": "FULL",
+          "full_check": "YES",
+          "optimized_tests": "NOT_RUN",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 135.591,
+              "exit": 0,
+              "compiler_peak_mib": 2525.1
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 3.307,
+              "exit": 0,
+              "compiler_peak_mib": 207.5
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 10.072,
+              "exit": 0,
+              "compiler_peak_mib": 482.6
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 10.022,
+              "exit": 0,
+              "compiler_peak_mib": 484.5
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 10.067,
+              "exit": 0,
+              "compiler_peak_mib": 478.1
+            },
+            {
+              "name": "full-check",
+              "seconds": 188.435,
+              "exit": 0,
+              "compiler_peak_mib": 1877.7
+            }
+          ],
+          "runtime": [
+            {
+              "sha_ns": 192787125,
+              "csv_ns": 40398172,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 151587520,
+              "csv_ns": 29857400,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 143603980,
+              "csv_ns": 30070408,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ],
+          "compiler_peak_mib": 2525,
+          "cli_bytes": 1417728,
+          "gui_bytes": 12557312,
+          "target_bytes": 1965705564
+        },
+        {
+          "variant": "nightly8",
+          "rust": "rustc 1.101.0-nightly (92b5b8c87 2026-10-29)\nbinary: rustc\ncommit-hash: 92b5b8c87c61b20adc9001b41baf587634a74734\ncommit-date: 2026-10-29\nhost: x86_64-pc-windows-msvc\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4",
+          "validation_scope": "FULL",
+          "full_check": "YES",
+          "optimized_tests": "NOT_RUN",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 152.284,
+              "exit": 0,
+              "compiler_peak_mib": 3449.6
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 3.589,
+              "exit": 0,
+              "compiler_peak_mib": 220.5
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 11.962,
+              "exit": 0,
+              "compiler_peak_mib": 523
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 10.89,
+              "exit": 0,
+              "compiler_peak_mib": 533.7
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 9.926,
+              "exit": 0,
+              "compiler_peak_mib": 519.5
+            },
+            {
+              "name": "full-check",
+              "seconds": 165.073,
+              "exit": 0,
+              "compiler_peak_mib": 1903.8
+            }
+          ],
+          "runtime": [
+            {
+              "sha_ns": 147213720,
+              "csv_ns": 33417028,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 143334040,
+              "csv_ns": 28131708,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 142643980,
+              "csv_ns": 28459992,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ],
+          "compiler_peak_mib": 3450,
+          "cli_bytes": 1417728,
+          "gui_bytes": 12557312,
+          "target_bytes": 1965691139
+        }
+      ],
+      "alternating_runtime": null
+    },
+    {
+      "run": 41266656227,
+      "source": "a34b2da3d751811e1066bfcb74743a8d30064cf3",
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41266656227/job/124730747526",
+      "cpu": "AMD EPYC 9V74 80-Core Processor",
+      "logical_processors": 4,
+      "variants": [
+        {
+          "variant": "fat1",
+          "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
+          "validation_scope": "TIMING_ONLY",
+          "full_check": "NOT_RUN",
+          "optimized_tests": "NOT_RUN",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 257.487,
+              "exit": 0,
+              "compiler_peak_mib": 3047.5
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 15.851,
+              "exit": 0,
+              "compiler_peak_mib": 288.9
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 140.548,
+              "exit": 0,
+              "compiler_peak_mib": 911.1
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 138.313,
+              "exit": 0,
+              "compiler_peak_mib": 884.3
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 133.555,
+              "exit": 0,
+              "compiler_peak_mib": 914.8
+            }
+          ],
+          "runtime": [
+            {
+              "sha_ns": 4646886,
+              "csv_ns": 6965542,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 4664332,
+              "csv_ns": 6583676,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 4641478,
+              "csv_ns": 7285521,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ],
+          "compiler_peak_mib": 3048,
+          "cli_bytes": 940544,
+          "gui_bytes": 8948224,
+          "target_bytes": 1761703365
+        },
+        {
+          "variant": "thin1",
+          "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
+          "validation_scope": "TIMING_ONLY",
+          "full_check": "NOT_RUN",
+          "optimized_tests": "NOT_RUN",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 252.568,
+              "exit": 0,
+              "compiler_peak_mib": 2986.9
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 14.25,
+              "exit": 0,
+              "compiler_peak_mib": 295.7
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 125.963,
+              "exit": 0,
+              "compiler_peak_mib": 811
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 121.36,
+              "exit": 0,
+              "compiler_peak_mib": 819.2
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 123.872,
+              "exit": 0,
+              "compiler_peak_mib": 794.9
+            }
+          ],
+          "runtime": [
+            {
+              "sha_ns": 4642154,
+              "csv_ns": 6604629,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 4643739,
+              "csv_ns": 6914534,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 4639283,
+              "csv_ns": 6637487,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ],
+          "compiler_peak_mib": 2987,
+          "cli_bytes": 951808,
+          "gui_bytes": 9407488,
+          "target_bytes": 1765740582
+        }
+      ],
+      "alternating_runtime": [
+        {
+          "result": {
+            "sha_ns": 4649308,
+            "csv_ns": 6572948,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 1,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4642850,
+            "csv_ns": 6809090,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 1,
+          "variant": "thin1"
+        },
+        {
+          "result": {
+            "sha_ns": 4680872,
+            "csv_ns": 7187932,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 2,
+          "variant": "thin1"
+        },
+        {
+          "result": {
+            "sha_ns": 4641535,
+            "csv_ns": 6728379,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 2,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4659347,
+            "csv_ns": 6559274,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 3,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4649279,
+            "csv_ns": 6965500,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 3,
+          "variant": "thin1"
+        },
+        {
+          "result": {
+            "sha_ns": 4642493,
+            "csv_ns": 6530324,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 4,
+          "variant": "thin1"
+        },
+        {
+          "result": {
+            "sha_ns": 4643552,
+            "csv_ns": 6542905,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 4,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4695882,
+            "csv_ns": 6491507,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 5,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4633455,
+            "csv_ns": 6630012,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 5,
+          "variant": "thin1"
+        },
+        {
+          "result": {
+            "sha_ns": 4643112,
+            "csv_ns": 6518622,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 6,
+          "variant": "thin1"
+        },
+        {
+          "result": {
+            "sha_ns": 4643940,
+            "csv_ns": 6491426,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 6,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4639261,
+            "csv_ns": 6601092,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 7,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4658378,
+            "csv_ns": 6716884,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 7,
+          "variant": "thin1"
+        },
+        {
+          "result": {
+            "sha_ns": 4643776,
+            "csv_ns": 6688407,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 8,
+          "variant": "thin1"
+        },
+        {
+          "result": {
+            "sha_ns": 4644807,
+            "csv_ns": 6686113,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 8,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4648650,
+            "csv_ns": 6721200,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 9,
+          "variant": "fat1"
+        },
+        {
+          "result": {
+            "sha_ns": 4637718,
+            "csv_ns": 6643263,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "cycle": 9,
+          "variant": "thin1"
+        }
+      ]
+    },
+    {
+      "run": 41266658930,
+      "source": "a34b2da3d751811e1066bfcb74743a8d30064cf3",
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41266658930/job/124730756170",
+      "cpu": "AMD EPYC 7763 64-Core Processor",
+      "logical_processors": 4,
+      "variants": [
+        {
+          "variant": "fat1",
+          "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
+          "validation_scope": "TIMING_ONLY",
+          "full_check": "NOT_RUN",
+          "optimized_tests": "NOT_RUN",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 337.245,
+              "exit": 0,
+              "compiler_peak_mib": 3103.7
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 19.148,
+              "exit": 0,
+              "compiler_peak_mib": 277.7
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 173.743,
+              "exit": 0,
+              "compiler_peak_mib": 879.2
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 165.629,
+              "exit": 0,
+              "compiler_peak_mib": 885.7
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 169.004,
+              "exit": 0,
+              "compiler_peak_mib": 885.8
+            }
+          ],
+          "runtime": [
+            {
+              "sha_ns": 5327502,
+              "csv_ns": 7725301,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5314265,
+              "csv_ns": 7619528,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5296235,
+              "csv_ns": 7888976,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ],
+          "compiler_peak_mib": 3104,
+          "cli_bytes": 940544,
+          "gui_bytes": 8948224,
+          "target_bytes": 1761722227
+        },
+        {
+          "variant": "thin16",
+          "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
+          "validation_scope": "TIMING_ONLY",
+          "full_check": "NOT_RUN",
+          "optimized_tests": "NOT_RUN",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 303.12,
+              "exit": 0,
+              "compiler_peak_mib": 3556.6
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 14.368,
+              "exit": 0,
+              "compiler_peak_mib": 267.9
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 125.07,
+              "exit": 0,
+              "compiler_peak_mib": 916.6
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 125.676,
+              "exit": 0,
+              "compiler_peak_mib": 917.6
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 124.329,
+              "exit": 0,
+              "compiler_peak_mib": 916
+            }
+          ],
+          "runtime": [
+            {
+              "sha_ns": 5394584,
+              "csv_ns": 8186248,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5299107,
+              "csv_ns": 8029540,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5297303,
+              "csv_ns": 8046284,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ],
+          "compiler_peak_mib": 3557,
+          "cli_bytes": 995840,
+          "gui_bytes": 10143232,
+          "target_bytes": 2026190790
+        }
+      ],
+      "alternating_runtime": [
+        {
+          "result": {
+            "sha_ns": 5286409,
+            "csv_ns": 7569112,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 1
+        },
+        {
+          "result": {
+            "sha_ns": 5286342,
+            "csv_ns": 8126509,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 1
+        },
+        {
+          "result": {
+            "sha_ns": 5296833,
+            "csv_ns": 8337070,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 2
+        },
+        {
+          "result": {
+            "sha_ns": 5310202,
+            "csv_ns": 7567118,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 2
+        },
+        {
+          "result": {
+            "sha_ns": 5286430,
+            "csv_ns": 7661266,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 3
+        },
+        {
+          "result": {
+            "sha_ns": 5317221,
+            "csv_ns": 8028088,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 3
+        },
+        {
+          "result": {
+            "sha_ns": 5295190,
+            "csv_ns": 8135239,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 4
+        },
+        {
+          "result": {
+            "sha_ns": 5287051,
+            "csv_ns": 7712270,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 4
+        },
+        {
+          "result": {
+            "sha_ns": 5298324,
+            "csv_ns": 7700282,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 5
+        },
+        {
+          "result": {
+            "sha_ns": 5296173,
+            "csv_ns": 8089974,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 5
+        },
+        {
+          "result": {
+            "sha_ns": 5301510,
+            "csv_ns": 8006092,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 6
+        },
+        {
+          "result": {
+            "sha_ns": 5304046,
+            "csv_ns": 7662469,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 6
+        },
+        {
+          "result": {
+            "sha_ns": 5295950,
+            "csv_ns": 7858412,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 7
+        },
+        {
+          "result": {
+            "sha_ns": 5292259,
+            "csv_ns": 8030089,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 7
+        },
+        {
+          "result": {
+            "sha_ns": 5323412,
+            "csv_ns": 8164133,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 8
+        },
+        {
+          "result": {
+            "sha_ns": 5292054,
+            "csv_ns": 7566197,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 8
+        },
+        {
+          "result": {
+            "sha_ns": 5302406,
+            "csv_ns": 7515696,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "fat1",
+          "cycle": 9
+        },
+        {
+          "result": {
+            "sha_ns": 5290887,
+            "csv_ns": 8017323,
+            "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+            "rows": 10000
+          },
+          "variant": "thin16",
+          "cycle": 9
+        }
+      ]
+    }
+  ],
+  "screening": [
+    {
+      "run": 41265381380,
+      "source": "2024bc4f6ed91628284d35262700672649433d75",
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41265381380/attempts/1",
+      "cases": [
+        {
+          "variant": "dev64",
+          "status": "YES",
+          "cpu": "AMD EPYC 7763 64-Core Processor",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 139.302,
+              "exit": 0,
+              "compiler_peak_mib": 2891
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 3.949,
+              "exit": 0,
+              "compiler_peak_mib": 185.8
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 10.071,
+              "exit": 0,
+              "compiler_peak_mib": 455.3
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 10.087,
+              "exit": 0,
+              "compiler_peak_mib": 484.9
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 10.007,
+              "exit": 0,
+              "compiler_peak_mib": 455.8
+            },
+            {
+              "name": "full-check",
+              "seconds": 200.63,
+              "exit": 0,
+              "compiler_peak_mib": 1845.5
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "NOT_RUN",
+          "error": null,
+          "cli_bytes": 1427456,
+          "gui_bytes": 12650496,
+          "runtime": [
+            {
+              "sha_ns": 241935200,
+              "csv_ns": 36039795,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 232989275,
+              "csv_ns": 32549236,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 234819066,
+              "csv_ns": 31296147,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        },
+        {
+          "variant": "dev256",
+          "status": "YES",
+          "cpu": "AMD EPYC 9V74 80-Core Processor",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 103.414,
+              "exit": 0,
+              "compiler_peak_mib": 3073.7
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 3.293,
+              "exit": 0,
+              "compiler_peak_mib": 184.6
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 8.572,
+              "exit": 0,
+              "compiler_peak_mib": 439
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 8.547,
+              "exit": 0,
+              "compiler_peak_mib": 455.1
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 8.949,
+              "exit": 0,
+              "compiler_peak_mib": 442.9
+            },
+            {
+              "name": "full-check",
+              "seconds": 201.362,
+              "exit": 0,
+              "compiler_peak_mib": 1871.7
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "NOT_RUN",
+          "error": null,
+          "cli_bytes": 1427968,
+          "gui_bytes": 12611072,
+          "runtime": [
+            {
+              "sha_ns": 216592000,
+              "csv_ns": 24820820,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 217518225,
+              "csv_ns": 24412255,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 220150300,
+              "csv_ns": 25006860,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        },
+        {
+          "variant": "dev16",
+          "status": "YES",
+          "cpu": "AMD EPYC 7763 64-Core Processor",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 132.283,
+              "exit": 0,
+              "compiler_peak_mib": 2637.9
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 3.33,
+              "exit": 0,
+              "compiler_peak_mib": 197.3
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 9.91,
+              "exit": 0,
+              "compiler_peak_mib": 484.9
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 9.889,
+              "exit": 0,
+              "compiler_peak_mib": 488.9
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 10.082,
+              "exit": 0,
+              "compiler_peak_mib": 480.6
+            },
+            {
+              "name": "full-check",
+              "seconds": 196.062,
+              "exit": 0,
+              "compiler_peak_mib": 1836.6
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "NOT_RUN",
+          "error": null,
+          "cli_bytes": 1424896,
+          "gui_bytes": 12613632,
+          "runtime": [
+            {
+              "sha_ns": 221782925,
+              "csv_ns": 29935687,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 221035400,
+              "csv_ns": 30730891,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 222461850,
+              "csv_ns": 32248613,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": 41265383431,
+      "source": "2024bc4f6ed91628284d35262700672649433d75",
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41265383431/attempts/1",
+      "cases": [
+        {
+          "variant": "fat1",
+          "status": "YES",
+          "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 322.281,
+              "exit": 0,
+              "compiler_peak_mib": 3010.1
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 18.897,
+              "exit": 0,
+              "compiler_peak_mib": 264
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 171.513,
+              "exit": 0,
+              "compiler_peak_mib": 888.8
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 164.714,
+              "exit": 0,
+              "compiler_peak_mib": 914.5
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 165.681,
+              "exit": 0,
+              "compiler_peak_mib": 889.1
+            },
+            {
+              "name": "release-tests",
+              "seconds": 121.989,
+              "exit": 0,
+              "compiler_peak_mib": 1991
+            },
+            {
+              "name": "release-ipc",
+              "seconds": 1.256,
+              "exit": 0,
+              "compiler_peak_mib": 0
+            },
+            {
+              "name": "full-check",
+              "seconds": 298.505,
+              "exit": 0,
+              "compiler_peak_mib": 2689.3
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "YES",
+          "error": null,
+          "cli_bytes": 940544,
+          "gui_bytes": 8948224,
+          "runtime": [
+            {
+              "sha_ns": 5925084,
+              "csv_ns": 8643374,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5955712,
+              "csv_ns": 8482545,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 6027290,
+              "csv_ns": 8576265,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        },
+        {
+          "variant": "thin16",
+          "status": "YES",
+          "cpu": "AMD EPYC 7763 64-Core Processor",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 342.902,
+              "exit": 0,
+              "compiler_peak_mib": 3515.1
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 15,
+              "exit": 0,
+              "compiler_peak_mib": 266.9
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 132.271,
+              "exit": 0,
+              "compiler_peak_mib": 917.9
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 128.459,
+              "exit": 0,
+              "compiler_peak_mib": 916.6
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 132.456,
+              "exit": 0,
+              "compiler_peak_mib": 914.3
+            },
+            {
+              "name": "release-tests",
+              "seconds": 107.33,
+              "exit": 0,
+              "compiler_peak_mib": 1399.7
+            },
+            {
+              "name": "release-ipc",
+              "seconds": 1.248,
+              "exit": 0,
+              "compiler_peak_mib": 0
+            },
+            {
+              "name": "full-check",
+              "seconds": 323.393,
+              "exit": 0,
+              "compiler_peak_mib": 2715.5
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "YES",
+          "error": null,
+          "cli_bytes": 995840,
+          "gui_bytes": 10143232,
+          "runtime": [
+            {
+              "sha_ns": 5307345,
+              "csv_ns": 8510265,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5359522,
+              "csv_ns": 8592381,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5294033,
+              "csv_ns": 8330185,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        },
+        {
+          "variant": "off16",
+          "status": "YES",
+          "cpu": "INTEL(R) XEON(R) PLATINUM 8573C",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 195.353,
+              "exit": 0,
+              "compiler_peak_mib": 3096.7
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 5.975,
+              "exit": 0,
+              "compiler_peak_mib": 224.8
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 45.424,
+              "exit": 0,
+              "compiler_peak_mib": 924.6
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 45.713,
+              "exit": 0,
+              "compiler_peak_mib": 983.9
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 45.436,
+              "exit": 0,
+              "compiler_peak_mib": 968.2
+            },
+            {
+              "name": "release-tests",
+              "seconds": 49.707,
+              "exit": 0,
+              "compiler_peak_mib": 963.3
+            },
+            {
+              "name": "release-ipc",
+              "seconds": 1.242,
+              "exit": 0,
+              "compiler_peak_mib": 0
+            },
+            {
+              "name": "full-check",
+              "seconds": 311.141,
+              "exit": 0,
+              "compiler_peak_mib": 2855.9
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "YES",
+          "error": null,
+          "cli_bytes": 1072640,
+          "gui_bytes": 9982976,
+          "runtime": [
+            {
+              "sha_ns": 5722839,
+              "csv_ns": 9903302,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5747449,
+              "csv_ns": 9864615,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 5756997,
+              "csv_ns": 9862505,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        },
+        {
+          "variant": "thin1",
+          "status": "YES",
+          "cpu": "AMD EPYC 9V74 80-Core Processor",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 263.782,
+              "exit": 0,
+              "compiler_peak_mib": 3023.8
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 17.817,
+              "exit": 0,
+              "compiler_peak_mib": 283.8
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 138.332,
+              "exit": 0,
+              "compiler_peak_mib": 777.6
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 126.024,
+              "exit": 0,
+              "compiler_peak_mib": 780.1
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 123.832,
+              "exit": 0,
+              "compiler_peak_mib": 867.8
+            },
+            {
+              "name": "release-tests",
+              "seconds": 100.411,
+              "exit": 0,
+              "compiler_peak_mib": 1379.3
+            },
+            {
+              "name": "release-ipc",
+              "seconds": 0.622,
+              "exit": 0,
+              "compiler_peak_mib": 0
+            },
+            {
+              "name": "full-check",
+              "seconds": 255.929,
+              "exit": 0,
+              "compiler_peak_mib": 2749.4
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "YES",
+          "error": null,
+          "cli_bytes": 951808,
+          "gui_bytes": 9407488,
+          "runtime": [
+            {
+              "sha_ns": 4657088,
+              "csv_ns": 6712763,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 4637315,
+              "csv_ns": 6498330,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 4635080,
+              "csv_ns": 6621219,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run": 41265385441,
+      "source": "2024bc4f6ed91628284d35262700672649433d75",
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41265385441/attempts/1",
+      "cases": [
+        {
+          "variant": "nightly4",
+          "status": "YES",
+          "cpu": "AMD EPYC 7763 64-Core Processor",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 137.766,
+              "exit": 0,
+              "compiler_peak_mib": 2991.8
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 2.737,
+              "exit": 0,
+              "compiler_peak_mib": 218.7
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 9.844,
+              "exit": 0,
+              "compiler_peak_mib": 508
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 9.881,
+              "exit": 0,
+              "compiler_peak_mib": 508.9
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 9.853,
+              "exit": 0,
+              "compiler_peak_mib": 511.2
+            },
+            {
+              "name": "full-check",
+              "seconds": 172.941,
+              "exit": 0,
+              "compiler_peak_mib": 1911.4
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "NOT_RUN",
+          "error": null,
+          "cli_bytes": 1417728,
+          "gui_bytes": 12557312,
+          "runtime": [
+            {
+              "sha_ns": 143456220,
+              "csv_ns": 28627520,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 144094240,
+              "csv_ns": 28643840,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 142256500,
+              "csv_ns": 28757044,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        },
+        {
+          "variant": "nightly1",
+          "status": "YES",
+          "cpu": "AMD EPYC 7763 64-Core Processor",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 138.388,
+              "exit": 0,
+              "compiler_peak_mib": 2529.3
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 3.546,
+              "exit": 0,
+              "compiler_peak_mib": 208.9
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 10.371,
+              "exit": 0,
+              "compiler_peak_mib": 480.9
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 10.274,
+              "exit": 0,
+              "compiler_peak_mib": 485
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 10.022,
+              "exit": 0,
+              "compiler_peak_mib": 486.7
+            },
+            {
+              "name": "full-check",
+              "seconds": 185.76,
+              "exit": 0,
+              "compiler_peak_mib": 1873.5
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "NOT_RUN",
+          "error": null,
+          "cli_bytes": 1417728,
+          "gui_bytes": 12557312,
+          "runtime": [
+            {
+              "sha_ns": 143699960,
+              "csv_ns": 28389636,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 144064800,
+              "csv_ns": 28554492,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 142738860,
+              "csv_ns": 28477776,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        },
+        {
+          "variant": "nightly8",
+          "status": "YES",
+          "cpu": "AMD EPYC 9V45 96-Core Processor",
+          "measures": [
+            {
+              "name": "cold-gui",
+              "seconds": 80.378,
+              "exit": 0,
+              "compiler_peak_mib": 3224.4
+            },
+            {
+              "name": "cold-cli-probe",
+              "seconds": 1.645,
+              "exit": 0,
+              "compiler_peak_mib": 218.4
+            },
+            {
+              "name": "rebuild-1",
+              "seconds": 5.928,
+              "exit": 0,
+              "compiler_peak_mib": 532.1
+            },
+            {
+              "name": "rebuild-2",
+              "seconds": 6.029,
+              "exit": 0,
+              "compiler_peak_mib": 510.6
+            },
+            {
+              "name": "rebuild-3",
+              "seconds": 5.92,
+              "exit": 0,
+              "compiler_peak_mib": 509.2
+            },
+            {
+              "name": "full-check",
+              "seconds": 117.85,
+              "exit": 0,
+              "compiler_peak_mib": 1902.1
+            }
+          ],
+          "full_check": "YES",
+          "optimized_tests": "NOT_RUN",
+          "error": null,
+          "cli_bytes": 1417728,
+          "gui_bytes": 12557312,
+          "runtime": [
+            {
+              "sha_ns": 80573777,
+              "csv_ns": 16096309,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 80767033,
+              "csv_ns": 16558165,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            },
+            {
+              "sha_ns": 80770011,
+              "csv_ns": 16925276,
+              "sha_digest": "7014ae0f2fc0fee42a440b97859207efb72ffee09d4864f7433f1bf756a17aca",
+              "rows": 10000
+            }
+          ]
+        },
+        {
+          "variant": "cranelift",
+          "status": "NO",
+          "cpu": "AMD EPYC 7763 64-Core Processor",
+          "measures": [
+            {
+              "name": "contract-probe",
+              "seconds": 0.235,
+              "exit": 1,
+              "compiler_peak_mib": 0
+            }
+          ],
+          "full_check": "NOT_RUN",
+          "optimized_tests": "NOT_RUN",
+          "error": "Failed: contract-probe",
+          "runtime": []
+        }
+      ]
+    },
+    {
+      "run": 41265625867,
+      "source": "71048ee596740062f06c05eb8465103aabf6d270",
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41265625867/attempts/1",
+      "cases": [
+        {
+          "variant": "cranelift",
+          "status": "NO",
+          "cpu": "AMD EPYC 7763 64-Core Processor",
+          "measures": [
+            {
+              "name": "contract-probe",
+              "seconds": 6.3,
+              "exit": -529697949,
+              "compiler_peak_mib": 262.2
+            }
+          ],
+          "full_check": "NOT_RUN",
+          "optimized_tests": "NOT_RUN",
+          "error": "Failed: contract-probe",
+          "runtime": []
+        }
+      ]
+    }
+  ],
+  "cranelift_diagnostic": {
+    "run": 41265625867,
+    "test": "panic_stops_the_worker_and_releases_control",
+    "exit_hex": "0xe06d7363",
+    "compiled": true,
+    "test_completed": false
+  },
+  "release_wait_model": {
+    "verified_at": "2026-11-01",
+    "scope": "Version tag push to verified release draft. Human publication time is excluded.",
+    "historical_release": {
+      "run": 41216795372,
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41216795372",
+      "source": "f06eb7cf5f9fb679b41441116c2884dcf16d32ea",
+      "before_low_risk_changes": true,
+      "total_seconds": 999,
+      "check_span_seconds": 500,
+      "windows_x64_seconds": 445,
+      "windows_arm64_seconds": 460,
+      "other_critical_path_seconds": 39
+    },
+    "measured_warm_windows": {
+      "run": 41223423371,
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41223423371",
+      "source": "3e97b8cdd090b17758d34a0ba8da008e7b6fd311",
+      "full_release_run": false,
+      "x64": {
+        "job": 124602509122,
+        "total_seconds": 260,
+        "gui_seconds": 174,
+        "cli_seconds": 16
+      },
+      "arm64": {
+        "job": 124602508972,
+        "total_seconds": 289,
+        "gui_seconds": 195,
+        "cli_seconds": 17
+      }
+    },
+    "measured_warm_check": {
+      "run": 41224810487,
+      "attempt": 2,
+      "url": "https://github.com/zenshay/ssd-refresh/actions/runs/41224810487/attempts/2",
+      "seconds": 258
+    },
+    "projection": {
+      "status": "MODEL_NOT_END_TO_END_MEASUREMENT",
+      "baseline_seconds": 586,
+      "baseline_formula": "258 second checks + max(260 second x64, 289 second ARM64) + 39 second historical overhead",
+      "only_x64_saves_44_seconds": {
+        "windows_stage_saving_seconds": 0,
+        "whole_release_saving_seconds": 0
+      },
+      "both_architectures_save_44_seconds": {
+        "windows_stage_saving_seconds": 44,
+        "windows_stage_saving_percent": 15.2249,
+        "whole_release_saving_seconds": 44,
+        "whole_release_saving_percent": 7.5085
+      },
+      "both_compile_steps_save_26_percent": {
+        "x64_projected_seconds": 210.6,
+        "arm64_projected_seconds": 233.88,
+        "windows_stage_saving_seconds": 55.12,
+        "windows_stage_saving_percent": 19.0727,
+        "whole_release_projected_seconds": 530.88,
+        "whole_release_saving_percent": 9.4061
+      },
+      "assumptions": [
+        "Both Windows architectures use the candidate and receive the stated benefit.",
+        "ARM64 has not been measured with ThinLTO 16. Its benefit is an assumption.",
+        "The 26 percent sample contains GUI, CLI and a synthetic example. The release workflow has no such example.",
+        "The measured check, build and historical overhead come from different runs and commits.",
+        "Other jobs, queue time, package upload time and draft creation do not become the slowest path.",
+        "Caches are warm. First adoption and cache misses have different costs."
+      ]
+    }
+  }
+}
