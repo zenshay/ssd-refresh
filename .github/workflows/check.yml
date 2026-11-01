@@ -19,7 +19,7 @@ on:
         default: all
         options: [all, dev16, dev64, dev256, fat1, thin1, thin16, off16, nightly1, nightly4, nightly8, cranelift]
       risk_compare:
-        description: Measure the stable baseline on the same runner first
+        description: Measure the matching baseline on the same runner first
         type: boolean
         default: false
   pull_request:
@@ -222,8 +222,8 @@ jobs:
           RISK_COMPARE: ${{ inputs.risk_compare }}
         run: |
           if ($env:RISK_COMPARE -eq 'true') {
-            if ($env:RISK_VARIANT -notin @('dev64','dev256','thin1','thin16','off16')) { throw 'Unsupported paired case' }
-            $baseline = if ($env:RISK_VARIANT -in @('dev64','dev256')) { 'dev16' } else { 'fat1' }
+            if ($env:RISK_VARIANT -notin @('dev64','dev256','thin1','thin16','off16','nightly4','nightly8')) { throw 'Unsupported paired case' }
+            $baseline = if ($env:RISK_VARIANT -in @('dev64','dev256')) { 'dev16' } elseif ($env:RISK_VARIANT -like 'nightly*') { 'nightly1' } else { 'fat1' }
             & ./scripts/compile-risk.ps1 -Variant $baseline -Samples ([int]$env:RISK_SAMPLES)
             if ($LASTEXITCODE -ne 0) { throw 'Paired baseline failed' }
           }
