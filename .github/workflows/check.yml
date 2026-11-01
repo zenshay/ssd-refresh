@@ -224,10 +224,31 @@ jobs:
           if ($env:RISK_COMPARE -eq 'true') {
             if ($env:RISK_VARIANT -notin @('dev64','dev256','thin1','thin16','off16','nightly4','nightly8')) { throw 'Unsupported paired case' }
             $baseline = if ($env:RISK_VARIANT -in @('dev64','dev256')) { 'dev16' } elseif ($env:RISK_VARIANT -like 'nightly*') { 'nightly1' } else { 'fat1' }
-            & ./scripts/compile-risk.ps1 -Variant $baseline -Samples ([int]$env:RISK_SAMPLES)
+            & ./scripts/compile-risk.ps1 -Variant $baseline -Samples ([int]$env:RISK_SAMPLES) -TimingOnly
             if ($LASTEXITCODE -ne 0) { throw 'Paired baseline failed' }
           }
-          & ./scripts/compile-risk.ps1 -Variant $env:RISK_VARIANT -Samples ([int]$env:RISK_SAMPLES)
+          if ($env:RISK_COMPARE -eq 'true') {
+            & ./scripts/compile-risk.ps1 -Variant $env:RISK_VARIANT -Samples ([int]$env:RISK_SAMPLES) -TimingOnly
+          } else {
+            & ./scripts/compile-risk.ps1 -Variant $env:RISK_VARIANT -Samples ([int]$env:RISK_SAMPLES)
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate failed' }
+          if ($env:RISK_COMPARE -eq 'true') {
+            $folder = if ($baseline -eq 'fat1') { 'release' } else { 'debug' }
+            $paired = @()
+            for ($cycle=1; $cycle -le 9; $cycle++) {
+              $names = if ($cycle % 2) { @($baseline,$env:RISK_VARIANT) } else { @($env:RISK_VARIANT,$baseline) }
+              foreach ($name in $names) {
+                $binary = Join-Path $PWD "target/risk-$name/$folder/examples/compile_probe.exe"
+                $raw = & $binary
+                if ($LASTEXITCODE -ne 0) { throw 'Paired runtime check failed' }
+                $paired += @{variant=$name;cycle=$cycle;result=($raw | ConvertFrom-Json)}
+              }
+            }
+            $json = $paired | ConvertTo-Json -Depth 8 -Compress
+            [IO.File]::WriteAllText((Join-Path $PWD 'risk-output/runtime-pair.json'),$json+"`n",[Text.UTF8Encoding]::new($false))
+            Write-Output "RISK_RUNTIME_PAIR: $json"
+          }
       - name: Store experiment evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
