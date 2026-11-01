@@ -36,6 +36,8 @@ try {
         Assert ($task.Settings.RunOnlyIfIdle) 'The task must wait for idle.'
         Assert ($task.Settings.DisallowStartIfOnBatteries) 'The task must wait for AC power.'
         Assert (!$task.Settings.WakeToRun) 'The task must not wake the computer.'
+        Assert ($task.Settings.RestartCount -eq 3) 'The task must retry three times after failure.'
+        Assert ($task.Settings.RestartInterval -eq 'PT30M') 'The task must wait 30 minutes before each retry.'
         Assert ($task.Action.Arguments -eq ('--scheduled-verify "' + $report + '"')) 'The action must only verify.'
     }
     $dates = @($script:created | ForEach-Object { [datetime]$_.Triggers[0].StartBoundary })

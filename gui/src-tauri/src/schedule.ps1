@@ -29,6 +29,7 @@ try {
         $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited -ErrorAction Stop
         $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RunOnlyIfIdle `
             -IdleDuration (New-TimeSpan -Minutes 5) -IdleWaitTimeout (New-TimeSpan -Days 7) `
+            -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 30) `
             -DontStopOnIdleEnd -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2) -ErrorAction Stop
         $action = New-ScheduledTaskAction -Execute $Runner -Argument ('--scheduled-verify "' + $Report + '"') -WorkingDirectory $Directory -ErrorAction Stop
         $created = @()

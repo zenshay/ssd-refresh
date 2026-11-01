@@ -86,7 +86,9 @@ Windows runs each check after 1, 7 or 30 days from the last change to the refres
 The app can be closed. You must be signed in. Windows waits for AC power and an idle computer.
 A check can continue when you return. Battery use stops it. Each check has a two-hour limit.
 Missed checks can run later. Two app operations cannot run at the same time for the same Windows user.
-If another operation holds the slot, the check fails. Run Verify manually after that operation ends.
+If another app operation holds the slot, scheduled Verify returns code `6` (busy).
+Task settings request three restarts after failure, with 30 minutes between attempts.
+Existing plans keep their old settings. Remove and create them again to apply this policy.
 Scheduled Verify runs without administrator rights. It cannot check files that need those rights.
 Run Verify manually with administrator rights to check those files.
 
@@ -96,7 +98,8 @@ Verify uses the same exit codes in the CLI and scheduled tasks:
 `0` = completed; `1` = error or cancelled; `2` = unsupported; `3` = data mismatch; `4` = stopped; `5` = incomplete.
 Code `2` means administrator or root rights are required, or the platform is not supported.
 Code `5` means verify could not check all data or could not write its summary log.
-Codes `0` through `4` did not change. Code `5` is new.
+Code `6` means busy: another operation holds the app lock. It applies to scheduled Verify only.
+Codes `0` through `5` keep their meanings.
 For a refresh log, code `0` requires Data safe `YES`.
 A scan report has Data safe `n/a` and can return `0` when complete.
 Windows can also return its own task error codes.
@@ -542,6 +545,23 @@ Summary
 
 - "Before" is the read before the move (or the scan result for a scan report). "Now" is this run.
 - If metadata changed or a hash difference lacks a trusted baseline, `verify` excludes the file (`MODIFIED`).
+- Before a direct read, verify checks the flush handle identity and requests a cache flush. It does not write file data.
+- If the flush fails, verify continues and records `No cache flush` in the CSV detail. One summary line gives the count.
+- A data difference without a completed flush has status `ERROR`. It cannot prove `NO` and prevents `YES`.
+
+Refresh and verify lock their output files before processing. Refresh locks before it reads resume rows.
+Refresh reserves the output before confirmation. If the run ends before writing bytes, it removes only the empty file it created.
+It keeps files that existed before the run and files with any bytes.
+Another process that uses the same output or a hard link stops with a clear error and exit code `1`.
+Scan has no global operation lock. Core output locks use Windows `LockFileEx` or Unix `flock`, preserving CLI Rust 1.85 support.
+Verify compares the log's volume and file ID only with the source CSV and `--out`.
+It rejects any log with more than one hard link, even when no listed file uses that link.
+For listed files, it compares normalized path text with the canonical and supplied log paths. It does not open listed files during this check.
+The check includes unselected rows. A listed file without read access does not abort the check.
+Windows and Unix provide the link count. If the count is unknown, verify rejects any nonempty log, including previous verify logs.
+An empty log with an unknown count still receives the path checks. Rejection returns code `1` before data reads or log writes.
+On Windows, refresh reloads the free-space bitmap once before it reports insufficient space.
+On Linux, refresh checks the reopened handle's device and inode before it moves data.
 - `--sample N` reads a maximum of N files per group. The same path always gets the same choice. Thus the next run reads the same files.
 - `verify --from C-scan.csv` checks the slow files of a scan report. It shows if one read made them fast.
 

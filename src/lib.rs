@@ -9,6 +9,7 @@
 pub mod common;
 pub mod control;
 pub mod csv;
+pub mod output_lock;
 pub mod progress;
 pub mod reader;
 pub mod refresh;
