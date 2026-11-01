@@ -166,24 +166,28 @@ const VERIFY_PLAN =
 function refreshNotice(
   moved: number,
   errors: number,
+  skipped: number,
   stopped: boolean,
 ): Notice {
-  // A file with ERROR was not moved. The refresh did not change its data.
   const errorLine =
     errors > 0
-      ? ` ${countOf(errors, "file")} could not be moved. Their data did not change. The refresh log (Folder button) has the reason for each file.`
+      ? ` ${countOf(errors, "file")} could not finish refresh or the data check. Keep the files and read the refresh log (Folder button).`
+      : "";
+  const skipLine =
+    skipped > 0
+      ? ` ${countOf(skipped, "file")} ${wasWere(skipped)} skipped before a move. The refresh log (Folder button) gives each reason. Close programs that use busy files before another scan.`
       : "";
   if (stopped)
     return {
-      kind: "info",
+      kind: errors > 0 ? "warn" : "info",
       title: "Refresh stopped",
-      body: `${countOf(moved, "file")} ${wasWere(moved)} moved before the stop.${errorLine} The refresh did not touch the other files. Scan again to check them.`,
+      body: `${countOf(moved, "file")} ${wasWere(moved)} moved before the stop.${errorLine}${skipLine} The refresh did not touch the other files.`,
     };
-  if (errors > 0)
+  if (errors > 0 || skipped > 0)
     return {
       kind: "warn",
-      title: `${countOf(moved, "file")} rewritten, ${fmtCount(errors)} not moved`,
-      body: `${errorLine.trim()}\n${FAST_AT_FIRST} ${VERIFY_PLAN}`,
+      title: `${countOf(moved, "file")} rewritten${skipped > 0 ? `, ${fmtCount(skipped)} skipped` : ""}${errors > 0 ? `, ${fmtCount(errors)} failed` : ""}`,
+      body: `${(errorLine + skipLine).trim()}${moved > 0 ? `\n${FAST_AT_FIRST} ${VERIFY_PLAN}` : ""}`,
     };
   return {
     kind: "ok",
@@ -429,6 +433,7 @@ export function createActions(
 
     let totalMoved = 0;
     let totalErrors = 0;
+    let totalSkipped = 0;
     const attemptedRoots = new Set<string>();
     let wasStopped = false;
 
@@ -451,6 +456,7 @@ export function createActions(
         const outcome = await backend.startRefresh(scanResult.reportPath, root);
         totalMoved += outcome.movedFiles;
         totalErrors += outcome.errorFiles;
+        totalSkipped += outcome.skippedFiles ?? 0;
         // The new log is now the newest refresh of this drive. Verify reads it.
         const lastRefresh = {
           logPath: outcome.logPath,
@@ -494,7 +500,7 @@ export function createActions(
       progress: null,
       stopping: false,
       scans: nextScans,
-      notice: refreshNotice(totalMoved, totalErrors, wasStopped),
+      notice: refreshNotice(totalMoved, totalErrors, totalSkipped, wasStopped),
     });
   }
 

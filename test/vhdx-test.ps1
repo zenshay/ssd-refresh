@@ -12,13 +12,14 @@ param(
     # The folder for the VHDX file and its mount folder. It needs 4 GB of free space or more.
     [string]$Dir = (Join-Path $PSScriptRoot '..\scratch'),
     [int]$SizeMB = 4096,
-    [int]$PauseSeconds = 0
+    [int]$PauseSeconds = 0,
+    [string]$OutputDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $Dir = [IO.Path]::GetFullPath($Dir)
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$out = Join-Path $repo "output\vhdx-test-$stamp"
+$out = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $repo "output\vhdx-test-$stamp" }
 New-Item -ItemType Directory -Force $out | Out-Null
 Start-Transcript (Join-Path $out 'vhdx-test.log') | Out-Null
 
@@ -43,7 +44,9 @@ $tool = Join-Path $repo 'target\release\ssd-refresh.exe'
 foreach ($f in $tool, (Join-Path $repo 'target\release\refresh-test.exe')) {
     if (-not (Test-Path $f)) { Write-Host "$f does not exist. First run 'cargo build --release' in $repo as a normal user."; Finish 1 }
 }
-$newest = Get-ChildItem (Join-Path $repo 'src') -Recurse -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$sourcePaths = @(fd -I -t f -e rs . (Join-Path $repo 'src'))
+if ($LASTEXITCODE -ne 0 -or $sourcePaths.Count -eq 0) { throw 'Cannot list Rust source files with fd.' }
+$newest = $sourcePaths | ForEach-Object { Get-Item -LiteralPath $_ } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($newest.LastWriteTime -gt (Get-Item $tool).LastWriteTime) {
     Write-Host "$($newest.FullName) is newer than $tool. First run 'cargo build --release' in $repo as a normal user."
     Finish 1
@@ -52,7 +55,9 @@ New-Item -ItemType Directory -Force $Dir | Out-Null
 
 # If somebody closed the window of an earlier run, its VHDX and mount folder stay. Such a run has no
 # result.txt. Detach and delete these files. A run with -KeepVhdx has a result.txt, so its VHDX stays.
-foreach ($old in Get-ChildItem $Dir -Filter 'vhdx-test-*.vhdx') {
+foreach ($oldPath in @(fd -I -t f --max-depth 1 --glob 'vhdx-test-*.vhdx' $Dir)) {
+    $old = Get-Item -LiteralPath $oldPath
+    if ([IO.Path]::GetFullPath($old.DirectoryName).TrimEnd('\') -ne $Dir.TrimEnd('\')) { throw 'Old image is outside the test folder.' }
     $oldStamp = $old.BaseName.Substring('vhdx-test-'.Length)
     if ($oldStamp -eq $stamp -or (Test-Path (Join-Path $repo "output\vhdx-test-$oldStamp\result.txt"))) { continue }
     Write-Host "An earlier run did not finish. Clean it: $($old.FullName)"

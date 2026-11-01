@@ -6,14 +6,12 @@
 //! map of the file in one step. During this step, it keeps the reads and writes of other
 //! programs on the same file correct.
 
-use crate::common::{
-    agree, count_of, fmt_bytes, fmt_count, hex, path_rank, unix_now, Kind, Priority,
-};
+use crate::common::{agree, count_of, fmt_bytes, fmt_count, path_rank, unix_now, Kind, Priority};
 use crate::control::Control;
 use crate::csv::{self, CsvWriter};
 use crate::outcome::{RefreshOutcome, RunStatus};
 use crate::progress::{Phase, Progress};
-use crate::reader::{read_file_confirmed, ReadOptions};
+use crate::reader::ReadOptions;
 use crate::sys::{self, MoveStats, RelocOptions, Relocator};
 use std::collections::HashSet;
 use std::io;
@@ -196,6 +194,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     ctl.message("");
     ctl.message("Step 2/3  What will happen");
     ctl.message("  The tool does these steps for each file, one file at a time:");
+    ctl.paragraph(4, "The tool skips active or unknown writers, failed flushes, changed metadata, and different file IDs. --force does not bypass these checks.");
     ctl.paragraph(
         4,
         &format!(
@@ -403,7 +402,9 @@ fn process_files(
                 prog.add_moved();
                 prog.add_changed();
             }
-            "SKIP_FAST" | "SKIP_KIND" | "SKIP_MISSING" | "DRYRUN" | "CONTROL" => prog.add_skipped(),
+            status if status.starts_with("SKIP_") || matches!(status, "DRYRUN" | "CONTROL") => {
+                prog.add_skipped()
+            }
             _ => prog.add_failed(),
         }
         if row.status == "MISMATCH" {
@@ -412,6 +413,11 @@ fn process_files(
             ));
             prog.log("Keep the log and report this problem. The file system moves each piece fully or not at all, so this must not occur.");
             outcome.status = RunStatus::DataMismatch;
+            break;
+        }
+        if row.status == "VERIFY_FAILED" {
+            prog.log("STOPPED: the tool cannot confirm data after a move. Keep the files and the log. Check the cause before another refresh.");
+            outcome.status = RunStatus::Stopped;
             break;
         }
         if stop_after > 0 && i + 1 >= stop_after {
@@ -538,132 +544,12 @@ impl Run<'_> {
     }
 
     fn process_inner(&mut self, path: &Path, row: &mut Row, log: &dyn Fn(&str)) -> io::Result<()> {
-        if !path.exists() {
-            row.status = "SKIP_MISSING".into();
-            return Ok(());
-        }
-        let mf = sys::open_meta(path)?;
-        let m1 = sys::meta(&mf)?;
-        row.size = m1.size;
-        let l1 = sys::layout(&mf, &m1, self.vol_block)?;
-        let kind = Kind::classify(&m1, &l1);
-        if !kind.movable() {
-            row.status = "SKIP_KIND".into();
-            row.detail = kind.name().into();
-            return Ok(());
-        }
-        row.ext_before = l1.on_disk().count();
-        let writers1 = sys::has_other_writers(path);
-
-        // A program can write a file through the cache and close it. The new data then stays in
-        // the cache for some seconds. The reads of this tool do not use the cache, so they could
-        // see the older data on the disk. Thus write the cache to the disk first. The order is
-        // important: m1 comes before the flush. A write before m1 is in the flush. A write after
-        // m1 changes the metadata, and m2 shows it.
-        let flushed = sys::flush_file(path);
-        if let Err(e) = &flushed {
-            row.detail = format!("the flush of the cache failed ({e}); ");
-        }
-
-        let data = sys::open_direct(path)?;
-        sys::set_read_priority(&mut self.q, &data, self.o.read.measure_priority);
-        let (pre, pre_first_slow) = read_file_confirmed(
-            &mut self.q,
-            &data,
-            m1.size,
-            &l1,
-            true,
-            true,
-            &self.o.read,
-            &self.ctl,
-        )?;
-        row.before_mbps = pre.mbps();
-        row.before_slow = pre.is_slow();
-        row.before_first_slow = pre_first_slow;
-        row.sha_before = pre.sha256.map(|h| hex(&h)).unwrap_or_default();
-        // Without a flush, the SHA-256 can be of older data. Then verify must not use the metadata.
-        row.meta_key = if flushed.is_ok() {
-            m1.key()
-        } else {
-            String::new()
-        };
-        if !self.o.force && !pre.is_slow() {
-            row.status = "SKIP_FAST".into();
-            return Ok(());
-        }
-        if in_control_group(&row.path, self.o.control_fraction) {
-            row.status = "CONTROL".into();
-            row.detail += "control group: read only, not moved";
-            return Ok(());
-        }
-        let Some(reloc) = self.reloc.as_mut() else {
-            row.status = "DRYRUN".into();
-            return Ok(());
-        };
-
-        // Move. The file system moves each piece fully or not at all. Thus the file is not
-        // damaged if a move fails or the run stops during the move. The tool always reads it again.
-        let mut complete = true;
-        match reloc.relocate(path, &mf, &l1, &self.ctl, &mut row.st, log) {
-            Ok(c) => complete = c,
-            Err(e) => {
-                row.status = "MOVE_FAILED".into();
-                row.detail += &e.to_string();
-            }
-        }
-
-        let m2 = sys::meta(&mf)?;
-        if flushed.is_ok() {
-            row.meta_key = m2.key();
-        }
-        let l2 = sys::layout(&mf, &m2, self.vol_block)?;
-        row.ext_after = l2.on_disk().count();
-        let (post, post_first_slow) = read_file_confirmed(
-            &mut self.q,
-            &data,
-            m2.size,
-            &l2,
-            true,
-            true,
-            &self.o.read,
-            &self.ctl,
-        )?;
-        row.after_mbps = post.mbps();
-        row.after_slow = post.is_slow();
-        row.after_first_slow = post_first_slow;
-        row.sha_after = post.sha256.map(|h| hex(&h)).unwrap_or_default();
-        let writers2 = sys::has_other_writers(path);
-        row.writers = match (writers1, writers2) {
-            (Some(a), Some(b)) => Some(a || b),
-            (Some(true), _) | (_, Some(true)) => Some(true),
-            _ => None,
-        };
-        row.meta_changed = m2.changed_since(&m1);
-        let explained =
-            row.writers == Some(true) || row.meta_changed || pre.short_read || post.short_read;
-
-        if row.sha_before != row.sha_after && !explained {
-            row.status = "MISMATCH".into();
-            row.detail += "the SHA-256 is different before and after the move, and no other program wrote the file";
-            return Ok(());
-        }
-        if row.status == "MOVE_FAILED" {
-            return Ok(());
-        }
-        if !complete {
-            row.status = "PARTIAL".into();
-            row.detail += "the run stopped during the move; --resume moves the file again";
-            return Ok(());
-        }
-        if row.sha_before == row.sha_after {
-            row.status = "OK".into();
-        } else {
-            row.status = "CHANGED".into();
-            row.detail += "another program changed the file during the move (this is normal)";
-        }
-        Ok(())
+        file::process(self, path, row, log)
     }
 }
+
+#[path = "refresh/file.rs"]
+mod file;
 
 #[cfg(test)]
 mod tests {

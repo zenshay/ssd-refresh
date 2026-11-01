@@ -601,6 +601,7 @@ mod read_contract_tests {
     fn incomplete_reads_are_not_hash_evidence() {
         for short_read in [true, false] {
             let result = super::complete_read(super::ReadResult {
+                file_bytes: 0,
                 disk_bytes: 0,
                 disk_secs: 0.0,
                 short_read,

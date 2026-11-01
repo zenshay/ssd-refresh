@@ -11,18 +11,21 @@ $ErrorActionPreference = 'Stop'
 $Path = [IO.Path]::GetFullPath($Path)
 $Mount = [IO.Path]::GetFullPath($Mount).TrimEnd('\')
 if (Test-Path $Path) { throw "$Path exists already." }
-if ((Test-Path $Mount) -and (Get-ChildItem -Force $Mount | Select-Object -First 1)) { throw "$Mount is not empty." }
+if ((Test-Path $Mount) -and @(fd -u --max-depth 1 . $Mount).Count -gt 0) { throw "$Mount is not empty." }
 New-Item -ItemType Directory -Force $Mount | Out-Null
 
 Write-Host "Make $Path ($SizeMB MB), mount point $Mount"
-$dp = Join-Path $env:TEMP 'ssd-refresh-create-vdisk.txt'
+$dp = Join-Path $env:TEMP ("ssd-refresh-create-vdisk-" + [guid]::NewGuid().ToString('N') + '.txt')
 "create vdisk file=`"$Path`" maximum=$SizeMB type=expandable" | Set-Content $dp -Encoding ascii
 diskpart /s $dp | Out-Null
 $code = $LASTEXITCODE
-Remove-Item $dp
+Remove-Item -LiteralPath $dp
 if ($code -ne 0) { throw "diskpart could not create $Path (exit code $code)." }
 
 $disk = Mount-DiskImage -ImagePath $Path -NoDriveLetter -PassThru | Get-Disk
+if ($disk.IsSystem -or $disk.IsBoot -or $disk.Size -ne ([int64]$SizeMB * 1MB)) {
+    throw 'The mounted image is not the expected empty test disk.'
+}
 Initialize-Disk -Number $disk.Number -PartitionStyle GPT
 $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize
 Format-Volume -Partition $part -FileSystem NTFS -NewFileSystemLabel SSDTEST -AllocationUnitSize 4096 -Confirm:$false | Out-Null

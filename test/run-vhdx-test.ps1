@@ -51,6 +51,89 @@ $vol = (& $tool volume $T) -join "`n"
 $vol | Out-Host
 Check 'ssd-refresh sees the folder mount point as an NTFS volume' ($vol -match [regex]::Escape("Root:          $T") -and $vol -match 'File system:   NTFS' -and $vol -match 'System volume: no' -and $vol -match 'Device:        \\\\\?\\Volume\{') ''
 
+# ---------- 0. Small calibration before the full file set ----------
+Step '0. Check admission rules with real handles on the test volume'
+$probeDir = Join-Path $T 'admission'
+New-Item -ItemType Directory $probeDir | Out-Null
+$probeBytes = [byte[]]::new(8MB)
+[Random]::new(20261101).NextBytes($probeBytes)
+function ProbeFile([string]$name) {
+    $path = Join-Path $probeDir "$name.bin"
+    [IO.File]::WriteAllBytes($path, $probeBytes)
+    return $path
+}
+function ProbeRefresh([string]$name, [string]$path, [string]$want, [switch]$Resume) {
+    $report = Join-Path $out "admission-$name-input.csv"
+    $logPath = Join-Path $out "admission-$name-refresh.csv"
+    if (-not $Resume) {
+        $head = 'path,size,kind,extents,disk_bytes,read_ms,mbps,min_extent_mbps,slow,slow_bytes,confirmed,sha256,status,error'
+        $row = '"' + $path.Replace('"', '""') + '",' + (Get-Item -LiteralPath $path).Length + ',normal,1,0,0,0,0,1,0,1,,OK,'
+        [IO.File]::WriteAllText($report, "$head`n$row`n", [Text.UTF8Encoding]::new($false))
+    }
+    $argsForProbe = @('refresh', '--from', $report, '--out', $logPath, '--select', 'all', '--force', '--confirm', $T)
+    if ($Resume) { $argsForProbe += '--resume' }
+    $suffix = if ($Resume) { '-resume' } else { '' }
+    $exit = Run $tool $argsForProbe "admission-$name$suffix.log"
+    $actual = @(Import-Csv -LiteralPath $logPath) | Select-Object -Last 1
+    Check "Admission $name$suffix status" ($exit -eq 0 -and $actual.status -eq $want) "exit $exit, status $($actual.status), detail $($actual.detail)"
+    $moved = [long]$actual.moved_bytes
+    Check "Admission $name$suffix move count" $(if ($want -eq 'OK') { $moved -gt 0 } else { $moved -eq 0 }) "$moved bytes"
+    return $actual
+}
+$stableProbe = ProbeFile 'stable'
+$stableHash = (Get-FileHash -LiteralPath $stableProbe -Algorithm SHA256).Hash.ToLowerInvariant()
+$stableRow = ProbeRefresh 'stable' $stableProbe 'OK'
+Check 'Stable calibration keeps the before and after hash' ($stableRow.sha_before -eq $stableHash -and $stableRow.sha_after -eq $stableHash) ''
+
+$writerProbe = ProbeFile 'writer'
+$writer = [IO.File]::Open($writerProbe, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+try { $null = ProbeRefresh 'writer' $writerProbe 'SKIP_BUSY' } finally { $writer.Dispose() }
+$writerRow = ProbeRefresh 'writer' $writerProbe 'OK' -Resume
+Check 'Resume retries a busy file after the writer closes' ($writerRow.sha_before -eq $stableHash -and $writerRow.sha_after -eq $stableHash) ''
+
+$readerProbe = ProbeFile 'flush-reader'
+$reader = [IO.File]::Open($readerProbe, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::Read -bor [IO.FileShare]::Delete))
+try { $null = ProbeRefresh 'flush-reader' $readerProbe 'SKIP_FLUSH' } finally { $reader.Dispose() }
+
+$readonlyProbe = ProbeFile 'readonly'
+[IO.File]::SetAttributes($readonlyProbe, [IO.FileAttributes]::ReadOnly)
+try { $null = ProbeRefresh 'readonly' $readonlyProbe 'SKIP_FLUSH' } finally { [IO.File]::SetAttributes($readonlyProbe, [IO.FileAttributes]::Normal) }
+
+# Keep a writable mapping after the original file handle closes.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class VhdxMappedWriter {
+    [DllImport("kernel32.dll", EntryPoint="CreateFileMappingW", CharSet=CharSet.Unicode, SetLastError=true)]
+    public static extern IntPtr CreateFileMapping(SafeFileHandle file, IntPtr security, uint protect, uint high, uint low, string name);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern IntPtr MapViewOfFile(IntPtr mapping, uint access, uint high, uint low, UIntPtr size);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern bool UnmapViewOfFile(IntPtr address);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern bool CloseHandle(IntPtr handle);
+}
+'@
+$mappedProbe = ProbeFile 'mapped'
+$mappedFile = [IO.File]::Open($mappedProbe, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+$mapping = [IntPtr]::Zero
+$view = [IntPtr]::Zero
+try {
+    $mapping = [VhdxMappedWriter]::CreateFileMapping($mappedFile.SafeFileHandle, [IntPtr]::Zero, 4, 0, 0, $null)
+    if ($mapping -eq [IntPtr]::Zero) { throw [ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error()) }
+    $view = [VhdxMappedWriter]::MapViewOfFile($mapping, 2, 0, 0, [UIntPtr]::Zero)
+    if ($view -eq [IntPtr]::Zero) { throw [ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error()) }
+    $mappedFile.Dispose()
+    $null = ProbeRefresh 'mapped' $mappedProbe 'SKIP_BUSY'
+} finally {
+    $mappedFile.Dispose()
+    if ($view -ne [IntPtr]::Zero) { [VhdxMappedWriter]::UnmapViewOfFile($view) | Out-Null }
+    if ($mapping -ne [IntPtr]::Zero) { [VhdxMappedWriter]::CloseHandle($mapping) | Out-Null }
+}
+Check 'Calibration files keep their original data' (@(fd -I -t f . $probeDir | Where-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant() -ne $stableHash }).Count -eq 0) ''
+if (@($checks | Where-Object Result -eq 'FAIL').Count -gt 0) { throw 'Calibration failed. The full file set will not run.' }
+
 # ---------- 1. Make test files ----------
 Step '1. Make test files'
 New-Item -ItemType Directory $data | Out-Null
@@ -115,6 +198,10 @@ Set-Content $stop ''
 $mut.WaitForExit()
 Get-Content (Join-Path $out 'mutate.log') | Select-Object -Last 3 | Out-Host
 Check 'The program that changes files found no errors' ($mut.ExitCode -eq 0) "exit code $($mut.ExitCode)"
+
+Step '3d. Retry safety skips after the writer stops'
+$code = Run $tool ($common + @('--resume')) 'refresh-3.log'
+Check 'Safety skips can finish after the writer stops' ($code -eq 0) "exit code $code"
 
 # ---------- 4. Empty the cache and compare the data ----------
 Step '4. Detach and attach again, and compare the data'

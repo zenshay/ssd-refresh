@@ -136,8 +136,10 @@ pub struct ScanOutcome {
 pub struct RefreshOutcome {
     pub log_path: String,
     pub moved_files: usize,
-    /// Files with the ERROR status. The refresh did not move them, and their data did not change.
+    /// Files whose refresh or data check did not finish. Some data may have moved.
     pub error_files: usize,
+    /// Files skipped before any move of that file.
+    pub skipped_files: usize,
     pub stopped: bool,
 }
 
@@ -224,7 +226,8 @@ impl RefreshOutcome {
         Self {
             log_path: path.to_string_lossy().into_owned(),
             moved_files: result.moved_files,
-            error_files: result.counts.get("ERROR").copied().unwrap_or(0),
+            error_files: result.failed_files(),
+            skipped_files: result.skipped_files(),
             stopped: result.status == ssd_refresh::outcome::RunStatus::Stopped,
         }
     }
@@ -295,9 +298,15 @@ mod tests {
         refresh.record("OK", 10);
         refresh.record("CHANGED", 20);
         refresh.record("ERROR", 0);
+        refresh.record("MOVE_FAILED", 10);
+        refresh.record("VERIFY_FAILED", 20);
+        refresh.record("SKIP_BUSY", 0);
+        refresh.record("SKIP_FLUSH", 0);
+        refresh.record("SKIP_FAST", 0);
         let refresh = RefreshOutcome::from_core(missing, refresh);
         assert_eq!(refresh.moved_files, 2);
-        assert_eq!(refresh.error_files, 1);
+        assert_eq!(refresh.error_files, 3);
+        assert_eq!(refresh.skipped_files, 3);
         let verify = VerifyOutcome::from_core(
             missing,
             ssd_refresh::outcome::VerifyOutcome {

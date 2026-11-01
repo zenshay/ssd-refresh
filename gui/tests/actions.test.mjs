@@ -452,7 +452,7 @@ test("verify is locked until a selected drive has a refresh log", () => {
   assert.equal(ready.disabled, false);
   assert.match(
     ready.hint,
-    /Refreshed 1 hour ago\. Checks data now\. Speed result after 12 hours/,
+    /Refresh log 1 hour ago\. Speed needs 12 hours after a move/,
   );
   assert.match(verifyAction(store.get(), 1000 + 3 * 86400).hint, /3 days ago/);
   store.set({ mode: "refreshing" });
@@ -671,10 +671,55 @@ test("refresh with error files is a warning, not a success", async () => {
   ).runRefresh();
   const notice = store.get().notice;
   assert.equal(notice.kind, "warn");
-  assert.equal(notice.title, "574 files rewritten, 13 not moved");
+  assert.equal(notice.title, "574 files rewritten, 13 failed");
   assert.match(
     notice.body,
-    /^13 files could not be moved\. Their data did not change\./,
+    /^13 files could not finish refresh or the data check\./,
   );
+  assert.doesNotMatch(notice.body, /Their data did not change/);
   assert.doesNotMatch(notice.title, /success/);
+});
+
+test("refresh reports skipped files without a success notice", async () => {
+  const store = storeFor();
+  store.set({ volumes: [volume("X:"), volume("Y:")] });
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startRefresh: async () => ({
+        logPath: "synthetic.refresh.csv",
+        movedFiles: 0,
+        errorFiles: 0,
+        skippedFiles: 3,
+        stopped: false,
+      }),
+    }),
+  ).runRefresh();
+  assert.equal(store.get().notice.kind, "warn");
+  assert.equal(store.get().notice.title, "0 files rewritten, 6 skipped");
+  assert.match(verifyAction(store.get()).hint, /^Refresh log /);
+  assert.doesNotMatch(verifyAction(store.get()).hint, /^Refreshed /);
+  assert.match(store.get().notice.body, /skipped before a move/);
+  assert.doesNotMatch(store.get().notice.body, /files read fast/);
+});
+
+test("an incomplete post-move check stays a warning when the run stops", async () => {
+  const store = storeFor();
+  await createActions(
+    store,
+    async () => true,
+    backend({
+      startRefresh: async () => ({
+        logPath: "synthetic.refresh.csv",
+        movedFiles: 1,
+        errorFiles: 1,
+        skippedFiles: 0,
+        stopped: true,
+      }),
+    }),
+  ).runRefresh();
+  assert.equal(store.get().notice.kind, "warn");
+  assert.match(store.get().notice.body, /Keep the files/);
+  assert.doesNotMatch(store.get().notice.body, /Their data did not change/);
 });

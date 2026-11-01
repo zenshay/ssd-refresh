@@ -67,6 +67,8 @@ impl ExtentTiming {
 #[derive(Clone, Debug, Default)]
 pub struct ReadResult {
     pub disk_bytes: u64,
+    /// File bytes read, including holes but excluding alignment padding.
+    pub file_bytes: u64,
     pub disk_secs: f64,
     pub short_read: bool,
     pub sha256: Option<[u8; 32]>,
@@ -103,6 +105,8 @@ impl ReadResult {
 
     /// The same file read twice: keep the faster time of each extent and decide slowness again.
     pub fn keep_faster(&mut self, other: &ReadResult, opt: &ReadOptions) {
+        self.short_read |= other.short_read;
+        self.file_bytes = self.file_bytes.min(other.file_bytes);
         if self.extents.len() != other.extents.len() {
             return;
         }
@@ -284,6 +288,7 @@ pub fn read_file(
             }
             if c.offset < size {
                 let want = c.len.min(size - c.offset);
+                res.file_bytes += (n as u64).min(want);
                 if (n as u64) < want {
                     res.short_read = true;
                 }
@@ -385,6 +390,83 @@ fn build_segments(layout: &Layout, end: u64, measure: bool, res: &mut ReadResult
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_byte_count_includes_holes_without_alignment_padding() {
+        use crate::common::Extent;
+        use std::io::Write;
+        for physical in [None, Some(0)] {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "ssd-reader-count-{}-{stamp}.dat",
+                std::process::id()
+            ));
+            let bytes = vec![0u8; 8193];
+            let mut writer = std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            writer.write_all(&bytes).unwrap();
+            writer.sync_all().unwrap();
+            drop(writer);
+            let file = crate::sys::open_direct(&path).unwrap();
+            let options = ReadOptions {
+                chunk: 4096,
+                qd: 2,
+                ..Default::default()
+            };
+            let mut queue = IoQueue::new(options.qd, options.chunk);
+            let layout = Layout {
+                known: true,
+                extents: vec![Extent {
+                    logical: 0,
+                    len: 12288,
+                    physical,
+                }],
+                ..Default::default()
+            };
+            let result = read_file(
+                &mut queue,
+                &file,
+                bytes.len() as u64,
+                &layout,
+                true,
+                true,
+                &options,
+                &Control::new(None),
+            )
+            .unwrap();
+            assert_eq!(result.file_bytes, 8193);
+            assert_eq!(result.sha256, Some(Sha256::digest(&bytes).into()));
+            assert!(!result.short_read);
+            if physical.is_none() {
+                assert_eq!(result.disk_bytes, 0);
+            }
+            drop(file);
+            drop(queue);
+            std::fs::remove_file(&path).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_second_short_read_cannot_hide_behind_faster_timings() {
+        let mut first = ReadResult {
+            file_bytes: 8193,
+            ..Default::default()
+        };
+        let second = ReadResult {
+            file_bytes: 4096,
+            short_read: true,
+            ..Default::default()
+        };
+        first.keep_faster(&second, &ReadOptions::default());
+        assert!(first.short_read);
+        assert_eq!(first.file_bytes, 4096);
+    }
 
     fn ext(bytes: u64, secs: f64) -> ExtentTiming {
         ExtentTiming {

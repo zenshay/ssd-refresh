@@ -9,7 +9,7 @@
 [![CLI Rust 1.85+](https://img.shields.io/badge/CLI_Rust-1.85%2B-orange?logo=rust)](#建置)
 [![Platforms: Windows, Linux, macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)](#支援的平台與架構)
 [![Architectures: x86_64, aarch64](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20(ARM)-blue)](#支援的平台與架構)
-[![VHDX 測試紀錄：28/28](https://img.shields.io/badge/recorded_VHDX_test-28%2F28-blue)](#安全測試windows)
+[![VHDX 測試紀錄：44/44](https://img.shields.io/badge/recorded_VHDX_test-44%2F44-blue)](#安全測試windows)
 
 <p align="center">
   <img src="gui/src-tauri/icons/128x128@2x.png" width="128" alt="ssd-refresh 軟體圖示：SSD 與重新整理箭頭">
@@ -134,7 +134,7 @@ ssd-refresh 找出真正變慢的檔案，請作業系統將它們搬移重寫�
 |---|---|---|---|
 | **處理層級** | 檔案層級。刷新只搬移慢檔 | 磁區（整顆磁碟） | 只對空白空間做 TRIM |
 | **會寫入空白區嗎？** | **不會** | 會（刷新模式會寫入所有磁區） | 不會 |
-| **並行存取** | 系統協調搬移；仍可能失敗 | 取決於工具與模式 | Windows 管理 |
+| **並行存取** | Windows：跳過忙碌或狀態不明的檔案，核對檔案 ID 與雜湊。系統協調搬移。見[測試與限制](#安全測試windows) | 取決於工具與模式 | Windows 管理 |
 | **執行時間** | 未測。掃描會讀取所有檔案，刷新只寫入慢檔 | 未測。會讀取所有磁區 | 未測 |
 | **有唯讀模式嗎？** | **有**（`scan` 不寫入檔案資料） | 有（唯讀模式） | 沒有 |
 | **能列出慢的檔案嗎？** | **能**（列出檔案路徑） | 不能（以磁區為單位） | 不能 |
@@ -167,8 +167,12 @@ DiskFresh 這類整顆磁碟的刷新工具，做法是把每個磁區讀出來�
 
 ssd-refresh 以檔案為單位，預設只搬移仍然慢的檔案。
 工具使用檔案系統的搬移 API 協調並行存取。
+在 Windows 上，寫入者檢查、快取寫回、檔案 ID 或基準資料檢查未通過時，刷新會跳過檔案。
 工具比較搬移前後的雜湊與中繼資料。
-這些檢查用於降低風險，不代表可以排除所有故障。
+搬移後資料檢查失敗時，工具會停止，不開始下一個檔案。
+[Windows VHDX 測試紀錄](#檔案-id-與寫入者檢查的測試結果2026-11-01)中，44 項檢查全部通過，檔案內容比對為 0 錯誤。
+這些檢查用於降低風險。工具不會持續鎖住寫入，也不能排除所有故障。
+新增檢查從 v1.1.1 開始提供。已發布的 v1.1.0 不含這些改動。
 
 和其他工具的差別：
 
@@ -437,12 +441,27 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `SKIP_FAST` | 重新測量後已經不慢，沒有搬 |
 | `SKIP_KIND` | 不能搬的種類（見 `detail`） |
 | `SKIP_MISSING` | 檔案已經不存在 |
+| `SKIP_BUSY` | 檔案可能正在被寫入，沒有搬移 |
+| `SKIP_WRITERS_UNKNOWN` | 無法判定是否有寫入者，沒有搬移 |
+| `SKIP_FLUSH` | 快取寫回無法完成，沒有搬移 |
+| `SKIP_IDENTITY` | 檔案身分不同或無法取得，沒有搬移 |
+| `SKIP_CHANGED` | 搬移前中繼資料或配置已改變，沒有搬移 |
+| `SKIP_CHECK` | 搬移前的檢查失敗，沒有搬移 |
+| `SKIP_INCOMPLETE` | 基準讀取或雜湊不完整，沒有搬移 |
+| `SKIP_STOPPED` | 搬移前停止，沒有搬移 |
 | `DRYRUN` | `--dry-run`：只測量 |
 | `MOVE_FAILED` | 檔案系統搬移失敗。請看 `detail`；這個狀態本身不能證明資料完整 |
 | `PARTIAL` | 中途停止；`--resume` 會重搬 |
 | `MISMATCH` | 雜湊變了，而且沒有偵測到其他寫入者。程式立刻停止。這不應該發生，請回報 |
 | `CONTROL` | 對照組（`--control-fraction`）：仍然慢，只讀取，刻意不搬 |
 | `ERROR` | 開不了或讀不了（見 `detail`） |
+| `VERIFY_FAILED` | 搬移後無法完成資料檢查。程式停止，請保留檔案與記錄 |
+
+刷新會核對搬移、快取寫回與讀取控制代碼的磁碟區身分與檔案 ID。
+搬移前會重新核對路徑，寫入者檢查也必須明確回傳未偵測到寫入者。
+`--force` 不會略過這些檢查。GUI 會顯示跳過與失敗的檔案數量。
+`--resume` 會重試這些安全性跳過狀態與 `VERIFY_FAILED`。請先確認原因，再續跑。
+這些檢查不會持續鎖住寫入。其他程式仍可能在最後一次檢查後開始寫入。
 
 #### 雜湊不同時怎麼判斷
 
@@ -450,9 +469,15 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 - 檔案的大小、修改時間、變更時間、USN（NTFS）有沒有變。
 - 有沒有其他程式開著寫入。Windows 會用「不允許別人寫入」的共用模式開檔一瞬間測試；Linux 用讀取租約（`F_SETLEASE`）測試。
-任一項成立就記成 `CHANGED`，否則記成 `MISMATCH`。
+任一項成立就記成 `CHANGED`。
+兩項都不成立，而且寫入者檢查有結果時，記成 `MISMATCH`。
+雜湊不同且無法判定寫入者時，記成 `VERIFY_FAILED`。
 
-搬移前讀取之前，工具會先把這個檔案在快取裡的資料寫進磁碟（flush）。原因是程式可能透過快取寫入後就關檔，新資料會在快取裡留幾秒。本工具的讀取不經快取，不先 flush 的話，可能讀到磁碟上的舊資料。Windows 上，工具用允許所有共用的寫入權限開檔（不會擋住其他程式），呼叫 `FlushFileBuffers`。它不寫入任何資料，檔案時間也不會變。Linux 上呼叫 `fsync`。flush 失敗時（例如沒有寫入權限），工具會記在 `detail` 欄。這時 SHA-256 不同，照樣判成 `MISMATCH`。
+基準讀取前，工具會先把作業系統快取中的檔案資料寫回磁碟（flush）。
+這能避免其他程式透過快取寫入並關檔後，直接讀取仍取得磁碟上的舊資料。
+工具會先核對快取寫回控制代碼的檔案 ID，再呼叫 Windows 的 `FlushFileBuffers` 或 Linux 的 `fsync`。
+失敗時記成 `SKIP_FLUSH`，不搬移這個檔案。
+快取寫回不會產生新的檔案內容；它會寫入作業系統快取中原本已有的資料。
 
 ### 驗證：刷新的效果能不能維持
 
@@ -654,7 +679,7 @@ VHDX 仍使用主機磁碟與高權限 API，請先備份主機的重要資料�
 Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-refresh\test\vhdx-test.ps1 -PauseSeconds 10'
 ```
 
-測試在 4 GB 的 VHDX 上進行，不碰真正的磁碟。**放 VHDX 的磁碟至少需要 4 GB 可用空間**。腳本會先檢查，不夠就停下來。
+測試只格式化與刷新 4 GB VHDX 內的 NTFS 磁碟區。VHDX 仍會在主機磁碟產生讀寫。**放 VHDX 的磁碟至少需要 4 GB 可用空間**。腳本會先檢查，不夠就停下來。
 
 1. 在專案資料夾用一般權限建置：`cargo build --release`。
 2. 用系統管理員身分開 PowerShell，執行一個指令（路徑換成你的專案位置）：
@@ -681,6 +706,26 @@ Start-Process pwsh -Verb RunAs -ArgumentList '-NoProfile -File C:\path\to\ssd-re
 7. 確認資料確實搬移、搬移沒有改動時間戳記或 USN，最後執行 `chkdsk /scan` 與 `Repair-Volume -Scan`。
 
 因為磁碟區掛在資料夾上，測試也會確認 ssd-refresh 把資料夾掛載點當成獨立的 NTFS 磁碟區。
+
+#### 檔案 ID 與寫入者檢查的測試結果（2026-11-01）
+
+使用準備發行為 v1.1.1 的原始碼，在 Windows NTFS 上完成 44 項檢查，全部通過。
+測試使用 4 GB VHDX 與 711 個合成檔案。
+另一個程式在 38 秒內對 51 個檔案修改 10,523 次。
+660 個未修改檔案的內容相同，51 個修改檔案符合預期的最後版本。
+外部內容比對為 0 錯誤、0 遺失。
+
+- 准入檢查：持有寫入控制代碼或可寫記憶體映射時，狀態為 `SKIP_BUSY`，搬移 0 位元組。
+- 讀取者阻擋快取寫回存取，以及唯讀檔案的狀態為 `SKIP_FLUSH`，搬移 0 位元組。
+- 穩定檔案搬移 8 MiB。關閉寫入者後，`--resume` 也搬移 8 MiB。兩項檢查的雜湊都符合預期。
+- 刷新紀錄有 441 個檔案搬移資料。最終狀態：OK 440、CHANGED 1、CONTROL 205、MISMATCH 0。
+- 205 個對照檔案的刷新搬移量皆為 0。停止、暫停與續跑檢查通過。
+- 快取寫入回歸測試共 20 次，OK 20。`chkdsk /scan` 與 `Repair-Volume -Scan` 都未發現問題。
+
+測試後已卸載並刪除 VHDX。
+[測試腳本](test/run-vhdx-test.ps1)會檢查上述條件，並為每次執行產生摘要。
+這次測試不能證明所有並行寫入、實體 SSD、驅動程式與斷電情境都安全。
+測試未量測 SSD 長期速度，也未比較新增檢查對日常耗時的影響。
 
 #### 加入 flush 與回歸測試後的測試結果（2026-10-15 16:44）
 

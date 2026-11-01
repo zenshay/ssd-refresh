@@ -92,6 +92,42 @@ function body(text, replacement) {
 
 const mutants = [
   {
+    id: "rust-refresh-writer-check",
+    file: "src/refresh/file.rs",
+    kind: "function_item",
+    match: (node) => /^fn check_writers\(/.test(node.text),
+    change: (text) => body(text, "true"),
+  },
+  {
+    id: "rust-refresh-file-identity",
+    file: "src/refresh/file.rs",
+    kind: "function_item",
+    match: (node) => /^fn checked_meta</.test(node.text),
+    change: (text) => body(text, "true"),
+  },
+  {
+    id: "rust-refresh-flush-check",
+    file: "src/refresh/file.rs",
+    kind: "if_expression",
+    match: (node) => node.text.startsWith("if let Err(e) = ops.flush(&flush)"),
+    change: (text) =>
+      text.replace("ops.flush(&flush)", "Ok::<(), std::io::Error>(())"),
+  },
+  {
+    id: "rust-refresh-post-check-stop",
+    file: "src/refresh.rs",
+    kind: "if_expression",
+    match: (node) => node.text.startsWith('if row.status == "VERIFY_FAILED"'),
+    change: (text) => text.replace('row.status == "VERIFY_FAILED"', "false"),
+  },
+  {
+    id: "frontend-refresh-skipped-count",
+    file: "gui/src/actions.ts",
+    kind: "function_declaration",
+    match: (node) => /^async function runRefresh\(/.test(node.text),
+    change: (text) => text.replace("outcome.skippedFiles ?? 0", "0"),
+  },
+  {
     id: "rust-complete-read",
     file: "src/verify.rs",
     kind: "function_item",

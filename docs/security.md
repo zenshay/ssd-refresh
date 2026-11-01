@@ -13,6 +13,10 @@ The application cannot verify every behavior in those components.
 - Reports can expose names and paths. Keep full reports local and remove private fields from shared excerpts.
 
 File system moves coordinate concurrent access through OS APIs.
+Refresh skips files with detected or unknown writers, failed cache flushes, different file IDs, or changed baseline metadata.
+Move, flush, and read handles must identify the same file. The current path is checked again before a move.
+These checks do not hold a write lock. Another program can write after the last check.
+An incomplete data check after a move stops the run before the next file. Keep the files and log.
 This does not guarantee integrity under every write pattern, driver defect, controller error, or hardware failure.
 An error status is not proof that the file is unchanged.
 Keep a separate backup before refresh operations.
