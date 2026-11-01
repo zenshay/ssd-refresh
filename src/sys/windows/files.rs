@@ -14,13 +14,17 @@ pub fn open_meta(p: &Path) -> io::Result<File> {
 
 /// Read handle that bypasses the OS cache and allows overlapped I/O. Others may keep reading,
 /// writing and deleting.
-pub fn open_direct(p: &Path) -> io::Result<File> {
-    open_raw(
+pub fn open_direct(p: &Path) -> io::Result<crate::sys::ReadHandle> {
+    let file = open_raw(
         &long_path(p),
         FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         SHARE_READ | SHARE_WRITE | SHARE_DELETE,
         FLAG_NO_BUFFERING | FLAG_OVERLAPPED,
-    )
+    )?;
+    Ok(crate::sys::ReadHandle {
+        file,
+        cached: false,
+    })
 }
 
 /// Open a handle for a cache flush. The caller checks its file ID before the flush.

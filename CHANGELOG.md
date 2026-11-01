@@ -30,6 +30,10 @@
 - Listed files without read access no longer abort the log check. A 100000-row test counts file metadata requests.
 - Refresh removes a new empty output on early return, including cancelled confirmation. Existing files and written bytes remain.
 - Failed cache flushes keep their CSV detail. The summary prints one count instead of a message for each file.
+- CSV recovery keeps complete quoted records, including multiline fields, and removes incomplete UTF-8 tails.
+- Cached fallback reads have status `SKIP_CACHED`. Scan and verify exclude their speed; refresh skips them even with `--force`.
+- Linux refresh releases each donor range after its move request. Temporary allocation no longer grows toward the file size.
+- Refresh synchronizes each log row before the next file. Scan synchronizes every 128 rows, after step 2, and at completion or stop.
 
 ## 1.1.1 — 2026-11-01
 

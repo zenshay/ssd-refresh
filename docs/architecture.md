@@ -95,6 +95,14 @@ Without a completed flush, a data difference has status `ERROR`, which prevents 
 With a completed flush, the existing metadata and hash rules apply.
 Windows relocation reloads its free-space bitmap once after a failed space search, then searches again before `StorageFull`.
 Linux relocation compares device and inode with the checked handle after reopening the path, before donor creation or moves.
+After each move request, Linux punches the requested donor range with `FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE`.
+This releases old blocks and unused allocation after complete, partial, or failed requests, before another allocation.
+A punch error stops further moves for that file. Temporary allocation stays within `max_chunk`, rounded to at least one filesystem block.
+
+Read handles carry their effective cache mode; failed Linux `O_DIRECT` or macOS `F_NOCACHE` requests mark the handle as cached.
+Cached reads can calculate hashes, but the reader records no disk bytes, extent times, or disk speed.
+Scan, refresh, and verify use `SKIP_CACHED`; scan excludes it from measured counts, refresh skips moves, and verify excludes speed evidence.
+This status uses the existing CSV columns. Old logs remain accepted.
 
 The refresh confirmation gate contains all move handles and file processing.
 Wrong confirmation calls the work function zero times.
@@ -122,6 +130,11 @@ The I/O priority guard restores the state that its scope changed.
 Windows guards end background mode only when they started it.
 
 CSV files remain reports and resume checkpoints.
+Recovery scans bytes with quote state and keeps only complete records; quoted newlines and escaped quotes do not end a record.
+It removes an incomplete UTF-8 tail before decoding, and writes the header again if recovery leaves no complete record.
+Refresh calls `sync_data` after each row before processing the next file; scan calls it every 128 rows, after step 2, and at normal or stopped completion.
+Successful calls request data persistence through the OS; actual power-loss protection depends on the storage device.
+A move and its CSV row are not one transaction: power loss between them can leave a completed move without a saved row.
 The scan result includes all counts and at most 500 slow files.
 `moved_files` includes `OK` and `CHANGED`, in both adapters.
 Old refresh logs can omit the `time` and `meta_key` columns.

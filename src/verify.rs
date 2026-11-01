@@ -708,6 +708,9 @@ fn measure(
             ..Default::default()
         });
     }
+    if res.cached {
+        return Ok(cached_outcome(flush));
+    }
     let (first_mbps, first_min, first_slow) = (res.mbps(), res.min_extent_mbps(), res.is_slow());
     let first_start_ms = res
         .extents
@@ -743,6 +746,19 @@ fn measure(
     })
 }
 
+fn cached_outcome(flush: Result<(), String>) -> Outcome {
+    let prefix = flush
+        .err()
+        .map(|error| format!("{error}. "))
+        .unwrap_or_default();
+    Outcome {
+        status: "SKIP_CACHED",
+        reads: 1,
+        detail: format!("{prefix}The read used the OS cache. No disk speed is available."),
+        ..Default::default()
+    }
+}
+
 #[path = "verify/summary.rs"]
 mod summary;
 use summary::{build_summary, SummaryInput};
@@ -759,6 +775,14 @@ fn complete_read(result: ReadResult) -> io::Result<ReadResult> {
 
 #[cfg(test)]
 mod read_contract_tests {
+    #[test]
+    fn cached_reads_keep_failed_flush_details() {
+        let out = super::cached_outcome(Err("No cache flush: synthetic error".into()));
+        assert_eq!(out.status, "SKIP_CACHED");
+        assert!(out.detail.starts_with("No cache flush:"));
+        assert!(out.detail.contains("OS cache"));
+    }
+
     fn log_options(path: &std::path::Path) -> super::VerifyOptions {
         super::VerifyOptions {
             from: path.with_extension("csv"),
@@ -1094,6 +1118,7 @@ mod read_contract_tests {
     fn incomplete_reads_are_not_hash_evidence() {
         for short_read in [true, false] {
             let result = super::complete_read(super::ReadResult {
+                cached: false,
                 source: None,
                 file_bytes: 0,
                 disk_bytes: 0,

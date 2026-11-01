@@ -1,11 +1,11 @@
-//! Reads a whole file without the OS cache: several requests in flight, SHA-256 computed in order,
-//! and the read time of every extent.
+//! Reads a whole file with several requests in flight and SHA-256 computed in order.
+//! Only uncached reads measure the read time of each extent.
 
 use crate::common::{Layout, Priority};
 use crate::control::Control;
 use crate::sys::IoQueue;
+use crate::sys::ReadHandle;
 use sha2::{Digest, Sha256};
-use std::fs::File;
 use std::io;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -66,6 +66,7 @@ impl ExtentTiming {
 
 #[derive(Clone, Debug, Default)]
 pub struct ReadResult {
+    pub cached: bool,
     pub source: Option<ReadSource>,
     pub disk_bytes: u64,
     /// File bytes read, including holes but excluding alignment padding.
@@ -187,7 +188,7 @@ pub fn keep_faster_if_slow(
 #[allow(clippy::too_many_arguments)]
 pub fn read_file_confirmed(
     q: &mut IoQueue,
-    f: &File,
+    f: &ReadHandle,
     size: u64,
     layout: &Layout,
     measure: bool,
@@ -228,7 +229,7 @@ struct Seg {
 #[allow(clippy::too_many_arguments)]
 pub fn read_file(
     q: &mut IoQueue,
-    f: &File,
+    f: &ReadHandle,
     size: u64,
     layout: &Layout,
     measure: bool,
@@ -236,8 +237,11 @@ pub fn read_file(
     opt: &ReadOptions,
     ctl: &Control,
 ) -> io::Result<ReadResult> {
+    // Cached reads can check data, but cannot measure disk speed.
+    let measure = measure && !f.cached;
     let meta = crate::sys::meta(f)?;
     let mut res = ReadResult {
+        cached: f.cached,
         source: Some(ReadSource {
             id: meta.id,
             size: meta.size,
@@ -451,6 +455,53 @@ fn build_segments(layout: &Layout, end: u64, measure: bool, res: &mut ReadResult
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_reads_hash_data_without_disk_measurements() {
+        use std::io::Write;
+        let path =
+            std::env::temp_dir().join(format!("ssd-reader-cached-{}.dat", std::process::id()));
+        let bytes = vec![7; 8192];
+        let mut writer = std::fs::File::create(&path).unwrap();
+        writer.write_all(&bytes).unwrap();
+        drop(writer);
+        // Use the platform's normal queue handle, then inject a failed cache bypass.
+        let mut file = crate::sys::open_direct(&path).unwrap();
+        file.cached = true;
+        let opt = ReadOptions {
+            chunk: 4096,
+            qd: 2,
+            ..Default::default()
+        };
+        let mut queue = IoQueue::new(opt.qd, opt.chunk);
+        let (res, repeated) = read_file_confirmed(
+            &mut queue,
+            &file,
+            bytes.len() as u64,
+            &Layout {
+                known: false,
+                ..Default::default()
+            },
+            true,
+            true,
+            &opt,
+            &Control::new(None),
+        )
+        .unwrap();
+        assert!(res.cached);
+        assert!(!res.is_slow());
+        assert!(!repeated);
+        assert_eq!(res.disk_bytes, 0);
+        assert_eq!(res.disk_secs, 0.0);
+        assert_eq!(res.mbps(), 0.0);
+        assert_eq!(res.min_extent_mbps(), None);
+        assert!(res.extents.is_empty());
+        assert_eq!(res.file_bytes, bytes.len() as u64);
+        assert_eq!(res.sha256, Some(Sha256::digest(&bytes).into()));
+        drop(file);
+        drop(queue);
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn file_byte_count_includes_holes_without_alignment_padding() {

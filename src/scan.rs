@@ -329,7 +329,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
                     if row.status == "ERROR" {
                         prog.add_error();
                     }
-                    if let Err(e) = w.row(row.values(width)) {
+                    if let Err(e) = w.scan_row(row.values(width)) {
                         write_err.get_or_insert(e);
                         ctl.request_stop();
                     } else {
@@ -343,6 +343,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     if let Some(e) = write_err {
         return Err(e);
     }
+    w.checkpoint()?;
     let mut stopped = ctl.stopped();
     let mut round3_stopped = false;
     ctl.message(&format!(
@@ -456,10 +457,11 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
         }
     } else {
         for (row, _) in &to_check {
-            w.row(row.values(width))?;
+            w.scan_row(row.values(width))?;
             outcome.record(&row.record());
         }
     }
+    w.checkpoint()?;
     drop(w);
 
     ctl.message("");
@@ -622,6 +624,13 @@ fn after_wait_round(
         let row = &mut to_check[i].0;
         match read_after_wait(row, vol, o, &mut q, ctl) {
             Ok(res) => {
+                if res.cached {
+                    let _ = fill_result(row, &res);
+                    row.after_wait_slow = None;
+                    row.after_wait_min_mbps = None;
+                    prog.add_file(row.size);
+                    continue;
+                }
                 row.after_wait_slow = Some(res.is_slow());
                 row.after_wait_min_mbps = res.min_extent_mbps();
                 if res.is_slow() {
@@ -689,6 +698,10 @@ fn fill_result(row: &mut Row, res: &ReadResult) -> io::Result<()> {
     row.slow = res.is_slow();
     row.slow_bytes = res.slow_bytes();
     row.sha = res.sha256.map(|h| hex(&h)).unwrap_or_default();
+    if res.cached {
+        row.status = "SKIP_CACHED".into();
+        row.error = "The read used the OS cache. No disk speed is available.".into();
+    }
     Ok(())
 }
 
@@ -815,6 +828,30 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_scan_results_are_not_fast_or_slow_measurements() {
+        let mut row = Row {
+            size: 8192,
+            status: "OK".into(),
+            ..Default::default()
+        };
+        let res = ReadResult {
+            cached: true,
+            file_bytes: 8192,
+            sha256: Some([7; 32]),
+            ..Default::default()
+        };
+        fill_result(&mut row, &res).unwrap();
+        assert_eq!(row.status, "SKIP_CACHED");
+        assert!(!row.slow);
+        assert_eq!(row.mbps, 0.0);
+        assert_eq!(row.min_mbps, None);
+        let mut outcome = ScanOutcome::default();
+        outcome.record(&row.record());
+        assert_eq!(outcome.measured_files, 0);
+        assert_eq!(outcome.slow_total, 0);
+    }
 
     #[test]
     fn incomplete_scan_reads_have_no_hash_or_measurement() {

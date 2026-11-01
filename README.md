@@ -429,6 +429,10 @@ Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
 
 An older report has no `after_wait_*` columns. Refresh and verify can read it. With `--resume`, the scan writes the old columns only.
 
+If Linux or macOS cannot bypass the OS cache, the file has status `SKIP_CACHED`.
+Scan does not call it fast or slow. Verify excludes it from the speed verdict.
+Refresh skips it, including with `--force`. The CSV columns do not change.
+
 ### Refresh
 
 ```
@@ -665,7 +669,9 @@ The method is a control group. The tool refreshes a part of the slow files. It o
 - `p` + Enter: pause. Push again to continue. The requests that the tool sent already finish first.
 - `q` + Enter, or Ctrl+C: request a stop after current work. A second Ctrl+C stops immediately. Forced termination can leave an incomplete report. It does not establish data integrity.
 - If the file `<output>.pause` exists, the tool pauses until you delete it.
-- To continue, run the same command with `--resume`. The tool saves the report or log row by row. The saved file is the checkpoint. With `--resume`, the scan also reads the files with status `ERROR` again (for example, now as administrator). The new row replaces the old row.
+- To continue, run the same command with `--resume`. Recovery keeps complete CSV records, including records with quoted newlines. With `--resume`, the scan also reads the files with status `ERROR` again (for example, now as administrator). The new row replaces the old row.
+- Refresh calls `sync_data` after each log row, before the next file starts. Scan calls it every 128 rows, after step 2, and when the run ends or stops. These calls ask storage to save file data. They cannot guarantee device behavior during power loss. A move can finish before its log row is saved.
+- Linux refresh releases each donor range after the move request, including unused blocks. Temporary allocation stays within the move chunk. A release error stops further moves for that file.
 
 ### Options
 
