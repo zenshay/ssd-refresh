@@ -2,6 +2,22 @@ name: Check
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      risk_stage:
+        description: Select an isolated compiler experiment
+        type: choice
+        default: normal
+        options: [normal, dev, release, nightly]
+      risk_samples:
+        description: Source rebuild samples for each candidate
+        type: choice
+        default: '1'
+        options: ['1', '3']
+      risk_case:
+        description: Select one case or the complete stage
+        type: choice
+        default: all
+        options: [all, dev16, dev64, dev256, fat1, thin1, thin16, off16, nightly1, nightly4, nightly8, cranelift]
   pull_request:
   # Refresh default-branch caches only when build inputs or workflows change.
   push:
@@ -23,6 +39,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
+    if: github.event_name != 'workflow_dispatch' || !inputs.risk_stage || inputs.risk_stage == 'normal'
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +93,7 @@ jobs:
           & ./scripts/check-architecture.ps1
 
   cli-msrv:
+    if: github.event_name != 'workflow_dispatch' || !inputs.risk_stage || inputs.risk_stage == 'normal'
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
@@ -92,6 +110,7 @@ jobs:
         run: cargo +1.85.0 check --locked -p ssd-refresh --all-targets
 
   secrets:
+    if: github.event_name != 'workflow_dispatch' || !inputs.risk_stage || inputs.risk_stage == 'normal'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -150,3 +169,56 @@ jobs:
       - name: Build CLI release dependencies
         if: steps.rust-cache.outputs.cache-hit != 'true'
         run: cargo build --locked --release --target ${{ matrix.target }} --bin ssd-refresh
+
+  compile-risk:
+    if: github.event_name == 'workflow_dispatch' && inputs.risk_stage && inputs.risk_stage != 'normal'
+    runs-on: windows-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(inputs.risk_case != 'all' && format('["{0}"]', inputs.risk_case) || inputs.risk_stage == 'dev' && '["dev16","dev64","dev256"]' || inputs.risk_stage == 'release' && '["fat1","thin1","thin16","off16"]' || '["nightly1","nightly4","nightly8","cranelift"]') }}
+    env:
+      RISK_VARIANT: ${{ matrix.variant }}
+      RISK_SAMPLES: ${{ inputs.risk_samples }}
+      RUSTUP_TOOLCHAIN: ${{ (startsWith(matrix.variant, 'nightly') || matrix.variant == 'cranelift') && 'nightly-2026-10-31' || '1.99.0' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: ${{ env.RUSTUP_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - name: Install Cranelift component
+        if: matrix.variant == 'cranelift'
+        run: rustup component add rustc-codegen-cranelift-preview --toolchain $env:RUSTUP_TOOLCHAIN
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: gui/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install frontend packages
+        run: pnpm --dir gui install --frozen-lockfile
+      - name: Install query and file tools
+        run: npm install --global @ast-grep/cli@0.45.3
+      - uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2
+        with:
+          tool: fd-find
+      - name: Prepare source dependencies and frontend
+        run: |
+          cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Cargo fetch failed' }
+          pnpm --dir gui run build
+          if ($LASTEXITCODE -ne 0) { throw 'Frontend build failed' }
+      - name: Measure candidate and run all checks
+        run: '& ./scripts/compile-risk.ps1 -Variant $env:RISK_VARIANT -Samples ([int]$env:RISK_SAMPLES)'
+      - name: Store experiment evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: compile-risk-${{ matrix.variant }}-${{ github.run_attempt }}
+          path: risk-output/
+          retention-days: 7
