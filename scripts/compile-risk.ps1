@@ -51,7 +51,7 @@ function Measure-Step([string]$Name, [string]$Program, [string[]]$Arguments) {
     if ($process.ExitCode -ne 0) { Get-Content $err -Tail 35; throw "Failed: $Name" }
 }
 function Invoke-Cargo([string]$Name, [string[]]$Arguments) {
-    $extra = if ($Variant -eq 'cranelift') { @('-Zcodegen-backend') } else { @() }
+    [string[]]$extra = if ($Variant -eq 'cranelift') { @('-Zcodegen-backend') } else { @() }
     Measure-Step $Name (Get-Command cargo).Source ($extra + $Arguments)
 }
 $common = Join-Path $root 'src/common.rs'
