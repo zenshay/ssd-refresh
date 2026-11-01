@@ -91,6 +91,7 @@ try {
     "control",
     "csv",
     "outcome",
+    "output_lock",
     "text",
     "report",
     "progress",
@@ -102,7 +103,7 @@ try {
   ])
     write(`src/${module}.rs`, "");
   const lib =
-    "pub mod common; pub mod control; pub mod csv; pub mod outcome; pub mod text; pub mod report; pub mod progress; pub mod reader; pub mod scan; pub mod refresh; pub mod verify; pub mod sys;";
+    "pub mod common; pub mod control; pub mod csv; pub mod outcome; pub mod output_lock; pub mod text; pub mod report; pub mod progress; pub mod reader; pub mod scan; pub mod refresh; pub mod verify; pub mod sys;";
   write("src/lib.rs", lib);
   for (const module of ["actions", "store", "diagnostics"])
     write(`gui/src/${module}.ts`, "");
