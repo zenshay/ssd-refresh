@@ -27,6 +27,24 @@ concurrency:
   group: check-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  release-cli:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_builds
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: "1.99.0"
+      - run: cargo build --locked --release --bin ssd-refresh
+      - run: cargo test --locked --release -p ssd-refresh --all-targets
+
   release-builds:
     if: github.event_name == 'workflow_dispatch' && inputs.release_builds
     runs-on: windows-latest
