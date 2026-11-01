@@ -13,6 +13,11 @@ pub struct ScheduledVerify {
 }
 
 pub fn process_lock(dir: &Path) -> Result<std::fs::File, String> {
+    try_process_lock(dir)?
+        .ok_or_else(|| "Another app or scheduled verify is running. Try again later.".to_string())
+}
+
+fn try_process_lock(dir: &Path) -> Result<Option<std::fs::File>, String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let file = std::fs::OpenOptions::new()
         .create(true)
@@ -20,9 +25,11 @@ pub fn process_lock(dir: &Path) -> Result<std::fs::File, String> {
         .write(true)
         .open(dir.join("operation.lock"))
         .map_err(|e| e.to_string())?;
-    file.try_lock()
-        .map_err(|_| "Another app or scheduled verify is running. Try again later.".to_string())?;
-    Ok(file)
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(e)) => Err(e.to_string()),
+    }
 }
 
 #[cfg(windows)]
@@ -152,7 +159,13 @@ pub fn headless(args: &[String], data: &Path) -> i32 {
         {
             return Err("The refresh log is not in the reports folder.".into());
         }
-        let _lock = process_lock(data)?;
+        let Some(_lock) = try_process_lock(data)? else {
+            let _ = std::fs::write(
+                data.join("scheduled-verify-error.log"),
+                "Busy: another operation holds the lock.",
+            );
+            return Ok(6);
+        };
         let opts = VerifyOptions {
             log: from.with_extension("verify.log"),
             from,
@@ -200,6 +213,14 @@ mod tests {
         std::fs::remove_dir(dir).unwrap();
     }
     #[test]
+    fn process_lock_does_not_treat_io_errors_as_busy() {
+        let dir = std::env::temp_dir().join(format!("ssd-lock-error-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("operation.lock")).unwrap();
+        assert!(try_process_lock(&dir).is_err());
+        std::fs::remove_dir(dir.join("operation.lock")).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
     fn headless_rejects_other_operations() {
         let dir = std::env::temp_dir().join("ssd-schedule-invalid-no-folder");
         assert_eq!(headless(&["refresh".into(), "file.csv".into()], &dir), 1);
@@ -232,7 +253,11 @@ mod tests {
             source.to_string_lossy().into_owned(),
         ];
         let lock = process_lock(&dir).unwrap();
-        assert_eq!(headless(&args, &dir), 1);
+        assert_eq!(headless(&args, &dir), 6);
+        assert_eq!(
+            std::fs::read_to_string(dir.join("scheduled-verify-error.log")).unwrap(),
+            "Busy: another operation holds the lock."
+        );
         drop(lock);
         assert_eq!(headless(&args, &dir), 5);
         let outside = dir.join("scan-x-123.refresh.csv");

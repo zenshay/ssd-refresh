@@ -74,7 +74,7 @@ if cmp -s "$reports/extents-before.log" "$reports/extents-after.log"; then
     exit 1
 fi
 "$cli" verify --from "$reports/refresh.csv" --out "$reports/verify.csv" > "$reports/verify.log"
-grep -q 'Data safe: YES 8 of 8' "$reports/verify.log"
+grep -Fq 'Data safe:          YES  Compared 8 of 8 moved files' "$reports/verify.log"
 sha256sum -c "$reports/before.sha256" > "$reports/hash.log"
 index=1
 while [ "$index" -le 8 ]; do

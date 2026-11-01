@@ -277,6 +277,15 @@ pub struct Relocator {
     opt: RelocOptions,
 }
 
+fn check_move_identity(checked: (u64, u64), reopened: (u64, u64)) -> io::Result<()> {
+    if checked != reopened {
+        return Err(io::Error::other(
+            "file identity changed before move; no blocks were moved",
+        ));
+    }
+    Ok(())
+}
+
 impl Relocator {
     pub fn new(vol: &VolumeInfo, opt: &RelocOptions) -> io::Result<Relocator> {
         Ok(Relocator {
@@ -289,7 +298,7 @@ impl Relocator {
     pub fn relocate(
         &mut self,
         path: &Path,
-        _file: &File,
+        file: &File,
         layout: &Layout,
         ctl: &Control,
         st: &mut MoveStats,
@@ -298,7 +307,13 @@ impl Relocator {
         let bs = self.block;
         // MOVE_EXT requires the original to be open for reading and writing; nothing is written here
         let orig = OpenOptions::new().read(true).write(true).open(path)?;
-        let size = orig.metadata()?.len();
+        let checked = file.metadata()?;
+        let reopened = orig.metadata()?;
+        check_move_identity(
+            (checked.dev(), checked.ino()),
+            (reopened.dev(), reopened.ino()),
+        )?;
+        let size = reopened.len();
         let c = CString::new(self.root.as_os_str().as_bytes()).unwrap();
         let fd = unsafe { libc::open(c.as_ptr(), libc::O_TMPFILE | libc::O_RDWR, 0o600) };
         if fd < 0 {
@@ -375,5 +390,26 @@ pub fn list_volumes() -> Vec<VolumeInfo> {
         vec![v]
     } else {
         vec![]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_move_identity;
+
+    #[test]
+    fn move_identity_accepts_the_checked_file() {
+        assert!(check_move_identity((12, 34), (12, 34)).is_ok());
+    }
+
+    #[test]
+    fn move_identity_rejects_a_different_inode() {
+        let error = check_move_identity((12, 34), (12, 35)).unwrap_err();
+        assert!(error.to_string().contains("no blocks were moved"));
+    }
+
+    #[test]
+    fn move_identity_rejects_a_different_device() {
+        assert!(check_move_identity((12, 34), (13, 34)).is_err());
     }
 }

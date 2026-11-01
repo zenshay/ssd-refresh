@@ -63,11 +63,38 @@ The core accepts old CSV reports. A missing metadata baseline blocks `YES` only 
 Verify returns `Incomplete` for `UNKNOWN` or a failed summary-log write. A mismatch takes priority and returns `DataMismatch`.
 CLI and scheduled verify share exit codes: `0` Completed, `1` InvalidInput, `2` Unsupported, `3` DataMismatch, `4` Stopped, `5` Incomplete.
 Code `1` covers errors and cancellation. Code `2` covers missing administrator or root rights and unsupported platforms.
-Code `5` is new. Codes `0` through `4` did not change.
+Scheduled Verify also returns `6` when another app operation holds the lock. Codes `0` through `5` keep their meanings.
+Task settings request three restarts after failure, with 30 minutes between attempts.
+Existing tasks need removal and creation to receive these settings.
 For refresh logs, code `0` requires `YES`.
 A complete scan-report check can return `0` with `NOT_CHECKED`.
 Scheduled Verify keeps Windows `RunLevel Limited`. It cannot check files that need administrator rights.
 Run Verify manually with administrator rights for those files.
+
+Core output files use nonblocking process locks. Contention returns an I/O error and CLI code `1`.
+Windows uses `LockFileEx`; Unix uses `flock`. These APIs preserve the CLI MSRV of Rust 1.85.
+The Windows lock covers one fixed byte beyond EOF, so resume can read rows through another handle.
+Refresh holds its output lock before resume reads and through the last CSV write.
+It reserves a missing output with atomic file creation before confirmation.
+Only newly created refresh outputs receive empty-file cleanup. Cleanup runs on all return paths while the output lock remains held.
+Cleanup removes the path only when both the held file and current path have zero bytes and matching file IDs.
+It preserves existing files, written bytes, and replacement paths.
+Verify holds its CSV and summary-log locks through the run. Scan has no global operation lock.
+Before data reads, verify compares the log handle's volume and file ID only with the source CSV and output CSV.
+It rejects a log with more than one hard link. `Meta.links` uses Windows `nNumberOfLinks` or Unix `nlink` without extra file opens.
+It canonicalizes only the log path. It compares normalized canonical and supplied log paths with source-row path text, including unselected rows.
+Windows normalization removes the extended-path prefix and ignores letter case. Both platforms remove dot components and use absolute paths.
+Listed paths receive no metadata queries or file opens. Their access errors remain per-file read results.
+If the link count is zero (unknown), a nonempty log is rejected. No prior verify ownership is assumed; empty logs still receive path checks.
+Tests count metadata calls for 100000 synthetic rows and simulate denied access to a listed file.
+
+Verify requests a cache flush before direct reads. It checks the flush handle's identity against the metadata handle first.
+It never writes file data. A failed flush does not stop reading; CSV detail records `No cache flush`.
+Only the summary prints the failed-flush count. The reader does not print a message for each failed flush.
+Without a completed flush, a data difference has status `ERROR`, which prevents both false `NO` and trusted `YES`.
+With a completed flush, the existing metadata and hash rules apply.
+Windows relocation reloads its free-space bitmap once after a failed space search, then searches again before `StorageFull`.
+Linux relocation compares device and inode with the checked handle after reopening the path, before donor creation or moves.
 
 The refresh confirmation gate contains all move handles and file processing.
 Wrong confirmation calls the work function zero times.

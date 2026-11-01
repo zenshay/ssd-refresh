@@ -79,6 +79,23 @@ impl ClusterMap {
     }
 }
 
+fn find_with_reload<T>(
+    state: &mut T,
+    mut find: impl FnMut(&mut T) -> Option<(u64, u64)>,
+    reload: impl FnOnce(&mut T) -> io::Result<()>,
+) -> io::Result<(u64, u64)> {
+    if let Some(run) = find(state) {
+        return Ok(run);
+    }
+    reload(state)?;
+    find(state).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::StorageFull,
+            "not enough free clusters on the volume",
+        )
+    })
+}
+
 /// Moves a file to new clusters with FSCTL_MOVE_FILE. NTFS makes every move atomic: the piece is
 /// either fully moved or not moved at all,
 /// and NTFS synchronises it with other programs' reads and writes, so files in use are safe.
@@ -197,16 +214,15 @@ impl Relocator {
                 continue;
             }
             let want = (evcn + elen - v).min(max_chunk);
-            let (lcn, len) = self
-                .map
-                .find(want, want.min(min_run))
-                .or_else(|| self.map.find(want, 1))
-                .ok_or_else(|| {
-                    io::Error::new(
-                        io::ErrorKind::StorageFull,
-                        "not enough free clusters on the volume",
-                    )
-                })?;
+            let (lcn, len) = find_with_reload(
+                self,
+                |s| {
+                    s.map
+                        .find(want, want.min(min_run))
+                        .or_else(|| s.map.find(want, 1))
+                },
+                Self::reload,
+            )?;
             let cnt = len.min(want) as u32;
             let d = MOVE_FILE_DATA {
                 file: raw(file),
@@ -319,3 +335,63 @@ fn volume_bitmap(vol: &File, total: u64) -> io::Result<Vec<u8>> {
 
 /// How refresh moves data on this platform (shown before a refresh starts).
 pub const MOVE_METHOD: &str = "FSCTL_MOVE_FILE, the NTFS defragmentation API";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cluster_map_reloads_once_to_find_released_clusters() {
+        let mut map = ClusterMap {
+            b: vec![u8::MAX],
+            n: 8,
+            cursor: 8,
+        };
+        let mut reloads = 0;
+        let run = find_with_reload(
+            &mut map,
+            |m| m.find(2, 1),
+            |m| {
+                reloads += 1;
+                m.b[0] = 0b1111_0011;
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(run, (2, 2));
+        assert_eq!(reloads, 1);
+    }
+
+    #[test]
+    fn cluster_map_reports_full_after_one_reload() {
+        let mut map = ClusterMap {
+            b: vec![u8::MAX],
+            n: 8,
+            cursor: 0,
+        };
+        let mut reloads = 0;
+        let error = find_with_reload(
+            &mut map,
+            |m| m.find(2, 1),
+            |_| {
+                reloads += 1;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::StorageFull);
+        assert_eq!(reloads, 1);
+    }
+
+    #[test]
+    fn cluster_map_does_not_reload_when_space_is_cached() {
+        let mut map = ClusterMap {
+            b: vec![0],
+            n: 8,
+            cursor: 0,
+        };
+        let run =
+            find_with_reload(&mut map, |m| m.find(2, 1), |_| panic!("unexpected reload")).unwrap();
+        assert_eq!(run, (0, 2));
+    }
+}

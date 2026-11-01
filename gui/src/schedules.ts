@@ -67,5 +67,7 @@ export function taskResult(task: ScheduledVerify): string {
     return "Stopped. Read the verify log or run Verify manually.";
   if (task.result === 5)
     return "Incomplete: the tool could not check all data. Read the verify log or run Verify manually.";
+  if (task.result === 6)
+    return "Busy: another operation holds the lock. Windows can retry up to 3 times at 30-minute intervals.";
   return `Did not finish (code ${task.result}). Read the error log or run Verify manually.`;
 }

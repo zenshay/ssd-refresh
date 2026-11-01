@@ -16,6 +16,20 @@
 - Read requests stay within one extent until it finishes. This prevents zero times from overlapping extents, but can reduce speed for small extents.
 - Scan rejects short reads and incomplete byte counts. These reads have status `ERROR`, no hash and no speed measurement.
 - CSV columns do not change. Measurement columns describe one selected read, rather than a mix of extent times from different reads.
+- Windows refresh reloads the free-space bitmap once before it reports insufficient space.
+- Refresh and verify lock their output files. A second writer returns code `1`, including through hard links.
+- Scheduled Verify returns code `6` when another app operation holds the lock. Failed tasks request three retries at 30-minute intervals.
+- Existing schedules need removal and creation to receive the retry settings.
+- Linux refresh checks the reopened file's device and inode before donor creation or data moves.
+- Verify checks the flush handle identity and requests a cache flush before direct reads. It never writes file data.
+- Verify records failed flushes. A data difference without a completed flush has status `ERROR`, rather than `MISMATCH`.
+- Verify rejects a summary log that shares file identity with the source CSV, output CSV, or any listed file.
+- The ext4 test matches the current `Compared 8 of 8 moved files` summary text.
+- Verify log checks open only the source and output CSV paths. Listed files receive text checks, including unselected rows.
+- Verify rejects logs with multiple hard links. An unknown link count permits only empty logs; previous verify ownership is not assumed.
+- Listed files without read access no longer abort the log check. A 100000-row test counts file metadata requests.
+- Refresh removes a new empty output on early return, including cancelled confirmation. Existing files and written bytes remain.
+- Failed cache flushes keep their CSV detail. The summary prints one count instead of a message for each file.
 
 ## 1.1.1 — 2026-11-01
 

@@ -124,7 +124,7 @@ struct Outcome {
 }
 
 pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
-    ctl.message("ssd-refresh verify (read-only: this command does not change the disk)");
+    ctl.message("ssd-refresh verify (read-only: this command does not write file data)");
     ctl.message(&format!("  Source:  {}", o.from.display()));
     ctl.message(&format!("  Log:     {}", o.log.display()));
     ctl.paragraph(
@@ -148,6 +148,19 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
     let header = csv::header(&o.from)?;
     let is_log = header.iter().any(|h| h == "before_mbps");
     let rows = crate::report::read_for_verify(&o.from, is_log)?;
+    // Keep the same locked handle from the checks through the summary write.
+    let mut summary_log = crate::output_lock::LockedFile::open_append(&o.log);
+    if let Ok(log) = &summary_log {
+        validate_log_target(log.file(), o, &rows)?;
+    } else if let Err(e) = &summary_log {
+        if e.kind() == io::ErrorKind::WouldBlock {
+            return Err(io::Error::new(e.kind(), e.to_string()));
+        }
+        // A read-only listed file must still be rejected when append access fails.
+        if std::fs::metadata(&o.log).is_ok_and(|m| m.is_file()) {
+            validate_log_target(&sys::open_meta(&o.log)?, o, &rows)?;
+        }
+    }
     let num = |r: &csv::Row, k: &str| r.get(k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
     let mut groups_seen = [0u64; 2];
     let mut other = 0u64;
@@ -404,7 +417,6 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         results.push((i, out));
     }
     prog.finish();
-    drop(w);
 
     let s = build_summary(&SummaryInput {
         items: &items,
@@ -416,6 +428,13 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
         moved_files,
     });
     let mut text = s.text;
+    let unflushed = results
+        .iter()
+        .filter(|(_, r)| r.detail.starts_with("No cache flush:"))
+        .count();
+    if unflushed > 0 {
+        text += &format!("\nCache flush not completed: {unflushed} files. Data differences without a flush are not trusted.\n");
+    }
     if stopped {
         text += "\nThe run stopped early. The summary shows only the files read until that time.\n";
     }
@@ -441,11 +460,10 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
     );
     block += &text;
     block += "\n";
-    let logged = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&o.log)
-        .and_then(|mut f| f.write_all(block.as_bytes()));
+    let logged = match &mut summary_log {
+        Ok(log) => log.write_all(block.as_bytes()),
+        Err(e) => Err(io::Error::new(e.kind(), e.to_string())),
+    };
     ctl.message("");
     let log_failed = logged.is_err();
     match logged {
@@ -494,6 +512,119 @@ fn completion_status(
     }
 }
 
+fn validate_log_target(
+    log: &std::fs::File,
+    o: &VerifyOptions,
+    rows: &[csv::Row],
+) -> io::Result<()> {
+    validate_log_target_with(log, o, rows, |path| {
+        sys::open_meta(path).and_then(|f| sys::meta(&f))
+    })
+}
+
+fn validate_log_target_with(
+    log: &std::fs::File,
+    o: &VerifyOptions,
+    rows: &[csv::Row],
+    mut metadata: impl FnMut(&Path) -> io::Result<crate::common::Meta>,
+) -> io::Result<()> {
+    let meta = sys::meta(log)?;
+    let paths = std::iter::once(o.from.as_path()).chain(o.out.as_deref());
+    for path in paths {
+        let other = match metadata(path) {
+            Ok(other) => other,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e),
+        };
+        if other.id == meta.id {
+            return Err(log_target_error(
+                "The --log file is the source CSV or the output CSV.",
+            ));
+        }
+    }
+    check_log_links(meta.links, meta.size)?;
+    let canonical = report_path_key(&o.log.canonicalize()?);
+    let supplied = report_path_key(&o.log);
+    for path in rows.iter().filter_map(|row| row.get("path")) {
+        // Reports store absolute paths. Normalize text only; never open a listed file.
+        let key = report_path_key(Path::new(path));
+        if key == canonical || key == supplied {
+            return Err(log_target_error(
+                "The --log path is a file listed in the source CSV.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn log_target_error(message: &str) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message)
+}
+
+fn check_log_links(links: u64, size: u64) -> io::Result<()> {
+    if links > 1 {
+        return Err(log_target_error(
+            "The --log file has more than one hard link. Use a file with one link.",
+        ));
+    }
+    if links == 0 && size > 0 {
+        return Err(log_target_error(
+            "The --log link count is unknown and the file is not empty. Use a new log file.",
+        ));
+    }
+    Ok(())
+}
+
+fn report_path_key(path: &Path) -> String {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+    let text = normalized.to_string_lossy().into_owned();
+    #[cfg(windows)]
+    let text = {
+        let text = text.replace('/', "\\").to_lowercase();
+        if let Some(unc) = text.strip_prefix(r"\\?\unc\") {
+            format!(r"\\{unc}")
+        } else {
+            text.strip_prefix(r"\\?\").unwrap_or(&text).to_owned()
+        }
+    };
+    text
+}
+
+fn flush_before_read(path: &Path, id: (u64, u64)) -> Result<(), String> {
+    let flush = sys::open_flush(path).map_err(|e| format!("No cache flush: {e}"))?;
+    if sys::meta(&flush)
+        .map_err(|e| format!("No cache flush: {e}"))?
+        .id
+        != id
+    {
+        return Err("No cache flush: the file identity changed.".into());
+    }
+    sys::flush_file(&flush).map_err(|e| format!("No cache flush: {e}"))
+}
+
+fn difference_status(no_write: bool, flushed: bool) -> &'static str {
+    // A direct read can see old disk data when cached writes have not reached disk.
+    // Without a checked flush, a difference cannot prove data damage.
+    // ERROR keeps this file outside the trusted data verdict.
+    if !flushed {
+        "ERROR"
+    } else if no_write {
+        "MISMATCH"
+    } else {
+        "MODIFIED"
+    }
+}
+
 /// 90061 s → "1 day"; 7200 s → "2 hours"; 300 s → "5 minutes"
 fn fmt_time(secs: u64) -> String {
     let (n, unit) = match secs {
@@ -533,6 +664,7 @@ fn measure(
             ..Default::default()
         });
     }
+    let flush = flush_before_read(path, m.id);
     let data = sys::open_direct(path)?;
     sys::set_read_priority(q, &data, opt.measure_priority);
     let check_hash = !it.sha.is_empty();
@@ -547,7 +679,19 @@ fn measure(
         // Changed metadata does not prove what caused the hash difference.
         let m_after = sys::meta(&mf)?;
         let no_write = it.meta_key.as_deref() == Some(m.key().as_str()) && m_after.key() == m.key();
-        if no_write {
+        let status = difference_status(no_write, flush.is_ok());
+        if status == "ERROR" {
+            return Ok(Outcome {
+                status,
+                reads: 1,
+                detail: format!(
+                    "{}. The data difference is not trusted.",
+                    flush.unwrap_err()
+                ),
+                ..Default::default()
+            });
+        }
+        if status == "MISMATCH" {
             return Ok(Outcome {
                 status: "MISMATCH",
                 reads: 1,
@@ -595,7 +739,7 @@ fn measure(
         first_slow_extents,
         first_worst,
         reads,
-        detail: String::new(),
+        detail: flush.err().unwrap_or_default(),
     })
 }
 
@@ -615,6 +759,249 @@ fn complete_read(result: ReadResult) -> io::Result<ReadResult> {
 
 #[cfg(test)]
 mod read_contract_tests {
+    fn log_options(path: &std::path::Path) -> super::VerifyOptions {
+        super::VerifyOptions {
+            from: path.with_extension("csv"),
+            log: path.to_owned(),
+            out: Some(path.with_extension("out")),
+            sample: 0,
+            select_all: false,
+            read: Default::default(),
+        }
+    }
+
+    #[test]
+    fn large_log_check_opens_only_the_two_csv_paths() {
+        let path =
+            std::env::temp_dir().join(format!("ssd-large-log-check-{}.log", std::process::id()));
+        let log = std::fs::File::create(&path).unwrap();
+        let options = log_options(&path);
+        let rows: Vec<_> = (0..100_000)
+            .map(|i| {
+                crate::csv::Row::from([(
+                    "path".into(),
+                    path.with_file_name(format!("nonexistent-{i}"))
+                        .to_string_lossy()
+                        .into_owned(),
+                )])
+            })
+            .collect();
+        let mut opens = 0;
+        super::validate_log_target_with(&log, &options, &rows, |target| {
+            opens += 1;
+            assert!(target == options.from || Some(target) == options.out.as_deref());
+            Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+        })
+        .unwrap();
+        assert_eq!(opens, 2);
+        drop(log);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn log_check_does_not_open_a_permission_denied_listed_file() {
+        let path =
+            std::env::temp_dir().join(format!("ssd-denied-log-check-{}.log", std::process::id()));
+        let log = std::fs::File::create(&path).unwrap();
+        let options = log_options(&path);
+        let denied = path.with_extension("protected");
+        let rows = [crate::csv::Row::from([(
+            "path".into(),
+            denied.to_string_lossy().into_owned(),
+        )])];
+        let mut listed_opens = 0;
+        super::validate_log_target_with(&log, &options, &rows, |target| {
+            if target == denied {
+                listed_opens += 1;
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            } else {
+                Err(std::io::Error::from(std::io::ErrorKind::NotFound))
+            }
+        })
+        .unwrap();
+        assert_eq!(listed_opens, 0);
+        drop(log);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn unopenable_unselected_file_does_not_abort_verify() {
+        let path =
+            std::env::temp_dir().join(format!("ssd-unopenable-row-{}.csv", std::process::id()));
+        let listed = "invalid\0path";
+        assert!(super::sys::open_meta(std::path::Path::new(listed)).is_err());
+        let mut source =
+            crate::csv::CsvWriter::create(&path, &crate::report::SCAN_HEADER, false).unwrap();
+        source
+            .row(crate::report::SCAN_HEADER.map(|column| {
+                match column {
+                    "path" => listed,
+                    "kind" => "normal",
+                    "status" => "ERROR",
+                    "error" => "Cannot open the file",
+                    _ => "0",
+                }
+                .to_owned()
+            }))
+            .unwrap();
+        drop(source);
+        let options = super::VerifyOptions {
+            from: path.clone(),
+            out: None,
+            ..log_options(&path.with_extension("log"))
+        };
+        let result = super::run(&options, crate::control::Control::new(None)).unwrap();
+        assert_eq!(result.processed_files, 0);
+        std::fs::remove_file(&options.log).unwrap();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn log_check_rejects_a_listed_single_link_path() {
+        let path =
+            std::env::temp_dir().join(format!("ssd-listed-log-check-{}.log", std::process::id()));
+        let log = std::fs::File::create(&path).unwrap();
+        let options = log_options(&path);
+        let rows = [crate::csv::Row::from([(
+            "path".into(),
+            path.to_string_lossy().into_owned(),
+        )])];
+        let error = super::validate_log_target(&log, &options, &rows).unwrap_err();
+        assert!(error.to_string().contains("listed"));
+        drop(log);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn log_link_policy_rejects_hard_links_and_unknown_nonempty_logs() {
+        assert!(super::check_log_links(2, 0).is_err());
+        assert!(super::check_log_links(0, 1).is_err());
+        assert!(super::check_log_links(0, 0).is_ok());
+        assert!(super::check_log_links(1, 100).is_ok());
+    }
+
+    #[test]
+    fn report_path_keys_match_canonical_and_report_forms() {
+        let dir = std::env::temp_dir();
+        assert_eq!(
+            super::report_path_key(&dir.join("part/../log")),
+            super::report_path_key(&dir.join("log"))
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            super::report_path_key(std::path::Path::new(r"\\?\C:\Report\log")),
+            super::report_path_key(std::path::Path::new(r"c:\report\log"))
+        );
+    }
+
+    #[test]
+    fn verify_rejects_source_log_alias_before_any_append() {
+        let path =
+            std::env::temp_dir().join(format!("ssd-source-alias-{}.csv", std::process::id()));
+        let alias = path.with_extension("alias");
+        let contents = format!("{}\n", crate::report::SCAN_HEADER.join(","));
+        std::fs::write(&path, &contents).unwrap();
+        std::fs::hard_link(&path, &alias).unwrap();
+        let result = super::run(
+            &super::VerifyOptions {
+                from: path.clone(),
+                log: alias.clone(),
+                out: None,
+                sample: 0,
+                select_all: false,
+                read: Default::default(),
+            },
+            crate::control::Control::new(None),
+        );
+        assert_eq!(
+            result.err().unwrap().kind(),
+            std::io::ErrorKind::InvalidInput
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), contents);
+        std::fs::remove_file(alias).unwrap();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn verify_stops_when_another_process_holds_its_log() {
+        let path = std::env::temp_dir().join(format!("ssd-verify-busy-{}.csv", std::process::id()));
+        std::fs::write(&path, format!("{}\n", crate::report::SCAN_HEADER.join(","))).unwrap();
+        let log_path = path.with_extension("log");
+        let lock = crate::output_lock::LockedFile::open_append(&log_path).unwrap();
+        let result = super::run(
+            &super::VerifyOptions {
+                from: path.clone(),
+                log: log_path.clone(),
+                out: None,
+                sample: 0,
+                select_all: false,
+                read: Default::default(),
+            },
+            crate::control::Control::new(None),
+        );
+        assert_eq!(result.err().unwrap().kind(), std::io::ErrorKind::WouldBlock);
+        assert_eq!(std::fs::metadata(&log_path).unwrap().len(), 0);
+        drop(lock);
+        std::fs::remove_file(log_path).unwrap();
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn unflushed_differences_never_report_data_damage() {
+        for no_write in [false, true] {
+            assert_eq!(super::difference_status(no_write, false), "ERROR");
+        }
+        assert_eq!(super::difference_status(true, true), "MISMATCH");
+        assert_eq!(super::difference_status(false, true), "MODIFIED");
+    }
+
+    #[test]
+    fn flush_rejects_a_different_file_identity() {
+        let path = std::env::temp_dir().join(format!("ssd-flush-id-{}", std::process::id()));
+        std::fs::write(&path, b"unchanged").unwrap();
+        assert!(super::flush_before_read(&path, (u64::MAX, u64::MAX)).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"unchanged");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn log_rejects_hard_links_to_every_protected_file() {
+        let dir = std::env::temp_dir().join(format!("ssd-log-alias-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let protected = dir.join("protected");
+        let alias = dir.join("alias");
+        std::fs::write(&protected, b"unchanged").unwrap();
+        std::fs::hard_link(&protected, &alias).unwrap();
+        let log = std::fs::File::open(&alias).unwrap();
+        for target in ["source", "output", "listed"] {
+            let mut options = super::VerifyOptions {
+                from: dir.join("absent-source"),
+                out: None,
+                log: alias.clone(),
+                sample: 0,
+                select_all: false,
+                read: Default::default(),
+            };
+            let mut rows = vec![];
+            match target {
+                "source" => options.from = protected.clone(),
+                "output" => options.out = Some(protected.clone()),
+                _ => rows.push(crate::csv::Row::from([(
+                    "path".into(),
+                    protected.to_string_lossy().into_owned(),
+                )])),
+            }
+            let error = super::validate_log_target(&log, &options, &rows).unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+            assert!(error.to_string().contains("--log"));
+        }
+        assert_eq!(std::fs::read(&protected).unwrap(), b"unchanged");
+        drop(log);
+        std::fs::remove_file(alias).unwrap();
+        std::fs::remove_file(protected).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+
     #[test]
     fn path_check_errors_are_not_missing_files() {
         let item = super::Item {

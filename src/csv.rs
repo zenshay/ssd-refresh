@@ -1,12 +1,13 @@
 //! Minimal RFC 4180 CSV reading and writing. Every row is flushed, so after an
 //! interruption the file itself is the checkpoint.
 
+use crate::output_lock::LockedFile;
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
-pub struct CsvWriter<W = File> {
+pub struct CsvWriter<W = LockedFile> {
     f: W,
 }
 
@@ -14,13 +15,24 @@ impl CsvWriter {
     /// With `append`, continue an existing file (resume), first cutting off a last row
     /// that was only half written.
     pub fn create(path: &Path, header: &[&str], append: bool) -> io::Result<CsvWriter> {
-        let exists = path.exists() && std::fs::metadata(path)?.len() > 0;
-        if append && exists {
-            trim_partial_last_line(path)?;
-            let f = OpenOptions::new().append(true).open(path)?;
+        let f = if append {
+            match LockedFile::open_existing(path) {
+                Ok(f) => f,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => LockedFile::create_new(path)?,
+                Err(e) => return Err(e),
+            }
+        } else {
+            LockedFile::create_new(path)?
+        };
+        Self::from_locked(f, header, append)
+    }
+
+    pub fn from_locked(mut f: LockedFile, header: &[&str], append: bool) -> io::Result<CsvWriter> {
+        if append && f.file.metadata()?.len() > 0 {
+            trim_partial_last_line(&mut f.file)?;
+            f.file.seek(SeekFrom::End(0))?;
             return Ok(CsvWriter { f });
         }
-        let f = OpenOptions::new().write(true).create_new(true).open(path)?;
         let mut w = CsvWriter { f };
         w.f.write_all("\u{feff}".as_bytes())?; // BOM, so Excel shows non-ASCII paths correctly
         w.row(header.iter().map(|s| s.to_string()))?;
@@ -50,8 +62,7 @@ pub fn quote(s: &str) -> String {
     }
 }
 
-fn trim_partial_last_line(path: &Path) -> io::Result<()> {
-    let mut f = OpenOptions::new().read(true).write(true).open(path)?;
+fn trim_partial_last_line(f: &mut File) -> io::Result<()> {
     let len = f.metadata()?.len();
     if len == 0 {
         return Ok(());
@@ -163,4 +174,38 @@ fn parse(s: &str) -> (Vec<Vec<String>>, bool) {
         return (rows, false);
     }
     (rows, true)
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+
+    #[test]
+    fn resume_initializes_an_empty_reserved_csv() {
+        let path = std::env::temp_dir().join(format!("ssd-csv-empty-{}.csv", std::process::id()));
+        let reserved = LockedFile::create_new(&path).unwrap();
+        drop(reserved);
+        let mut resumed = CsvWriter::create(&path, &["path"], true).unwrap();
+        resumed.row(["first".to_owned()]).unwrap();
+        drop(resumed);
+        assert_eq!(read_all(&path).unwrap()[0]["path"], "first");
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn resume_cannot_trim_or_append_a_locked_csv() {
+        let path = std::env::temp_dir().join(format!("ssd-csv-lock-{}.csv", std::process::id()));
+        let mut first = CsvWriter::create(&path, &["path"], false).unwrap();
+        first.f.write_all(b"partial").unwrap();
+        let before = std::fs::read(&path).unwrap();
+        let error = CsvWriter::create(&path, &["path"], true).err().unwrap();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        drop(first);
+        let mut resumed = CsvWriter::create(&path, &["path"], true).unwrap();
+        resumed.row(["next".to_owned()]).unwrap();
+        drop(resumed);
+        assert_eq!(read_all(&path).unwrap()[0]["path"], "next");
+        std::fs::remove_file(path).unwrap();
+    }
 }

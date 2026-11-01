@@ -28,6 +28,7 @@ try {
         }
         if ($task.Principal.RunLevel -ne 0 -or $user -ne $sid) { throw 'Invalid task rights.' }
         if (!$task.Settings.RunOnlyIfIdle -or !$task.Settings.DisallowStartIfOnBatteries -or $task.Settings.WakeToRun) { throw 'Invalid task conditions.' }
+        if ($task.Settings.RestartCount -ne 3 -or $task.Settings.RestartInterval -ne 'PT30M') { throw 'Invalid failure retry settings.' }
         if ($task.Actions[0].Arguments -ne ('--scheduled-verify "' + $report + '"')) { throw 'Invalid verify arguments.' }
     }
     'RESULT: YES (3 real future tasks, limited rights, idle and AC conditions; no task started)'

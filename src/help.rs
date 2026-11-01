@@ -240,6 +240,8 @@ Statuses in the log (status column)
 
   --resume retries the safety skips and VERIFY_FAILED. Check the cause first.
   These checks do not hold a write lock. A writer can start after a check.
+  Windows reloads free-space data once before it reports insufficient space.
+  Linux checks the reopened file device and inode before it moves data.
 
 Log columns
   before_mbps / before_slow  The speed of the read before the move. If the
@@ -371,6 +373,10 @@ Log
 Options
   --from FILE        The refresh log or scan report. You must give this option.
   --log FILE         The text log. Default: <source>.verify.log.
+                     Cannot share a file ID with the source or --out.
+                     Must have at most one hard link. Listed paths receive
+                     text checks only; the check does not open each file.
+                     Unknown link count: the log must be empty.
   --out FILE         Also write a CSV with one row for each file. Use it to
                      find problems or to attach it to an issue report.
   --sample N         Read a maximum of N files per group. The same path always
@@ -391,7 +397,9 @@ CSV columns (with --out)
   first_worst_*      The extent with the most time above the limit: its
                      start (Unix ms), its read time (ms) and its bytes.
   status    MEASURED. MODIFIED: a hash differs with changed or unknown metadata.
-            MISMATCH: a hash differs without recorded metadata change.
+            MISMATCH: a hash differs after a flush, without metadata change.
+            ERROR: also a data difference without a completed cache flush.
+            detail records No cache flush when the flush fails.
             MISSING. SKIP_KIND: cannot measure. ERROR.
 
 Examples
@@ -406,6 +414,14 @@ Exit codes (CLI and scheduled Verify):
   4 stopped.
   5 incomplete: the tool could not check all data or could not write
     the summary log.
+  6 busy: another operation holds the lock (scheduled Verify only).
+
+Refresh and verify lock output files. A second writer returns code 1.
+Scan has no global operation lock. Refresh reserves its output before
+confirmation. The run removes its new empty output on an early return.
+It keeps existing files and files with any bytes.
+Scheduled tasks request 3 restarts after failure, 30 minutes apart.
+Recreate existing schedules to apply these settings.
 
 Scheduled Verify runs without administrator rights. It cannot check files
 that need those rights. Run Verify manually with administrator rights.

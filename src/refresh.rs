@@ -148,7 +148,27 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     // A log of an older version has fewer columns. --resume then writes only those columns,
     // so that all rows have the same columns.
     let mut width = HEADER.len();
-    if o.resume && o.out.exists() {
+    if !o.resume && o.out.exists() {
+        ctl.message(&format!("  The log exists already: {}", o.out.display()));
+        ctl.message("  Use --resume to continue it, or use a different file name with --out.");
+        return Ok(RefreshOutcome {
+            status: RunStatus::InvalidInput,
+            ..Default::default()
+        });
+    }
+    // Hold the output lock before reading resume state and until the writer closes.
+    let locked_out = if o.resume {
+        match crate::output_lock::LockedFile::open_existing(&o.out) {
+            Ok(f) => f,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                crate::output_lock::LockedFile::create_new(&o.out)?.remove_if_empty_on_drop(&o.out)
+            }
+            Err(e) => return Err(e),
+        }
+    } else {
+        crate::output_lock::LockedFile::create_new(&o.out)?.remove_if_empty_on_drop(&o.out)
+    };
+    if o.resume && locked_out.file().metadata()?.len() > 0 {
         let header = csv::header(&o.out)?;
         let old = header.len() >= OLD_WIDTH && header.len() <= HEADER.len();
         if !old || header[..] != HEADER[..header.len()] {
@@ -171,13 +191,6 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             agree(done.len() as u64, "is", "are"),
             agree(done.len() as u64, "it", "them")
         ));
-    } else if o.out.exists() {
-        ctl.message(&format!("  The log exists already: {}", o.out.display()));
-        ctl.message("  Use --resume to continue it, or use a different file name with --out.");
-        return Ok(RefreshOutcome {
-            status: RunStatus::InvalidInput,
-            ..Default::default()
-        });
     }
     let todo: Vec<_> = picked
         .into_iter()
@@ -299,7 +312,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             reloc,
             q: sys::IoQueue::new(o.read.qd, o.read.chunk),
         };
-        let mut w = CsvWriter::create(&o.out, &HEADER[..width], o.resume)?;
+        let mut w = CsvWriter::from_locked(locked_out, &HEADER[..width], o.resume)?;
         let prog = Progress::new(
             Phase::Refresh { dry_run: o.dry_run },
             todo.len() as u64,
@@ -559,6 +572,34 @@ mod tests {
     use crate::progress::{Phase, Progress};
     use std::cell::Cell;
     use std::io;
+
+    #[test]
+    fn cancelled_confirmation_removes_only_a_new_empty_output() {
+        use crate::output_lock::LockedFile;
+        let path =
+            std::env::temp_dir().join(format!("ssd-cancel-output-{}.csv", std::process::id()));
+        let ctl = Control::new(None);
+        let reserved = LockedFile::create_new(&path)
+            .unwrap()
+            .remove_if_empty_on_drop(&path);
+        let result = run_confirmed(false, "X:", "cancel", &ctl, || {
+            let _writer = crate::csv::CsvWriter::from_locked(reserved, &["path"], false)?;
+            Ok(RefreshOutcome::default())
+        })
+        .unwrap();
+        assert_eq!(result.status, RunStatus::InvalidInput);
+        assert!(!path.exists());
+        // A fresh attempt does not need --resume.
+        drop(LockedFile::create_new(&path).unwrap());
+        let existing = LockedFile::open_existing(&path).unwrap();
+        run_confirmed(false, "X:", "cancel", &ctl, || {
+            drop(existing);
+            Ok(RefreshOutcome::default())
+        })
+        .unwrap();
+        assert!(path.exists());
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn confirmation_gates_all_work() {
