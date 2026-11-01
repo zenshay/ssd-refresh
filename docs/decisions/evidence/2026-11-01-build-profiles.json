@@ -15,6 +15,14 @@
     "runner_seconds": 13302,
     "wall_seconds": 3322
   },
+  "benchmark": {
+    "source": "https://github.com/zenshay/ssd-refresh/blob/a34b2da3d751811e1066bfcb74743a8d30064cf3/examples/compile_probe.rs",
+    "sha256_bytes": 8388608,
+    "fill_byte": 90,
+    "csv_rows": 10000,
+    "minimum_loop_ms": 700,
+    "memory_sample_ms": 200
+  },
   "paired_studies": [
     {
       "run": 41265833094,
@@ -26,6 +34,9 @@
         {
           "variant": "nightly1",
           "rust": "rustc 1.101.0-nightly (92b5b8c87 2026-10-29)\nbinary: rustc\ncommit-hash: 92b5b8c87c61b20adc9001b41baf587634a74734\ncommit-date: 2026-10-29\nhost: x86_64-pc-windows-msvc\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4",
+          "incremental": 0,
+          "jobs": 8,
+          "samples": 3,
           "validation_scope": "FULL",
           "full_check": "YES",
           "optimized_tests": "NOT_RUN",
@@ -95,6 +106,9 @@
         {
           "variant": "nightly8",
           "rust": "rustc 1.101.0-nightly (92b5b8c87 2026-10-29)\nbinary: rustc\ncommit-hash: 92b5b8c87c61b20adc9001b41baf587634a74734\ncommit-date: 2026-10-29\nhost: x86_64-pc-windows-msvc\nrelease: 1.101.0-nightly\nLLVM version: 23.1.4",
+          "incremental": 0,
+          "jobs": 8,
+          "samples": 3,
           "validation_scope": "FULL",
           "full_check": "YES",
           "optimized_tests": "NOT_RUN",
@@ -174,6 +188,9 @@
         {
           "variant": "fat1",
           "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
+          "incremental": 0,
+          "jobs": 8,
+          "samples": 3,
           "validation_scope": "TIMING_ONLY",
           "full_check": "NOT_RUN",
           "optimized_tests": "NOT_RUN",
@@ -237,6 +254,9 @@
         {
           "variant": "thin1",
           "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
+          "incremental": 0,
+          "jobs": 8,
+          "samples": 3,
           "validation_scope": "TIMING_ONLY",
           "full_check": "NOT_RUN",
           "optimized_tests": "NOT_RUN",
@@ -491,6 +511,9 @@
         {
           "variant": "fat1",
           "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
+          "incremental": 0,
+          "jobs": 8,
+          "samples": 3,
           "validation_scope": "TIMING_ONLY",
           "full_check": "NOT_RUN",
           "optimized_tests": "NOT_RUN",
@@ -554,6 +577,9 @@
         {
           "variant": "thin16",
           "rust": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.0\nLLVM version: 23.1.1",
+          "incremental": 0,
+          "jobs": 8,
+          "samples": 3,
           "validation_scope": "TIMING_ONLY",
           "full_check": "NOT_RUN",
           "optimized_tests": "NOT_RUN",
