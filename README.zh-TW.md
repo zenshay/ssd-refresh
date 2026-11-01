@@ -708,6 +708,20 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 - **斷電與硬體故障**：現有測試不能證明斷電、裝置故障或控制器異常後可恢復資料。
 - **報告隱私**：CSV 與 log 可能含私人路徑，請留在本機。詳見[安全政策](SECURITY.md)與[支援說明](SUPPORT.md)。
 
+### 慢速讀取測試（Linux ext4）
+
+[慢速讀取模擬](docs/simulation.md)用合成檔案與 device-mapper 延遲區段執行五個情境。
+測試檢查檔案選取、區塊搬移、控制組、雜湊、提早驗證的判斷，以及碎片成本。
+這不會模擬電荷流失，也不能證明實體 SSD 的速度改善。
+請使用 PowerShell 7 與支援特權容器的 Linux Docker 引擎。路徑必須是絕對路徑，報告資料夾必須不存在：
+
+```powershell
+& C:\src\ssd-refresh\test\run-ext4-sim.ps1 -Cli C:\src\ssd-refresh\target\x86_64-unknown-linux-musl\release\ssd-refresh -Reports C:\sim-reports\run-001
+```
+
+請依本機位置修改路徑。報告會留在 `run` 子資料夾。
+模擬文件另有 Linux root 指令、校準方式、成本、清理方式與限制。2026-11-02 在 Docker Desktop（WSL2 核心 6.18.54）實測：五個情境共 6 到 7 分鐘（2 次），不含安裝套件。
+
 ### 安全測試（Windows）
 
 一般使用者不需要跑這個測試。它是給開發者，以及想自己確認安全性的人用的。

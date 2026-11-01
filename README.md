@@ -718,6 +718,20 @@ First, make a backup of important data.
 - **Power loss and hardware faults.** The recorded tests do not prove recovery after power loss, device failure, or controller faults.
 - **Reports.** CSV and log files can contain private paths. Keep them local. See [Security](SECURITY.md) and [Support](SUPPORT.md).
 
+### Slow-read test (Linux ext4)
+
+The [slow-read simulation](docs/simulation.md) checks five scenarios with synthetic files and device-mapper delay ranges.
+It checks file selection, moves, controls, hashes, early verify verdicts, and fragmentation cost.
+It does not simulate charge loss or prove speed on a physical SSD.
+Run with PowerShell 7 and a privileged Linux Docker engine. Use absolute paths and a new report folder:
+
+```powershell
+& C:\src\ssd-refresh\test\run-ext4-sim.ps1 -Cli C:\src\ssd-refresh\target\x86_64-unknown-linux-musl\release\ssd-refresh -Reports C:\sim-reports\run-001
+```
+
+Change the paths to match your computer. Reports stay in the `run` subfolder.
+See the simulation guide for the root Linux command, calibration, costs, cleanup, and limits.
+
 ### Safety test (Windows)
 
 Normal users do not need this test. It is for developers, and for persons who want to check the safety themselves.

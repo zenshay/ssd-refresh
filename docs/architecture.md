@@ -275,6 +275,12 @@ The global Tauri API was absent. The page controls loaded.
 The test did not scan files, move files, or test power loss.
 This result does not replace release package tests on each target device.
 
+## Slow-media simulation
+
+The [ext4 slow-read simulation](simulation.md) checks scan, refresh, and verify with device-mapper delay ranges.
+It uses new loop images and synthetic data. It does not prove physical SSD retention or speed after days of use.
+The simulation runs separately from the default checks and needs root or privileged Docker.
+
 ## Targeted mutation tests
 
 The default check changes production behavior in isolated source copies and runs the original test suites.

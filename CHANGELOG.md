@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Add a slow-read simulation for Linux ext4 (`test/run-ext4-sim.sh`, `test/run-ext4-sim.ps1`). It uses device-mapper delay ranges in five scenarios. See `docs/simulation.md`.
+- The simulation found a known risk: when each read request takes about 1 ms, a new file with many small extents can show as slow.
+
 ### Fixed
 
 - Add exit code `5` for incomplete verify checks and failed summary-log writes. CLI and scheduled checks use the same codes.
