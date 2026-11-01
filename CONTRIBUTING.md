@@ -39,7 +39,7 @@ Do not treat a skipped check as a passed check.
 
 ### Build modes
 
-See [decision 0001](docs/decisions/0001-build-profiles.md) for the measurements, tradeoffs, and reversal steps.
+See [decision 0001](https://github.com/zenshay/ssd-refresh/blob/main/docs/decisions/0001-build-profiles.md) for the measurements, tradeoffs, and reversal steps.
 
 Use different modes for different tasks. All modes use the same source and lock files.
 
@@ -57,6 +57,9 @@ Do not use `--release` for each local edit. Use it when you need to test the rel
 Local and remote release commands share the release profile to reduce differences between tested and shipped code.
 The manual `release_builds` workflow input validates Windows x64 and ARM64 without creating a release.
 Normal PR runs skip that extra work. ARM64 cross-compilation does not test an ARM64 device.
+
+The manual native GUI smoke test uses the real packaged WebView2 app and keeps storage operation buttons disabled.
+See [native validation](https://github.com/zenshay/ssd-refresh/blob/main/docs/decisions/0001-build-validation.md) for commands, results, and limits.
 
 ### Contracts for shared work
 
