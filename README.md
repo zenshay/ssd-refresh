@@ -356,7 +356,15 @@ The scan has three steps. Before each step, the tool shows what it will do.
 
 1. **Find the files.** The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.
 2. **Read each file one time.** The scan reads each file directly from the disk, not from the OS cache. It measures the time for each extent. An extent is one continuous part of the file on the disk. If one extent is slower than `--threshold` (100 MB/s), the file goes on the **check list**.
-3. **Check the files on the check list again.** The scan reads each file alone, at normal I/O priority. It does this two times. Round 2 starts 30 s or more after round 1. If a read is slow, the scan reads the file again at once. For each extent, the scan uses the fastest of all reads. A file is **slow** only if it is slow after this step.
+3. **Check the files on the check list again.** The scan reads each file alone, at normal I/O priority. It does this two times. Round 2 starts 30 s or more after round 1. If a read is slow, the scan reads the file again at once. The scan keeps one whole read. It selects fewer slow extents, then less total time above their limits. Equal results keep the earlier read. A file is **slow** only if it is slow after this step.
+
+Read comparisons require the same file ID, size, and full extent map, including offsets, lengths, and disk locations.
+If these change, the new read replaces the old measurement and hash.
+For the same file and map, the hash stays from the first read.
+An incomplete scan read has status `ERROR`, no hash, and no speed measurement.
+The CSV columns do not change. Speed and time columns describe the selected whole read.
+Requests run in parallel within one extent. The next extent waits until the current extent finishes.
+This can reduce speed for files with many small extents, because the queue empties between extents.
 
 #### The check list is not the result
 
@@ -430,7 +438,7 @@ Refresh needs administrator (Windows) or root (Linux).
 2. **Show and confirm.** The tool shows what it will do, how much data it will write, and the warnings (for example about Windows restore points). Type the drive letter to continue. Other text cancels. For scripts, `--confirm X:` does not ask.
 3. **Refresh**, one file at a time:
    1. Write the cached data of the file to the disk (flush, see [below](#why-the-sha-256-can-be-different)). Then read the file (not from the OS cache) at normal priority. Write the SHA-256 and the speed to the log.
-   2. If the first read is slow, read the file again at once with the same handle. Use the faster time of each extent. If the file is not slow now, do not move it (`SKIP_FAST`). `--force` moves it.
+   2. If the first read is slow, read the file again at once with the same handle. Keep the better whole read, as in scan. If the file is not slow now, do not move it (`SKIP_FAST`). `--force` moves it.
    3. Tell the file system to move the data to free clusters, in pieces of 16 MiB or less. The file system moves each piece fully or not at all.
    4. Read the file again (and one more time if this read is slow). Compare the SHA-256. Write the new speed to the log.
 
@@ -520,7 +528,7 @@ Two more things can change the result:
 
 To find out which is true for your drive, see [Help test your drive](#help-test-your-drive).
 
-`verify` reads one file at a time, at normal priority, not from the OS cache. If a file is slow, it reads the file one more time and uses the faster time of each extent. The `--out` CSV also keeps the result of the first read (columns `first_*`). For the first read, it also gives the start time (Unix ms) and the read time of the extent with the most time above the limit. Use these times to compare with other disk records. It shows a table for the `rewritten` group (`OK`, `CHANGED`) and, if it exists, the `read_only` group (`CONTROL`, `DRYRUN`). Example (the numbers are only an example):
+`verify` reads one file at a time, at normal priority, not from the OS cache. If a file is slow, it reads the file one more time and keeps the better whole read, as in scan. The `--out` CSV also keeps the result of the first read (columns `first_*`). For the first read, it also gives the start time (Unix ms) and the read time of the extent with the most time above the limit. Use these times to compare with other disk records. It shows a table for the `rewritten` group (`OK`, `CHANGED`) and, if it exists, the `read_only` group (`CONTROL`, `DRYRUN`). Example (the numbers are only an example):
 
 ```
 Summary

@@ -66,6 +66,7 @@ impl ExtentTiming {
 
 #[derive(Clone, Debug, Default)]
 pub struct ReadResult {
+    pub source: Option<ReadSource>,
     pub disk_bytes: u64,
     /// File bytes read, including holes but excluding alignment padding.
     pub file_bytes: u64,
@@ -73,6 +74,13 @@ pub struct ReadResult {
     pub short_read: bool,
     pub sha256: Option<[u8; 32]>,
     pub extents: Vec<ExtentTiming>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReadSource {
+    pub id: (u64, u64),
+    pub size: u64,
+    pub layout: Layout,
 }
 
 impl ReadResult {
@@ -103,28 +111,63 @@ impl ReadResult {
             .max_by(|a, b| a.excess_secs(opt).total_cmp(&b.excess_secs(opt)))
     }
 
-    /// The same file read twice: keep the faster time of each extent and decide slowness again.
+    /// Keep one whole read: fewer slow extents, then less total excess time.
     pub fn keep_faster(&mut self, other: &ReadResult, opt: &ReadOptions) {
-        self.short_read |= other.short_read;
-        self.file_bytes = self.file_bytes.min(other.file_bytes);
-        if self.extents.len() != other.extents.len() {
+        let same_source =
+            self.source.is_some()
+                && self.source == other.source
+                && self.extents.len() == other.extents.len()
+                && self.extents.iter().zip(&other.extents).all(|(a, b)| {
+                    (a.offset, a.bytes, a.physical) == (b.offset, b.bytes, b.physical)
+                });
+        if !same_source {
+            *self = other.clone();
             return;
         }
-        self.disk_secs = 0.0;
-        for (a, b) in self.extents.iter_mut().zip(&other.extents) {
-            a.secs = a.secs.min(b.secs);
-            a.slow = is_slow(a.bytes, a.secs, opt);
-            self.disk_secs += a.secs;
+        let score = |r: &ReadResult| {
+            (
+                r.extents
+                    .iter()
+                    .filter(|e| is_slow(e.bytes, e.secs, opt))
+                    .count(),
+                r.extents
+                    .iter()
+                    .map(|e| e.excess_secs(opt).max(0.0))
+                    .sum::<f64>(),
+            )
+        };
+        let (a, b) = (score(self), score(other));
+        let hash = self.sha256;
+        let short_read = self.short_read || other.short_read;
+        let file_bytes = self.file_bytes.min(other.file_bytes);
+        if b.0 < a.0 || (b.0 == a.0 && b.1 < a.1) {
+            *self = other.clone();
         }
+        self.sha256 = hash;
+        self.short_read = short_read;
+        self.file_bytes = file_bytes;
+        for e in &mut self.extents {
+            e.slow = is_slow(e.bytes, e.secs, opt);
+        }
+    }
+
+    pub fn complete_read(&self, size: u64) -> io::Result<()> {
+        if self.short_read || self.file_bytes != size {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "The file read did not finish. No measurement is available.",
+            ));
+        }
+        Ok(())
     }
 }
 
-/// If `first` is slow, read the file again at once and keep the faster time of each extent.
+/// If `first` is slow, read the file again at once and keep the better whole read.
 /// Returns true if the first read was slow.
 ///
 /// Why: when a program opens a file, an antivirus program can scan the file first. After a long
 /// scan, the first read of the file can be some ms slower. A second read at once, with the same
-/// handle, does not have this delay. A slow disk area is slow in both reads, so it stays slow.
+/// handle, can avoid this delay. The result must describe one whole read.
 pub fn keep_faster_if_slow(
     first: &mut ReadResult,
     opt: &ReadOptions,
@@ -139,7 +182,7 @@ pub fn keep_faster_if_slow(
 }
 
 /// `read_file`, then `keep_faster_if_slow` with a second read of the same handle.
-/// The second read does not calculate the SHA-256. The result keeps the SHA-256 of the first read.
+/// The second read does not calculate the SHA-256. Matching sources keep the first SHA-256.
 /// Returns the result and true if the first read was slow.
 #[allow(clippy::too_many_arguments)]
 pub fn read_file_confirmed(
@@ -193,7 +236,16 @@ pub fn read_file(
     opt: &ReadOptions,
     ctl: &Control,
 ) -> io::Result<ReadResult> {
-    let mut res = ReadResult::default();
+    let meta = crate::sys::meta(f)?;
+    let mut res = ReadResult {
+        source: Some(ReadSource {
+            id: meta.id,
+            size: meta.size,
+            layout: layout.clone(),
+        }),
+        short_read: meta.size != size,
+        ..Default::default()
+    };
     let end = align_up(size);
     let segs = build_segments(layout, end, measure, &mut res);
 
@@ -234,6 +286,9 @@ pub fn read_file(
     while done < chunks.len() {
         // keep the queue full
         while err.is_none() && next < chunks.len() && next - done < qd {
+            if !can_issue(&chunks, next, done) {
+                break;
+            }
             if ctl.is_paused() {
                 if inflight > 0 {
                     break; // let requests already sent finish before pausing
@@ -306,25 +361,31 @@ pub fn read_file(
         return Err(e);
     }
 
-    // Give each extent its share of the time, in order: from the later of "its first request was
-    // sent" and "the previous extent finished" until its last request finished, minus pauses.
-    let mut prev: Option<Instant> = None;
+    // Extents do not overlap in the queue. Each time uses only its own requests.
     for (i, e) in res.extents.iter_mut().enumerate() {
         let (Some(fi), Some(ld)) = (first_issue[i], last_done[i]) else {
             continue;
         };
-        let begin = prev.map_or(fi, |p| p.max(fi));
+        let begin = fi;
         e.begin_unix_ms = t0_unix_ms + begin.saturating_duration_since(t0).as_secs_f64() * 1000.0;
-        e.secs = ld
-            .saturating_duration_since(begin)
-            .saturating_sub(paused[i])
-            .as_secs_f64();
-        prev = Some(ld);
+        e.secs = extent_duration(begin, ld, paused[i]).as_secs_f64();
         res.disk_secs += e.secs;
         e.slow = measure && is_slow(e.bytes, e.secs, opt);
     }
     res.sha256 = hasher.map(|h| h.finalize().into());
     Ok(res)
+}
+
+fn can_issue(chunks: &[Seg], next: usize, done: usize) -> bool {
+    // Finish the current extent before the next extent starts.
+    // Keep parallel requests inside one extent to give each extent its own time.
+    next == done || chunks[next].extent == chunks[done].extent
+}
+
+fn extent_duration(begin: Instant, end: Instant, paused: Duration) -> Duration {
+    end.saturating_duration_since(begin)
+        .saturating_sub(paused)
+        .max(Duration::from_nanos(1))
 }
 
 fn build_segments(layout: &Layout, end: u64, measure: bool, res: &mut ReadResult) -> Vec<Seg> {
@@ -455,10 +516,12 @@ mod tests {
     #[test]
     fn a_second_short_read_cannot_hide_behind_faster_timings() {
         let mut first = ReadResult {
+            source: result(&[]).source,
             file_bytes: 8193,
             ..Default::default()
         };
         let second = ReadResult {
+            source: first.source.clone(),
             file_bytes: 4096,
             short_read: true,
             ..Default::default()
@@ -508,6 +571,11 @@ mod tests {
             })
             .collect();
         ReadResult {
+            source: Some(ReadSource {
+                id: (1, 2),
+                size: 1_000_000 * secs.len() as u64,
+                layout: Layout::default(),
+            }),
             disk_bytes: 1_000_000 * secs.len() as u64,
             disk_secs: secs.iter().sum(),
             extents,
@@ -549,5 +617,164 @@ mod tests {
         .unwrap();
         assert!(!was_slow);
         assert!(!first.is_slow());
+    }
+
+    #[test]
+    fn alternating_slow_extents_keep_one_real_read() {
+        let mut first = result(&[0.020, 0.004]);
+        first.sha256 = Some([7; 32]);
+        first.extents[0].begin_unix_ms = 100.0;
+        let second = result(&[0.003, 0.019]);
+        first.keep_faster(&second, &ReadOptions::default());
+        assert!(first.is_slow());
+        assert_eq!(first.extents[0].secs, 0.003);
+        assert_eq!(first.extents[1].secs, 0.019);
+        assert_eq!(first.disk_secs, second.disk_secs);
+        assert_eq!(first.extents[0].begin_unix_ms, 0.0);
+        assert_eq!(first.sha256, Some([7; 32]));
+    }
+
+    #[test]
+    fn fewer_slow_extents_win_before_excess_time() {
+        let mut first = result(&[0.013, 0.013]);
+        let second = result(&[0.100, 0.005]);
+        first.keep_faster(&second, &ReadOptions::default());
+        assert_eq!(first.extents.iter().filter(|e| e.slow).count(), 1);
+        assert_eq!(first.disk_secs, second.disk_secs);
+    }
+
+    #[test]
+    fn comparison_uses_current_limits_for_both_reads() {
+        let mut first = result(&[0.015, 0.030]);
+        // Scan step 2 gives each extent more extra time than step 3.
+        first.extents[0].slow = false;
+        let second = result(&[0.014, 0.020]);
+        first.keep_faster(&second, &ReadOptions::default());
+        assert_eq!(first.disk_secs, second.disk_secs);
+        assert!(first.extents.iter().all(|e| e.slow));
+    }
+
+    #[test]
+    fn extent_boundaries_must_match_before_comparison() {
+        for field in 0..3 {
+            let mut first = result(&[0.005, 0.005]);
+            let mut second = result(&[0.020, 0.020]);
+            match field {
+                0 => second.extents[0].offset += 4096,
+                1 => second.extents[0].bytes += 4096,
+                _ => second.extents[0].physical = Some(4096),
+            }
+            first.keep_faster(&second, &ReadOptions::default());
+            assert_eq!(first.disk_secs, second.disk_secs);
+            assert!(first.is_slow());
+        }
+    }
+
+    #[test]
+    fn changed_source_discards_old_measurement_and_hash() {
+        use crate::common::Extent;
+        let base = ReadSource {
+            id: (1, 2),
+            size: 2_000_000,
+            layout: Layout {
+                known: true,
+                extents: vec![Extent {
+                    logical: 0,
+                    len: 2_000_000,
+                    physical: Some(4096),
+                }],
+                ..Default::default()
+            },
+        };
+        for field in 0..7 {
+            let mut first = result(&[0.005, 0.005]);
+            first.source = Some(base.clone());
+            first.sha256 = Some([7; 32]);
+            let mut second = result(&[0.020, 0.020]);
+            let mut source = base.clone();
+            match field {
+                0 => source.id.0 += 1,
+                1 => source.id.1 += 1,
+                2 => source.size += 1,
+                3 => source.layout.extents[0].logical += 4096,
+                4 => source.layout.extents[0].len += 4096,
+                5 => source.layout.extents[0].physical = Some(8192),
+                _ => source.layout.known = false,
+            }
+            second.source = Some(source);
+            first.keep_faster(&second, &ReadOptions::default());
+            assert_eq!(first.source, second.source);
+            assert_eq!(first.disk_secs, second.disk_secs);
+            assert_eq!(first.sha256, None);
+        }
+    }
+
+    #[test]
+    fn queue_waits_at_extent_boundaries_but_fills_within_an_extent() {
+        let chunks = [Some(0), Some(0), Some(1), Some(1), None, Some(2)].map(|extent| Seg {
+            offset: 0,
+            len: 4096,
+            extent,
+        });
+        assert!(can_issue(&chunks, 1, 0));
+        assert!(!can_issue(&chunks, 2, 0));
+        assert!(!can_issue(&chunks, 2, 1));
+        assert!(can_issue(&chunks, 2, 2));
+        assert!(can_issue(&chunks, 3, 2));
+        assert!(!can_issue(&chunks, 4, 3));
+        assert!(!can_issue(&chunks, 5, 4));
+    }
+
+    #[test]
+    fn extent_times_stay_positive_and_do_not_overlap() {
+        let start = Instant::now();
+        let end_a = start + Duration::from_millis(20);
+        let begin_b = end_a + Duration::from_millis(1);
+        let end_b = begin_b + Duration::from_millis(2);
+        assert_eq!(
+            extent_duration(start, end_a, Duration::ZERO),
+            Duration::from_millis(20)
+        );
+        assert_eq!(
+            extent_duration(begin_b, end_b, Duration::ZERO),
+            Duration::from_millis(2)
+        );
+        assert!(begin_b >= end_a);
+        assert!(extent_duration(start, start, Duration::ZERO) > Duration::ZERO);
+        assert!(extent_duration(start, end_a, Duration::from_millis(30)) > Duration::ZERO);
+    }
+
+    #[test]
+    fn out_of_order_completions_cannot_cross_extent_boundaries() {
+        let chunks = [Some(0), Some(0), Some(1), Some(1)].map(|extent| Seg {
+            offset: 0,
+            len: 4096,
+            extent,
+        });
+        let latency = [20u64, 2, 1, 3];
+        let mut completed = [false; 4];
+        let mut pending = Vec::new();
+        let mut starts = [None; 2];
+        let mut ends = [0u64; 2];
+        let (mut next, mut done, mut now) = (0, 0, 0);
+        while done < chunks.len() {
+            while next < chunks.len() && next - done < 4 && can_issue(&chunks, next, done) {
+                let extent = chunks[next].extent.unwrap();
+                starts[extent].get_or_insert(now);
+                pending.push((now + latency[next], next));
+                next += 1;
+            }
+            pending.sort_unstable();
+            let (time, index) = pending.remove(0);
+            now = time;
+            ends[chunks[index].extent.unwrap()] = time;
+            completed[index] = true;
+            while done < chunks.len() && completed[done] {
+                done += 1;
+            }
+        }
+        assert!(starts[1].unwrap() >= ends[0]);
+        assert_eq!(ends[0] - starts[0].unwrap(), 20);
+        assert_eq!(ends[1] - starts[1].unwrap(), 3);
     }
 }

@@ -298,7 +298,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
     ctl.message("Step 2/2  Read each file again");
     ctl.paragraph(
         2,
-        "The tool reads one file at a time, directly from the disk (not from the OS cache), at normal I/O priority. It measures the time for each extent. If the file is slow, the tool reads it one more time and uses the faster time of each extent. The CSV also keeps the result of the first read (columns first_*). The tool does not move or write files.",
+        "The tool reads one file at a time, directly from the disk (not from the OS cache), at normal I/O priority. It measures the time for each extent. If the file is slow, the tool reads it one more time. It keeps one whole read: fewer slow extents, then less total time above the limits. The CSV also keeps the result of the first read (columns first_*). The tool does not move or write files.",
     );
     ctl.paragraph(
         2,
@@ -707,6 +707,7 @@ mod read_contract_tests {
     fn incomplete_reads_are_not_hash_evidence() {
         for short_read in [true, false] {
             let result = super::complete_read(super::ReadResult {
+                source: None,
                 file_bytes: 0,
                 disk_bytes: 0,
                 disk_secs: 0.0,

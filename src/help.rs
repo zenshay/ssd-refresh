@@ -52,8 +52,8 @@ Steps
       file is slower than the threshold, the scan puts it on the check list.
   3/3 Check the files on the check list again. The scan reads each file alone,
       at normal priority, two more times. The two reads start 30 s or more
-      apart. If a read is slow, the scan reads the file again at once. For
-      each extent, the scan uses the fastest of all reads. A file is SLOW only
+      apart. If a read is slow, the scan reads the file again at once.
+      The scan keeps one whole read. A file is SLOW only
       if it is slow after this step.
       Round 3: the scan waits --after-wait seconds (default 60). Then it reads
       each SLOW file again. If the file is slow, the scan reads it one more
@@ -136,6 +136,13 @@ Report columns
             (Windows compressed system file), shared, reparse: not measured.
   slow      1 = slow after step 3.
   confirmed 1 = the scan read the file again in step 3.
+  Measurement columns use one whole read: fewer slow extents, then less
+  total time above their limits. Equal results keep the earlier read.
+  Compare reads only when file ID, size and extent maps match.
+  A changed file uses the new read and discards the old hash.
+  Incomplete reads have status ERROR, no hash, and no measurement.
+  Requests run in parallel within one extent. Extents run in order.
+  Small extents can reduce speed because the queue empties between them.
   after_wait_slow
             1 = still slow after the wait. 0 = fast after the wait.
             Empty = not read in round 3.
@@ -237,7 +244,9 @@ Statuses in the log (status column)
 Log columns
   before_mbps / before_slow  The speed of the read before the move. If the
                              first read is slow, the tool reads the file again
-                             at once and uses the faster time of each extent.
+                             at once and keeps the better whole read.
+                             Fewer slow extents win, then less total time
+                             above their limits. Equal results keep the first.
   after_mbps / after_slow    The speed of the read right after the move. New
                              data is always fast at first. Use verify after 1
                              day or more.
@@ -313,8 +322,9 @@ Steps
       column of the log). Old logs and scan reports have no time column. Then
       verify uses the time of the last change to the file.
   2/2 Read each file one time, alone, at normal priority, not from the OS
-      cache. If it is slow, read it one more time. Use the faster time of
-      each extent. verify excludes a different hash if metadata changed
+      cache. If it is slow, read it one more time. Keep one whole read:
+      fewer slow extents, then less total time above their limits.
+      Equal results keep the first. verify excludes a different hash if metadata changed
       or the log has no trusted metadata baseline (MODIFIED).
 
 Summary table

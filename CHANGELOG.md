@@ -11,6 +11,11 @@
 - Verify reports path access errors as errors, rather than missing files.
 - A size change, last-write time change, or detected writer can explain a different refresh hash. Other metadata changes cannot.
 - Scheduled Verify documents its limited rights. Run Verify manually with administrator rights for protected files.
+- Read comparisons keep one whole read: fewer slow extents, then less total time above the limits. They keep the first hash for matching sources.
+- File identity, size and every extent must match before read comparison. A changed source replaces the old measurement and hash.
+- Read requests stay within one extent until it finishes. This prevents zero times from overlapping extents, but can reduce speed for small extents.
+- Scan rejects short reads and incomplete byte counts. These reads have status `ERROR`, no hash and no speed measurement.
+- CSV columns do not change. Measurement columns describe one selected read, rather than a mix of extent times from different reads.
 
 ## 1.1.1 — 2026-11-01
 

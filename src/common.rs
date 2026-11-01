@@ -11,7 +11,7 @@ pub struct Extent {
 
 /// Where a file's data lives. `known` is false when the platform cannot tell (macOS);
 /// the whole file is then timed as one piece.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Layout {
     pub extents: Vec<Extent>,
     pub known: bool,

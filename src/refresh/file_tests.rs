@@ -261,6 +261,7 @@ impl FileOps for Mock {
                     | Fault::UnknownAfterMove
             );
         let result = ReadResult {
+            source: None,
             file_bytes: if self.fault == Fault::PartialBaseline
                 || (post && self.fault == Fault::PostPartial)
             {
