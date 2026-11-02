@@ -1,6 +1,12 @@
 # Changes
 
-## Unreleased
+## 1.2.0 — 2026-11-02
+
+### Changed (check your scripts)
+
+- `refresh` returns code `4` (Stopped) when the volume is not available. Before, it returned `0`.
+- `verify` adds exit code `5` (Incomplete). Scheduled Verify adds code `6` (Busy) after 30 minutes of waiting for the lock.
+- The slow decision measures extents smaller than 4 MiB in groups. Fewer new fragmented files show as slow.
 
 ### Added
 
@@ -10,7 +16,6 @@
 ### Fixed
 
 - Refresh stops when the volume is not available (exit code `4`). Before, a removed disk gave 1 `ERROR` and 200 or more `SKIP_MISSING` rows, and the exit code was `0`. Measured: 3 of 5 runs on an 8 GiB VHDX. Now the file of that moment gets `SKIP_CHECK`, and `--resume` tries it again. On Linux, the tool compares the device of the mount point, so an unmount with an empty mount point folder also stops the run. Tests: `safety-compare.ps1 -Run volume-loss` (Windows VHDX) and `test/volume-loss-linux.sh` (ext4 in Docker, 5 of 5 YES).
-
 - Wording: refresh and verify say "New data is often fast at first", not "always". Refresh adds "A rewrite does not always make data fast" (simulation scenario C).
 - Wording: a speed change of less than 5% shows as "about the same speed", not "1.0 times slower" (CLI and GUI).
 - Wording: `--control-fraction` help and README say that path-hash selection gives about the fraction, not exactly.
@@ -19,7 +24,6 @@
 - At each start, the GUI replaces the program copies of older schedule plans with its own version. Existing plans get new fixes without removal. A copy from a newer version or a copy that runs now stays.
 - The schedule panel says that tasks and app copies stay after you delete the app, and where the copies are. **Remove all schedules** is now **Remove all schedules and copies**. It is available also when no task is listed, to remove copies that have no task.
 - A new file with many small extents no longer shows as slow because of one late read request. Extents smaller than 4 MiB are measured together, in groups of 4 MiB or more. A group is slow if its total time is more than the sum of the limits of its extents. Extents of 4 MiB or more are measured alone, as before. CSV columns and CLI options do not change. Simulation scenario E now requires `fragmented_slow_default=0`.
-
 - Add exit code `5` for incomplete verify checks and failed summary-log writes. CLI and scheduled checks use the same codes.
 - Codes `0` through `4` did not change. Code `2` remains Unsupported. Code `4` remains Stopped.
 - Verify shows `Compared N of M moved files` beside each data verdict. Missing evidence blocks `YES` under the documented coverage rule.
@@ -34,8 +38,6 @@
 - CSV columns do not change. Measurement columns describe one selected read, rather than a mix of extent times from different reads.
 - Windows refresh reloads the free-space bitmap once before it reports insufficient space.
 - Refresh and verify lock their output files. A second writer returns code `1`, including through hard links.
-- Scheduled Verify returns code `6` when another app operation holds the lock. Failed tasks request three retries at 30-minute intervals.
-- Existing schedules need removal and creation to receive the retry settings.
 - Linux refresh checks the reopened file's device and inode before donor creation or data moves.
 - Verify checks the flush handle identity and requests a cache flush before direct reads. It never writes file data.
 - Verify records failed flushes. A data difference without a completed flush has status `ERROR`, rather than `MISMATCH`.
