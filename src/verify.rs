@@ -316,7 +316,7 @@ pub fn run(o: &VerifyOptions, ctl: Arc<Control>) -> io::Result<VerifyOutcome> {
     ctl.paragraph(
         2,
         &format!(
-            "A file is slow if one extent is slower than {} MB/s.",
+            "A file is slow if one extent is slower than {} MB/s. Extents smaller than 4 MiB are measured together, in groups of 4 MiB or more.",
             o.read.threshold_mbps
         ),
     );

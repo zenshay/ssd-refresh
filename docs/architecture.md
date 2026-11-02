@@ -57,7 +57,17 @@ The reader finishes one extent before it sends requests for the next extent.
 Requests within one extent use the configured queue depth.
 Each extent uses its own first issue and last completion, less pauses, with a minimum of one nanosecond.
 Extent times do not overlap or move backward. The reader sums these times for file speed.
-The queue empties at each extent boundary. Many small extents can reduce throughput; no disk benchmark measures this cost yet.
+The queue empties at each extent boundary. Many small extents can reduce throughput.
+The [simulation](simulation.md) measured this cost: 134 extents read 3.9 times slower at 1 ms per request.
+
+The slow decision uses groups (`slow_groups` in `src/reader.rs`).
+An extent of 4 MiB or more is a group alone.
+Adjacent smaller extents form one group of 4 MiB or more. A small group at the end joins the small group before it.
+A group is slow if its total time is more than the sum of the extent limits.
+All extents in a slow group are slow. `slow_bytes` and the read comparison use these flags.
+Why: one small extent needs one request. One late request then decides the file.
+A file with many small extents gives many chances for a late request. Old slow data is slow in all requests, so its group stays slow.
+`min_extent_mbps` and the worst extent in verify still show single extents.
 The core accepts old CSV reports. A missing metadata baseline blocks `YES` only when the hash differs.
 
 Verify returns `Incomplete` for `UNKNOWN` or a failed summary-log write. A mismatch takes priority and returns `DataMismatch`.

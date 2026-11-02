@@ -256,7 +256,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
     ctl.paragraph(
         2,
         &format!(
-            "If one extent is slower than {} MB/s, the file goes on the CHECK LIST. In this step, {} {} the disk at the same time. Thus each extent gets {} ms of extra time (step 3: {} ms). A file on the check list is NOT slow yet. Other reads, other programs and the SSD itself can make a good file slow for a short time. Step 3 decides.",
+            "If one extent is slower than {} MB/s, the file goes on the CHECK LIST. Extents smaller than 4 MiB are measured together, in groups of 4 MiB or more. In this step, {} {} the disk at the same time. Thus each extent gets {} ms of extra time (step 3: {} ms). A file on the check list is NOT slow yet. Other reads, other programs and the SSD itself can make a good file slow for a short time. Step 3 decides.",
             o.read.threshold_mbps,
             count_of(parallel as u64, "file"),
             agree(parallel as u64, "uses", "use"),

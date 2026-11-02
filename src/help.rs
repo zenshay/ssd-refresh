@@ -48,8 +48,10 @@ Steps
       mount points. It stays on one volume.
   2/3 Read each file one time, directly from the disk (not from the OS cache).
       Measure the time for each extent. An extent is one continuous part of
-      the file on the disk. The scan reads many files at the same time. If a
-      file is slower than the threshold, the scan puts it on the check list.
+      the file on the disk. Extents smaller than 4 MiB are measured together,
+      in groups of 4 MiB or more. The scan reads many files at the same time.
+      If a file is slower than the threshold, the scan puts it on the check
+      list.
   3/3 Check the files on the check list again. The scan reads each file alone,
       at normal priority, two more times. The two reads start 30 s or more
       apart. If a read is slow, the scan reads the file again at once.
@@ -107,7 +109,8 @@ Options
   --hash               Also write the SHA-256 of each file. This uses more CPU.
   --parallel 8         The number of files to read at the same time in step 2.
                        1 = one file at a time.
-  --threshold 100      An extent slower than this (MB/s) is slow.
+  --threshold 100      An extent (or a group of small extents) slower than this
+                       (MB/s) is slow.
   --allowance-ms 2     Extra time for each extent. Small reads always have some
                        delay. This delay must not count as slow.
   --chunk-kb 1024      The size of each read request.

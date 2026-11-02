@@ -346,6 +346,8 @@ scenario_e() {
     d=$(awk -F'|' '/\/fragmented.bin\|/ {print $2}' "$r/default.rows")
     awk -F'|' -v n="$extents" -v d="$d" '/\/contiguous.bin\|/ {c=$2} /\/fragmented.bin\|/ {f=$2; s=$3}
         END {if(c<=0 || f<=0) exit 1; printf "contiguous=%.3f MB/s fragmented=%.3f MB/s ratio=%.3f extents=%d fragmented_slow_allowance0=%s fragmented_slow_default=%s\n",c,f,c/f,n,s,d}' "$r/speeds.rows"
+    # The data is new. With the default extra time, the fragmented file must not be slow.
+    test "$d" = 0
 }
 
 failed=

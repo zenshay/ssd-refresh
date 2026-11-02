@@ -5,9 +5,10 @@
 ### Added
 
 - Add a slow-read simulation for Linux ext4 (`test/run-ext4-sim.sh`, `test/run-ext4-sim.ps1`). It uses device-mapper delay ranges in five scenarios. See `docs/simulation.md`.
-- The simulation found a known risk: when each read request takes about 1 ms, a new file with many small extents can show as slow.
 
 ### Fixed
+
+- A new file with many small extents no longer shows as slow because of one late read request. Extents smaller than 4 MiB are measured together, in groups of 4 MiB or more. A group is slow if its total time is more than the sum of the limits of its extents. Extents of 4 MiB or more are measured alone, as before. CSV columns and CLI options do not change. Simulation scenario E now requires `fragmented_slow_default=0`.
 
 - Add exit code `5` for incomplete verify checks and failed summary-log writes. CLI and scheduled checks use the same codes.
 - Codes `0` through `4` did not change. Code `2` remains Unsupported. Code `4` remains Stopped.

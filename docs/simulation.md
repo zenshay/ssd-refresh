@@ -79,7 +79,7 @@ The fragmentation fixture fills the image, so host writes can exceed 1 GiB.
 | B: no slowdown | The table has no delay targets. All 8 files are fast. Refresh prints `There is nothing to do.`, creates no refresh CSV, and moves nothing. |
 | C: rewrite does not help | Delay covers all sectors, including free space. Refresh moves one file. Both its immediate read and the second scan stay slow. |
 | D: one read repairs the data | After scan, 4 of 8 slow files get linear ranges. Refresh reads again, reports `SKIP_FAST` for those 4, and moves only the other 4. |
-| E: fragmentation cost | Read one 32 MiB file with one extent and one with at least 128 extents. Print both speeds and their ratio. No speed assertion applies. |
+| E: fragmentation cost | Read one 32 MiB file with one extent and one with at least 128 extents. Print both speeds and their ratio. With the default extra time, the fragmented file is not slow (`fragmented_slow_default=0`). No speed assertion applies. |
 
 Scenario A uses a forced dry run on candidate paths to select exactly four controls and four move candidates.
 This step avoids an assumption that a 50% path sample always splits eight arbitrary names equally.
@@ -92,12 +92,19 @@ Without it, the host cache of the container disk sets the speed: the last writte
 With the delay, the number of read requests sets the time.
 Scenario E scans twice: with `--allowance-ms 0`, and with the default extra time per extent.
 
-Owner measurement on 2026-11-02 (Docker Desktop, WSL2 kernel 6.18.54): 32 MiB files, 1 ms delay, `--qd 4`.
-The contiguous file read at 259 MB/s. The file with 134 extents read at 68 MB/s (3.8 times slower).
-The scan marked the fragmented file slow in both runs. With the default allowance, a few small extents read at 5.8 MB/s (148 KiB in total).
-Conclusion: when each read request takes about 1 ms, a new file with many small extents can show as slow.
+Owner measurements on 2026-11-02 (Docker Desktop, WSL2 kernel 6.18.54): 32 MiB files, 1 ms delay, `--qd 4`.
+
+| Rule | Contiguous | 134 extents | Slowest extent | Slow, allowance 0 | Slow, default allowance |
+| --- | --- | --- | --- | --- | --- |
+| Each extent alone (before) | 263 MB/s | 67.7 MB/s | 31.6 MB/s | 1 | 1 |
+| Groups of 4 MiB or more (now) | 253 MB/s | 67.2 MB/s | 26.1 MB/s | 1 | 0 |
+
+Before the change, 2 extents of 128 KiB took about 4.2 ms each. Their limit was 3.9 ms (70.2 MB/s and 2 ms).
+These 2 late requests made the whole new file slow.
+Now the slowest extent is slower (26.1 MB/s), but its group is fast. The file is not slow.
+With `--allowance-ms 0`, the file stays slow. The fixed 1 ms of each request is then above the limit. The extra time exists for this cost.
 A typical SSD read takes about 0.1 ms, and the dm-delay timer adds time. Thus 1 ms is a stress condition.
-This result is a known risk. The product code does not change in this test.
+Scenario E now requires `fragmented_slow_default=0`.
 
 Scenarios A through D check external SHA-256 values.
 A and C also require verify to return code 0 and `Data safe: YES`.
