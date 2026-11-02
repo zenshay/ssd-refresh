@@ -8,6 +8,10 @@
 
 ### Fixed
 
+- Wording: refresh and verify say "New data is often fast at first", not "always". Refresh adds "A rewrite does not always make data fast" (simulation scenario C).
+- Wording: a speed change of less than 5% shows as "about the same speed", not "1.0 times slower" (CLI and GUI).
+- Wording: `--control-fraction` help and README say that path-hash selection gives about the fraction, not exactly.
+- README: a new section says that refresh cannot move many Windows system files (`SKIP_KIND` for WOF files, `SKIP_FLUSH` for files only TrustedInstaller can write). Not measured on a real `C:` drive yet.
 - Scheduled Verify waits for a busy lock: one try each minute for 30 minutes. Before, it returned code `6` at once, and Windows did not run it again. Task Scheduler restarts only tasks that cannot start, not tasks with exit code `6` (measured on Windows 10 19045). The GUI and README no longer say that Windows retries.
 - At each start, the GUI replaces the program copies of older schedule plans with its own version. Existing plans get new fixes without removal. A copy from a newer version or a copy that runs now stays.
 - The schedule panel says that tasks and app copies stay after you delete the app, and where the copies are. **Remove all schedules** is now **Remove all schedules and copies**. It is available also when no task is listed, to remove copies that have no task.

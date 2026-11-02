@@ -210,10 +210,13 @@ const MIN_SLOW_FILES = 10;
 /** "1298 → 255 MB/s (5.1 times slower)" */
 export function speedChange(before: number, now: number): string {
   const factor = before > 0 && now > 0 ? now / before : 1;
+  // Less than 5% change shows as 1.0: say "about the same speed" (as src/verify/summary.rs).
   const times =
-    factor >= 1
-      ? `${factor.toFixed(1)} times faster`
-      : `${(1 / factor).toFixed(1)} times slower`;
+    factor < 1.05 && factor > 1 / 1.05
+      ? "about the same speed"
+      : factor >= 1
+        ? `${factor.toFixed(1)} times faster`
+        : `${(1 / factor).toFixed(1)} times slower`;
   return `${Math.round(before)} → ${Math.round(now)} MB/s (${times})`;
 }
 

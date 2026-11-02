@@ -263,7 +263,7 @@ Log columns
                              Fewer slow extents win, then less total time
                              above their limits. Equal results keep the first.
   after_mbps / after_slow    The speed of the read right after the move. New
-                             data is always fast at first. Use verify after 1
+                             data is often fast at first. Use verify after 1
                              day or more.
   before_first_slow          1 = the first read before the move was slow.
   after_first_slow           1 = the first read after the move was slow.
@@ -280,9 +280,12 @@ Options
   --dry-run              Measure only. Do not move. No administrator needed.
   --select slow|all      The files to take from the report. Default: slow.
   --control-fraction 0   The part of the slow files (0 to 1, for example 0.5)
-                         to read only and not move (status CONTROL). The same
-                         path always gets the same choice. verify then
-                         compares writing again with reading only.
+                         to read only and not move (status CONTROL). The tool
+                         selects by a hash of the path, so 0.5 gives about
+                         half, not exactly half. The refresh shows the real
+                         count. The same path always gets the same choice.
+                         verify then compares writing again with reading
+                         only.
   --force                Move files also when they are not slow now.
   --confirm X:           Do not ask for the drive letter (for scripts).
   --allow-system-volume  Allow a refresh of the system volume.
@@ -319,8 +322,9 @@ verify does not change the disk. It needs no administrator for files that your
 user can read.
 
 Why you must wait
-  Right after the refresh, moved files are always fast. New data can be in the
+  Right after the refresh, moved files are often fast. New data can be in the
   fast SLC cache of the SSD. Only a read after some days shows the real result.
+  A rewrite does not always make data fast.
   If less than 12 hours have gone by, the speed result is NOT DECIDED.
 
 Groups

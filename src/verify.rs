@@ -2,7 +2,7 @@
 //! It reads them directly from the disk. Then it compares the speed now with the speed before.
 //!
 //! The refresh log also has the speed right after the move. That speed does not show much,
-//! because new data is always fast at first. This command answers three questions:
+//! because new data is often fast at first. This command answers three questions:
 //! 1. Is the data safe? (the same SHA-256 as at the refresh)
 //! 2. Are the files faster? (by how much)
 //! 3. How much time has gone by since the refresh?

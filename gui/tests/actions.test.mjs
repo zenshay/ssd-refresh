@@ -422,6 +422,9 @@ test("a slower result warns even when data safety is not YES", async () => {
 test("the verify notice keeps each speed fact on one line", () => {
   assert.equal(speedChange(1298, 255), "1298 → 255 MB/s (5.1 times slower)");
   assert.equal(speedChange(10, 400), "10 → 400 MB/s (40.0 times faster)");
+  assert.equal(speedChange(100, 98), "100 → 98 MB/s (about the same speed)");
+  assert.equal(speedChange(100, 104), "100 → 104 MB/s (about the same speed)");
+  assert.equal(speedChange(100, 106), "100 → 106 MB/s (1.1 times faster)");
   // Few slow files and too soon: a later verify can decide when all files agree.
   const few = verified({
     faster: "NOT DECIDED",

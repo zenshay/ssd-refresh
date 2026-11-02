@@ -128,6 +128,7 @@ Your SSD SMART health says "100% Good". But your computer freezes when you open 
 #### Why this happens
 Flash memory cells slowly lose electric charge over time.
 When files stay unchanged for months or years (like Windows system files or installed games), the SSD controller struggles to read them.
+Scan can find these files. Refresh cannot move many Windows system files (see [Limits of refresh on the system volume](#limits-of-refresh-on-the-system-volume)).
 The drive must try error correction many times.
 This drops the read speed from 500 MB/s down to 5–30 MB/s.
 
@@ -344,6 +345,16 @@ Optimize-Volume -DriveLetter C -ReTrim
 
 On Linux, use `sudo`. In step 4, use `sudo fstrim -v /`.
 
+#### Limits of refresh on the system volume
+
+Refresh cannot move many Windows system files:
+
+- Windows compresses many system files (WOF). The status is `SKIP_KIND`.
+- Before a move, the tool writes the cached data of the file to the disk. This step needs write access. Administrators cannot write many files in `C:\Windows` (only TrustedInstaller can). The status is `SKIP_FLUSH`.
+
+Thus on `C:`, refresh is useful mainly for your own files, programs and games. The refresh log shows the count of each status.
+We did not measure these counts on a real `C:` drive yet.
+
 **Optional, 1 day or more later:** check that the data is safe and that the files are still fast. See [Verify](#verify-is-the-refresh-good).
 
 ```powershell
@@ -520,7 +531,7 @@ Use `verify` after a refresh. Run it 1 day or more after the refresh, and then f
 2. Are the files faster? How much faster?
 3. How much time has gone by since the refresh?
 
-You must wait. The refresh log also has the speed right after the move (`after_mbps`). This speed does not show much: new data is always fast at first. New data can be in the fast SLC cache of the SSD. Thus `verify` measures again after some time.
+You must wait. The refresh log also has the speed right after the move (`after_mbps`). This speed does not show much: new data is often fast at first. New data can be in the fast SLC cache of the SSD. A rewrite does not always make data fast. Thus `verify` measures again after some time.
 
 1. Wait 1 day or more after the refresh. If less than 12 hours have gone by, the speed result is `NOT DECIDED`.
 2. Read the files again:
@@ -603,7 +614,7 @@ Result
 <a id="not-decided"></a>`NOT DECIDED`: `verify` shows the numbers, but no `YES` or `NO`. This occurs in two conditions:
 
 1. A group has fewer than 10 files that were slow before the refresh, and these files do not have the same result. With few files, one file changes the share very much. `verify` must also measure all these files: with `--sample`, an error, or a file that a program changed, the result is `NOT DECIDED`.
-2. Less than 12 hours have gone by since the refresh. New data is always fast at first.
+2. Less than 12 hours have gone by since the refresh. New data is often fast at first.
 
 `verify` reads all slow files of the refresh log, not a sample. Thus a drive with 3 slow files can get `YES` or `NO`. One file with a wrong measurement can change this result. Run `verify` again after 7 and 30 days to compare.
 
@@ -615,7 +626,7 @@ This speed result does not change the exit code. The data verdict and summary lo
 - Deleted files do not block `YES`. Changed files do not block `YES` when a trusted metadata baseline identifies the change. The verdict does not cover these files.
 - Without a trusted metadata baseline, a changed hash produces `UNKNOWN`. Old logs can lack that baseline (`meta_key`).
 - Verify lists files it cannot compare and shows up to 5 examples. The `--out` CSV has all results. These records do not prove what caused a change or deletion.
-- The speed is all bytes divided by all read time, before and now. It uses only the files that were slow before. `verify` shows it as `N.N times faster` or `N.N times slower`.
+- The speed is all bytes divided by all read time, before and now. It uses only the files that were slow before. `verify` shows it as `N.N times faster` or `N.N times slower`. A change of less than 5% shows as `about the same speed`.
 - With a control group, there is one Faster line for each group, and a conclusion. Examples: "Rewriting made the files 3.1 times faster than reading only", "Reading only was enough on this drive".
 - For a scan report, Data safe is `n/a`. The scan did not move files.
 
@@ -658,7 +669,7 @@ This part is optional. Normal use does not need it. It answers one question for 
 The method is a control group. The tool refreshes a part of the slow files. It only reads the other files.
 
 1. Scan the drive (see [Quick start](#quick-start-windows)). Make sure that the scan found slow files.
-2. Refresh with a control group. The tool reads half of the slow files but does not move them (status `CONTROL`). The same path always gets the same choice. Thus `--resume` keeps the choice.
+2. Refresh with a control group. The tool reads about half of the slow files but does not move them (status `CONTROL`). The same path always gets the same choice. Thus `--resume` keeps the choice.
 
    ```powershell
    ssd-refresh refresh --from C-scan.csv --allow-system-volume --control-fraction 0.5
@@ -689,7 +700,7 @@ The method is a control group. The tool refreshes a part of the slow files. It o
 | `--measure-priority` | normal | The I/O priority of scan step 3 and of the reads before and after the move |
 | `--after-wait` | 60 | scan: the wait (seconds) before round 3 of step 3. 0 = no round 3 |
 | `--max-chunk-mb` | 16 | The largest piece to move at one time |
-| `--control-fraction` | 0 | refresh: the part of the slow files (0 to 1) to read only and not move (`CONTROL`) |
+| `--control-fraction` | 0 | refresh: the part of the slow files (0 to 1) to read only and not move (`CONTROL`). Selection uses a hash of the path: 0.5 gives about half, not exactly half |
 | `--sample` | all | verify: read a maximum of N files per group |
 | `--log` | `<source>.verify.log` | verify: the text log |
 | `--out` | none | verify: also write a CSV with one row for each file |

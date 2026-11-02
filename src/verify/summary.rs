@@ -98,9 +98,16 @@ fn result_line(label: &str, verdict: &str, text: &str) -> String {
     format!("  {:<w$}{v}{}", label, &body[first..], w = COL - 2)
 }
 
-/// "19.2 times faster" or "1.5 times slower"
+/// True if the speed ratio shows as 1.0 (less than 5% change in either direction).
+fn same_speed(x: f64) -> bool {
+    x < 1.05 && x > 1.0 / 1.05
+}
+
+/// "19.2 times faster", "1.5 times slower" or "about the same speed"
 fn times(x: f64) -> String {
-    if x >= 1.0 {
+    if same_speed(x) {
+        "about the same speed".to_string()
+    } else if x >= 1.0 {
         format!("{x:.1} times faster")
     } else {
         format!("{:.1} times slower", 1.0 / x.max(1e-9))
@@ -312,7 +319,7 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
     t += &para_string(
         2,
         2,
-        "Before: the read before the move (refresh log), or the scan result (scan report). Now: this run. The tool does not use the speed right after the move, because new data is always fast at first.",
+        "Before: the read before the move (refresh log), or the scan result (scan report). Now: this run. The tool does not use the speed right after the move, because new data is often fast at first (for example in the SLC cache of the SSD).",
     );
 
     // ---------- Result ----------
@@ -467,7 +474,7 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
     let too_soon = s.age < min_age;
     let since = if is_log { "refresh" } else { "scan" };
     let soon_reason = format!(
-        "Only {} since {since}. New data is always fast at first.",
+        "Only {} since {since}. New data is often fast at first.",
         fmt_time(s.age)
     );
     let few_reason = |sp: &Speed| {
@@ -577,10 +584,15 @@ pub(super) fn build_summary(s: &SummaryInput) -> Summary {
         if let (true, Some(rw_yes), Some(ro_yes)) =
             (reasons.is_empty(), rw.decision(), ro.decision())
         {
+            let ratio = rw.now_bps / ro.now_bps;
             let text = match (rw_yes, ro_yes) {
+                (true, false) if same_speed(ratio) => {
+                    "Rewritten files and read-only files now read at about the same speed."
+                        .to_string()
+                }
                 (true, false) => format!(
                     "Rewriting made the files {} than reading only.",
-                    times(rw.now_bps / ro.now_bps)
+                    times(ratio)
                 ),
                 (true, true) => "Reading only was enough on this drive.".to_string(),
                 (false, _) => {
@@ -681,6 +693,15 @@ mod tests {
             status,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_ratio_that_rounds_to_one_is_about_the_same_speed() {
+        assert_eq!(times(1.0), "about the same speed");
+        assert_eq!(times(1.04), "about the same speed");
+        assert_eq!(times(0.97), "about the same speed");
+        assert_eq!(times(1.06), "1.1 times faster");
+        assert_eq!(times(0.5), "2.0 times slower");
     }
 
     #[test]
