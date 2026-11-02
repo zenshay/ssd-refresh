@@ -232,7 +232,9 @@ Statuses in the log (status column)
   SKIP_CACHED   The read used the OS cache. Not moved, even with --force.
   SKIP_IDENTITY The file IDs differ or are not available. Not moved.
   SKIP_CHANGED  Metadata or layout changed before the move. Not moved.
-  SKIP_CHECK    A check before the move failed. Not moved.
+  SKIP_CHECK    A check before the move failed. Not moved. This status is
+                also used when the volume is not available. Then the run
+                stops (exit code 4).
   SKIP_INCOMPLETE
                 The baseline read or hash is incomplete. Not moved.
   SKIP_STOPPED  The run stopped before the move. Not moved.

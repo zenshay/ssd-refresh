@@ -319,6 +319,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             todo_bytes,
             ctl.clone(),
         );
+        let root = vol.root.clone();
         let outcome = process_files(
             &todo,
             o.stop_after,
@@ -326,6 +327,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             &prog,
             |path, log| r.process(path, log),
             |row| w.refresh_row(row.values(width)),
+            || std::fs::metadata(&root).is_ok(),
         )?;
         prog.finish();
 
@@ -385,7 +387,11 @@ fn run_confirmed(
     work()
 }
 
-/// Stop before the next file after a mismatch, a write error, or a stop request.
+/// Stop before the next file after a mismatch, a write error, a lost volume, or a stop request.
+/// `volume_ok` tells if the volume is still available. The tool calls it after a file that
+/// did not finish normally. Without this check, the files after a removed volume get
+/// SKIP_MISSING, and the run seems complete. On Linux, an empty mount point folder can stay
+/// after an unmount, so this check finds only a removed folder there.
 fn process_files(
     todo: &[(String, u64)],
     stop_after: usize,
@@ -393,6 +399,7 @@ fn process_files(
     prog: &Progress,
     mut process: impl FnMut(&Path, &dyn Fn(&str)) -> Row,
     mut write: impl FnMut(&Row) -> io::Result<()>,
+    mut volume_ok: impl FnMut() -> bool,
 ) -> io::Result<RefreshOutcome> {
     let mut outcome = RefreshOutcome::default();
     for (i, (path, size)) in todo.iter().enumerate() {
@@ -405,7 +412,16 @@ fn process_files(
             outcome.status = RunStatus::Stopped;
             break;
         }
-        let row = process(Path::new(path), &|m: &str| prog.log(m));
+        let mut row = process(Path::new(path), &|m: &str| prog.log(m));
+        let volume_lost = !matches!(
+            row.status.as_str(),
+            "OK" | "CHANGED" | "DRYRUN" | "CONTROL" | "MISMATCH" | "VERIFY_FAILED"
+        ) && !volume_ok();
+        if volume_lost && row.st.moved_bytes == 0 {
+            // ERROR and SKIP_MISSING are final. SKIP_CHECK lets --resume try this file again.
+            row.status = "SKIP_CHECK".into();
+            row.detail = format!("The volume is not available now: {}", row.detail);
+        }
         write(&row)?;
         outcome.record(&row.status, row.st.moved_bytes);
         prog.add_file(*size);
@@ -430,6 +446,12 @@ fn process_files(
         }
         if row.status == "VERIFY_FAILED" {
             prog.log("STOPPED: the tool cannot confirm data after a move. Keep the files and the log. Check the cause before another refresh.");
+            outcome.status = RunStatus::Stopped;
+            break;
+        }
+        if volume_lost {
+            prog.log("STOPPED: the volume is not available now. The tool did not process the other files.");
+            prog.log("Connect the volume again. Then run the same command with --resume.");
             outcome.status = RunStatus::Stopped;
             break;
         }
@@ -646,6 +668,7 @@ mod tests {
                 rows.push(row.status.clone());
                 Ok(())
             },
+            || true,
         )
         .unwrap();
         assert_eq!(calls, 1);
@@ -672,7 +695,8 @@ mod tests {
                     ..Default::default()
                 }
             },
-            |_| Err(io::Error::other("Synthetic write error"))
+            |_| Err(io::Error::other("Synthetic write error")),
+            || true,
         )
         .is_err());
         assert_eq!(calls, 1);
@@ -684,10 +708,84 @@ mod tests {
             &prog,
             |_, _| panic!("Must not process a stopped run"),
             |_| Ok(()),
+            || true,
         )
         .unwrap();
         assert_eq!(result.status, RunStatus::Stopped);
         assert_eq!(result.processed_files, 0);
+    }
+
+    #[test]
+    fn lost_volume_stops_the_run_and_keeps_the_file_for_resume() {
+        for (status, moved, logged) in [
+            ("ERROR", 0, "SKIP_CHECK"),
+            ("SKIP_MISSING", 0, "SKIP_CHECK"),
+            ("SKIP_CHECK", 0, "SKIP_CHECK"),
+            ("ERROR", 4096, "ERROR"),
+        ] {
+            let ctl = Control::new(None);
+            let todo = vec![("first".into(), 1), ("second".into(), 1)];
+            let prog = Progress::new(Phase::Refresh { dry_run: false }, 2, 2, ctl.clone());
+            let mut calls = 0;
+            let mut rows = Vec::new();
+            let result = process_files(
+                &todo,
+                0,
+                &ctl,
+                &prog,
+                |_, _| {
+                    calls += 1;
+                    let mut row = Row {
+                        status: status.into(),
+                        detail: "synthetic device not ready".into(),
+                        ..Default::default()
+                    };
+                    row.st.moved_bytes = moved;
+                    row
+                },
+                |row| {
+                    rows.push((row.status.clone(), row.detail.clone()));
+                    Ok(())
+                },
+                || false,
+            )
+            .unwrap();
+            assert_eq!(result.status, RunStatus::Stopped, "{status}");
+            assert_eq!(calls, 1, "{status}");
+            assert_eq!(rows.len(), 1, "{status}");
+            assert_eq!(rows[0].0, logged, "{status}");
+            assert!(!super::FINAL.contains(&logged) || moved > 0, "{status}");
+            if moved == 0 {
+                assert!(rows[0].1.starts_with("The volume is not available now"));
+            }
+        }
+    }
+
+    #[test]
+    fn volume_check_runs_only_after_a_file_that_did_not_finish() {
+        let ctl = Control::new(None);
+        let todo = vec![("first".into(), 1), ("second".into(), 1)];
+        let prog = Progress::new(Phase::Refresh { dry_run: false }, 2, 2, ctl.clone());
+        let checks = Cell::new(0);
+        let result = process_files(
+            &todo,
+            0,
+            &ctl,
+            &prog,
+            |_, _| Row {
+                status: "OK".into(),
+                ..Default::default()
+            },
+            |_| Ok(()),
+            || {
+                checks.set(checks.get() + 1);
+                false
+            },
+        )
+        .unwrap();
+        assert_eq!(result.status, RunStatus::Completed);
+        assert_eq!(result.processed_files, 2);
+        assert_eq!(checks.get(), 0);
     }
 
     #[test]

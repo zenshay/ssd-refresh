@@ -488,7 +488,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `SKIP_FLUSH` | The cache flush could not finish. Not moved |
 | `SKIP_IDENTITY` | File IDs differ or are not available. Not moved |
 | `SKIP_CHANGED` | Metadata or layout changed before the move. Not moved |
-| `SKIP_CHECK` | A check before the move failed. Not moved |
+| `SKIP_CHECK` | A check before the move failed. Not moved. The tool also uses this status when the volume is not available. Then the run stops with exit code `4`, and `--resume` tries the file again |
 | `SKIP_INCOMPLETE` | The baseline read or hash is incomplete. Not moved |
 | `SKIP_STOPPED` | The run stopped before the move. Not moved |
 | `DRYRUN` | `--dry-run`: measured only |

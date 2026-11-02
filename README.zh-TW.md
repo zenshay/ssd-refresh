@@ -482,7 +482,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 | `SKIP_FLUSH` | 快取寫回無法完成，沒有搬移 |
 | `SKIP_IDENTITY` | 檔案身分不同或無法取得，沒有搬移 |
 | `SKIP_CHANGED` | 搬移前中繼資料或配置已改變，沒有搬移 |
-| `SKIP_CHECK` | 搬移前的檢查失敗，沒有搬移 |
+| `SKIP_CHECK` | 搬移前的檢查失敗，沒有搬移。磁碟區無法存取時，工具也記成這個狀態，接著停止並回傳 exit code `4`。`--resume` 會重試這個檔案 |
 | `SKIP_INCOMPLETE` | 基準讀取或雜湊不完整，沒有搬移 |
 | `SKIP_STOPPED` | 搬移前停止，沒有搬移 |
 | `DRYRUN` | `--dry-run`：只測量 |

@@ -527,6 +527,7 @@ fn mismatch_or_failed_post_check_stops_before_the_second_file() {
                 execute(&mut mock, &options())
             },
             |_| Ok(()),
+            || true,
         )
         .unwrap();
         progress.finish();
