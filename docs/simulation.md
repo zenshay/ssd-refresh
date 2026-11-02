@@ -113,8 +113,7 @@ They require `Faster: NOT DECIDED` and the 12-hour wait message.
 The speed proof in this simulation comes from the second scan, not from an early verify verdict.
 C must not print a positive Faster verdict or a negative data safety verdict.
 The scenario log keeps the actual refresh and verify output for review.
-The product still prints the general statement `New data is always fast at first` in refresh and early verify output.
-Scenario C contradicts that statement. This is a product wording finding; the simulation does not change product code.
+Scenario C showed that new data is not always fast. Refresh and verify now say `New data is often fast at first`, and refresh adds `A rewrite does not always make data fast`.
 
 Each scenario saves logs and CSV files in its own report folder.
 Each prints `SIM A: YES ...` through `SIM E: YES ...` when its checks pass.

@@ -357,7 +357,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
         }
         if !o.dry_run {
             ctl.message("");
-            ctl.paragraph(0, "The tool measured the 'after' speed in the log right after the move. New data is always fast at first (it can be in the fast cache of the SSD). Thus this speed does not show the real result. After 1 day or more, check again:");
+            ctl.paragraph(0, "The tool measured the 'after' speed in the log right after the move. New data is often fast at first (it can be in the fast cache of the SSD). Thus this speed does not show the real result. A rewrite does not always make data fast. After 1 day or more, check again:");
             ctl.message(&format!(
                 "  ssd-refresh verify --from \"{}\"",
                 o.out.display()

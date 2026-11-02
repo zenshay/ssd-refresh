@@ -126,6 +126,7 @@ SSD 的 SMART 健康度顯示 100% 良好。但是開程式或開遊戲時，電
 #### 為什麼會這樣
 快閃記憶體單元的電荷會隨著時間自然流失。
 當檔案存了幾個月或幾年沒有更動（例如 Windows 系統檔案或安裝好的遊戲），SSD 控制器很難讀出資料。
+掃描可以找出這些檔案。但很多 Windows 系統檔，refresh 搬不動（見[系統碟上 refresh 的限制](#系統碟上-refresh-的限制)）。
 控制器必須反覆嘗試並啟動重度錯誤校正（ECC）。
 讀取速度就會從原本的 500 MB/s 暴跌到 5–30 MB/s。
 
@@ -340,6 +341,16 @@ Optimize-Volume -DriveLetter C -ReTrim
 
 Linux 用 `sudo` 執行，第 4 步改成 `sudo fstrim -v /`。
 
+#### 系統碟上 refresh 的限制
+
+很多 Windows 系統檔，refresh 搬不動：
+
+- Windows 把很多系統檔壓縮（WOF）。狀態是 `SKIP_KIND`。
+- 搬移前，工具要把檔案的快取資料寫回磁碟，這一步需要寫入權限。`C:\Windows` 裡很多檔案，系統管理員也不能寫入（只有 TrustedInstaller 可以）。狀態是 `SKIP_FLUSH`。
+
+所以在 `C:` 上，refresh 主要適用於你自己的檔案、程式和遊戲。刷新記錄會列出每種狀態的數量。
+這些數量還沒在真實的 `C:` 上量過。
+
 **選用，隔一天以上再做：** 確認資料安全，而且檔案仍然夠快。見[驗證](#驗證刷新的效果能不能維持)。
 
 ```powershell
@@ -509,7 +520,7 @@ Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  
 
 `verify` 是給刷新過的人用的。刷新後隔一段時間（至少隔天，之後可以每月一次），它會重讀刷新記錄裡的檔案，回答三個問題：刷新有沒有效、效果維持多久、什麼時候該再掃描。
 
-一定要隔一段時間。刷新記錄的 `after_mbps` 是搬移後立刻量的，不準：剛寫入的資料一定快，可能還在 SSD 的 SLC 快取裡。`verify` 的價值就在「隔一段時間再量」。
+一定要隔一段時間。刷新記錄的 `after_mbps` 是搬移後立刻量的，不準：剛寫入的資料通常很快，可能還在 SSD 的 SLC 快取裡。重寫也不一定能讓資料變快。`verify` 的價值就在「隔一段時間再量」。
 
 1. 刷新後等一天以上。距離刷新不到 12 小時，速度的判斷會顯示 `NOT DECIDED`（不下結論）。
 2. 重讀檔案：
@@ -592,7 +603,7 @@ Result
 `NOT DECIDED`（不下結論）：`verify` 照樣顯示數字，但不給 `YES` 或 `NO`。以下兩種情況會出現：
 
 1. 某一組「刷新前就慢的檔案」少於 10 個，而且這些檔案的結果不一致。檔案少時，一個檔案就會讓比例大幅改變。`verify` 也必須量到全部這些檔案：用了 `--sample`、有檔案讀取錯誤，或有檔案被程式改過時，結果是 `NOT DECIDED`。
-2. 距離刷新不到 12 小時。剛寫入的資料一定快。
+2. 距離刷新不到 12 小時。剛寫入的資料通常很快。
 
 `verify` 讀取 refresh log 裡的全部慢檔案，不是抽樣。所以只有 3 個慢檔案的磁碟也能得到 `YES` 或 `NO`。一個量錯的檔案就可能改變這個結果，所以在第 7 天與第 30 天再執行一次 `verify` 來比對。
 
@@ -604,7 +615,7 @@ Result
 - 已刪除的檔案不阻止 `YES`。有可信的中繼資料基準能辨識變更時，已修改的檔案也不阻止 `YES`。判定不涵蓋這些檔案。
 - 缺少可信的中繼資料基準時，雜湊不同會得到 `UNKNOWN`。舊記錄可能沒有此基準（`meta_key`）。
 - Verify 會列出無法比對的檔案，並顯示最多 5 個範例。`--out` 的 CSV 有全部結果。這些記錄不能證明修改或刪除的原因。
-- 速度＝總位元組數÷總讀取時間，比較刷新前和現在。只算刷新前就慢的檔案。結果顯示成 `N.N times faster` 或 `N.N times slower`。
+- 速度＝總位元組數÷總讀取時間，比較刷新前和現在。只算刷新前就慢的檔案。結果顯示成 `N.N times faster` 或 `N.N times slower`。變化小於 5% 時顯示 `about the same speed`。
 - 有對照組時，每組各有一行 Faster，最後加一句結論。例如「Rewriting made the files 3.1 times faster than reading only」，或「Reading only was enough on this drive」。
 - 來源是掃描報告時，Data safe 顯示 `n/a`。掃描沒有搬移檔案。
 
@@ -647,7 +658,7 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 做法是保留對照組：一部分慢檔刷新，其餘只讀不搬。
 
 1. 掃描磁碟（見[快速開始](#快速開始windows)），確認有找到慢檔。
-2. 刷新時保留對照組。一半的慢檔只讀不搬（狀態 `CONTROL`）。哪些檔案進對照組由路徑決定，`--resume` 時不會變。
+2. 刷新時保留對照組。大約一半的慢檔只讀不搬（狀態 `CONTROL`）。哪些檔案進對照組由路徑決定，`--resume` 時不會變。
 
    ```powershell
    ssd-refresh refresh --from C-scan.csv --allow-system-volume --control-fraction 0.5
@@ -678,7 +689,7 @@ diskspd.exe -b1M -o4 -t1 -w0 -Su -W0 -d10 -L "D:\Photos\2019\IMG_0001.CR2"
 | `--measure-priority` | normal | 掃描第 3 步與刷新前後測速的 I/O 優先權 |
 | `--after-wait` | 60 | scan：第 3 步第 3 輪之前等待的秒數。0 = 不做第 3 輪 |
 | `--max-chunk-mb` | 16 | 每次搬移的最大長度 |
-| `--control-fraction` | 0 | refresh：慢檔中只讀不搬的比例（0 到 1），狀態記成 `CONTROL` |
+| `--control-fraction` | 0 | refresh：慢檔中只讀不搬的比例（0 到 1），狀態記成 `CONTROL`。依路徑雜湊挑選，0.5 是大約一半，不是剛好一半 |
 | `--sample` | 全部 | verify：每組最多讀 N 個檔案 |
 | `--log` | `<來源檔名>.verify.log` | verify：文字記錄檔 |
 | `--out` | 無 | verify：另外寫出每個檔案一列的 CSV |
