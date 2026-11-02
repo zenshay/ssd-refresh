@@ -86,9 +86,10 @@ Windows runs each check after 1, 7 or 30 days from the last change to the refres
 The app can be closed. You must be signed in. Windows waits for AC power and an idle computer.
 A check can continue when you return. Battery use stops it. Each check has a two-hour limit.
 Missed checks can run later. Two app operations cannot run at the same time for the same Windows user.
-If another app operation holds the slot, scheduled Verify returns code `6` (busy).
-Task settings request three restarts after failure, with 30 minutes between attempts.
-Existing plans keep their old settings. Remove and create them again to apply this policy.
+If another app operation holds the slot, scheduled Verify tries again each minute for 30 minutes.
+If the slot is still busy, it returns code `6` (busy). Then run Verify manually.
+Windows does not run the task again after code `6`. The task setting "restart 3 times after failure" applies only when the task cannot start (measured on Windows 10 19045, 2026-11-02).
+Each plan keeps its own copy of the program. Remove existing plans and create them again to get the new wait.
 Scheduled Verify runs without administrator rights. It cannot check files that need those rights.
 Run Verify manually with administrator rights to check those files.
 
