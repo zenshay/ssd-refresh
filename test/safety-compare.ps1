@@ -13,13 +13,18 @@
 # After each round, the script detaches and attaches the VHDX again, so the checks read the disk, not
 # the cache. Then it checks all SHA-256 values and runs chkdsk /scan (read-only).
 #
+# -Run volume-loss tests only ssd-refresh. It adds a 3 GiB file and puts it first in the scan list.
+# The script detaches the VHDX while refresh reads this file, before its move. Refresh must stop
+# with exit code 4 and log only this file, as SKIP_CHECK. After the VHDX is back, --resume must
+# move the file. Then the script checks all SHA-256 values and runs chkdsk.
+#
 # Safety: the script gives DiskFresh only the drive letter of the test VHDX. Before each DiskFresh run,
 # it checks that this letter belongs to the VHDX and has the label SSDSAFE. If not, it stops.
 #
 # DiskFresh help (DiskFresh.chm 1.1) says: use read-only mode for SSDs. This test uses /RW because the
 # claim under test is "refresh while you use the drive". Report this condition with the results.
 param(
-    [ValidateSet('probe', 'all', 'ssd-refresh', 'diskfresh')][string]$Run = 'all',
+    [ValidateSet('probe', 'all', 'ssd-refresh', 'diskfresh', 'volume-loss')][string]$Run = 'all',
     [string]$Vhdx = (Join-Path $PSScriptRoot '..\scratch\safety.vhdx'),
     [string]$Results = (Join-Path $PSScriptRoot ('..\scratch\safety-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))),
     [string]$Cli = (Join-Path $PSScriptRoot '..\target\release\ssd-refresh.exe'),
@@ -386,6 +391,76 @@ function Invoke-Round([string]$tool, [string]$kind, [int]$n, [double]$cutSecs) {
     return $secs
 }
 
+function Invoke-VolumeLoss([int]$n) {
+    $round = "volume-loss-$n"
+    $dir = Join-Path $Results "ssd-refresh-$round"
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    Say "START ssd-refresh $round"
+    $expected = New-TestVhdx
+    $vol = Get-TestVolume
+    $letter = $vol.Letter
+    $big = "$($vol.Root)a-big.bin"
+    $rand = [Random]::new(11)
+    $buf = [byte[]]::new(64MB)
+    $fs = [IO.File]::Create($big)
+    try { for ($i = 0; $i -lt 48; $i++) { $rand.NextBytes($buf); $fs.Write($buf, 0, $buf.Length) } } finally { $fs.Dispose() }
+    $expected['a-big.bin'] = (Get-FileHash -LiteralPath $big -Algorithm SHA256).Hash
+    Write-VolumeCache -DriveLetter $letter
+    $scan = Join-Path $dir 'scan.csv'
+    & $Cli scan $vol.Root --hash --parallel 1 --after-wait 0 --out $scan *> (Join-Path $dir 'scan.log')
+    # Put the large file first. The other rows keep their order and text.
+    $lines = @(Get-Content -LiteralPath $scan)
+    $bigRow = @($lines | Where-Object { $_.StartsWith("$big,") })
+    if ($bigRow.Count -ne 1) { throw 'scan.csv has no row for a-big.bin. Stop.' }
+    $rest = @($lines | Select-Object -Skip 1 | Where-Object { -not $_.StartsWith("$big,") })
+    [IO.File]::WriteAllText($scan, ((@($lines[0]) + $bigRow + $rest) -join "`n") + "`n")
+    $out = Join-Path $dir 'refresh.csv'
+    $cliArgs = "refresh --from `"$scan`" --select all --force --confirm $letter`: --out `"$out`""
+    $p = Start-Process -FilePath $Cli -ArgumentList $cliArgs -PassThru -NoNewWindow `
+        -RedirectStandardOutput (Join-Path $dir 'refresh.log') -RedirectStandardError (Join-Path $dir 'refresh.err')
+    $null = $p.Handle
+    $t0 = Get-Date
+    $cutMB = 0
+    # Detach after 512 MiB of reads. Then refresh reads the 3 GiB file, before its move.
+    while (-not $p.HasExited -and ((Get-Date) - $t0).TotalSeconds -lt 120) {
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)" -ErrorAction SilentlyContinue
+        if ($proc -and $proc.ReadTransferCount -ge 512MB) {
+            Dismount-DiskImage -ImagePath $Vhdx | Out-Null
+            $cutMB = [math]::Round($proc.ReadTransferCount / 1MB)
+            break
+        }
+        Start-Sleep -Milliseconds 50
+    }
+    if (-not $p.WaitForExit(60000)) { Stop-Process -Id $p.Id -Force; throw 'refresh did not stop in 60 s after the detach.' }
+    $code = $p.ExitCode
+    Say ("  detached the VHDX after {0} MB of reads, at {1:N1} s. refresh exit code {2}" -f $cutMB, ((Get-Date) - $t0).TotalSeconds, $code)
+    $rows = @(Import-Csv -LiteralPath $out)
+    $log = Get-Content -LiteralPath (Join-Path $dir 'refresh.log') -Raw
+    $stopMsg = $log.Contains('STOPPED: the volume is not available now')
+    $first = $rows | Select-Object -First 1
+    Say ("  refresh.csv: {0} rows. First row: {1} {2} :: {3}" -f $rows.Count, (Split-Path -Leaf $first.path), $first.status, $first.detail)
+    # Attach again with the same letter. --resume needs the paths of scan.csv.
+    Mount-DiskImage -ImagePath $Vhdx | Out-Null
+    Start-Sleep -Seconds 2
+    $now = Get-TestVolume
+    if ($now.Letter -ne $letter) {
+        Get-Partition -DriveLetter $now.Letter | Set-Partition -NewDriveLetter $letter
+        Start-Sleep -Seconds 1
+    }
+    & $Cli refresh --from $scan --select all --force --confirm "$letter`:" --out $out --resume *> (Join-Path $dir 'resume.log')
+    $resumeCode = $LASTEXITCODE
+    $after = @(Import-Csv -LiteralPath $out)
+    $bigLast = $after | Where-Object path -eq $big | Select-Object -Last 1
+    $paths = @($after | ForEach-Object path | Sort-Object -Unique).Count
+    Say ("  resume: exit code {0}. a-big.bin: {1}. Files in the log: {2} of {3}" -f $resumeCode, $bigLast.status, $paths, $expected.Count)
+    $loss = $cutMB -gt 0 -and $code -eq 4 -and $rows.Count -eq 1 -and $first.path -eq $big -and
+        $first.status -eq 'SKIP_CHECK' -and $first.detail.StartsWith('The volume is not available now') -and $stopMsg -and
+        $resumeCode -eq 0 -and $bigLast.status -eq 'OK' -and $paths -eq $expected.Count
+    Say ("  LOSS {0}: {1} (exit 4, 1 row SKIP_CHECK, stop message, resume exit 0, a-big.bin OK)" -f $round, $(if ($loss) { 'YES' } else { 'NO' }))
+    $data = Test-Round 'ssd-refresh' $round $expected $dir
+    $script:Tally += [pscustomobject]@{ Tool = 'ssd-refresh'; Kind = 'loss'; N = $n; Data = $data; CutDone = $(if ($loss) { 'YES' } else { 'NO' }); Secs = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1) }
+}
+
 $script:DriverFails = 0
 $script:DiskFreshStarts = 0
 
@@ -410,7 +485,12 @@ try {
         if (-not (Test-Path $DiskFresh)) { throw "$DiskFresh does not exist." }
         if (Get-Process DiskFresh -ErrorAction SilentlyContinue) { throw 'DiskFresh is open. Close it, then start this script again.' }
     }
-    if ($Run -in 'all', 'ssd-refresh' -and -not (Test-Path $Cli)) { throw "$Cli does not exist. Build it first." }
+    if ($Run -in 'all', 'ssd-refresh', 'volume-loss' -and -not (Test-Path $Cli)) { throw "$Cli does not exist. Build it first." }
+    if ($Run -eq 'volume-loss') {
+        Say "Settings: VHDX $SizeGB GiB, $Repeat repeats, detach during the read before the move"
+        for ($n = 1; $n -le $Repeat; $n++) { Invoke-VolumeLoss $n }
+        return
+    }
     if ($Run -eq 'probe') {
         # Read-only probe: does DiskFresh start the run from the command line, and does it exit?
         New-TestVhdx | Out-Null
@@ -454,7 +534,7 @@ try {
             $cuts = @($g.Group | Where-Object CutDone -eq 'YES').Count
             $times = ($g.Group | ForEach-Object Secs) -join ', '
             Say ("  {0,-11} {1,-4} data YES {2}/{3}  cut {4}  seconds: {5}" -f `
-                $first.Tool, $first.Kind, $yes, $g.Count, $(if ($first.Kind -in 'T2a', 'T2b') { "$cuts/$($g.Count)" } else { '-' }), $times)
+                $first.Tool, $first.Kind, $yes, $g.Count, $(if ($first.Kind -in 'T2a', 'T2b', 'loss') { "$cuts/$($g.Count)" } else { '-' }), $times)
         }
         if ($script:DiskFreshStarts) { Say "  DiskFresh driver load failures: $($script:DriverFails) of $($script:DiskFreshStarts) starts" }
         $script:Tally | Export-Csv -LiteralPath (Join-Path $Results 'tally.csv') -NoTypeInformation
