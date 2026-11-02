@@ -1,5 +1,11 @@
 # Changes
 
+## Unreleased
+
+### Added
+
+- `safety-compare.ps1 -Run cost` (R3): compare the cost of ssd-refresh and DiskFresh when 10% of the files are slow. It uses a fixed 16 GiB VHDX with 5.75 GiB of data and a new differencing VHDX for each round. Measured on 2026-11-02 (3 rounds each): ssd-refresh scan 27–28 s plus refresh 11–14 s, 657 MB written; DiskFresh 32–36 s, 16,367 MB written.
+
 ## 1.2.0 — 2026-11-02
 
 ### Changed (check your scripts)

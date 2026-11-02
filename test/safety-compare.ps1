@@ -18,13 +18,22 @@
 # with exit code 4 and log only this file, as SKIP_CHECK. After the VHDX is back, --resume must
 # move the file. Then the script checks all SHA-256 values and runs chkdsk.
 #
+# -Run cost (R3) compares the cost of the two tools when 10% of the files are slow. It makes one
+# fixed VHDX (-SizeGB, default 16 GiB) with about 5.75 GiB of data: large, medium, small and
+# fragmented files. Each round uses a new differencing VHDX on this parent, so each round starts
+# from the same data. ssd-refresh: scan, then the script marks every 10th file (by path) as slow,
+# then refresh --force moves only these files. DiskFresh: /RW on the full volume (it cannot select
+# files). The rounds alternate between the tools. Each round records the time, the reads and writes
+# of the test disk, and the CPU time of the tool process. All writes go to the host disk:
+# DiskFresh writes about -SizeGB GiB in each round.
+#
 # Safety: the script gives DiskFresh only the drive letter of the test VHDX. Before each DiskFresh run,
 # it checks that this letter belongs to the VHDX and has the label SSDSAFE. If not, it stops.
 #
 # DiskFresh help (DiskFresh.chm 1.1) says: use read-only mode for SSDs. This test uses /RW because the
 # claim under test is "refresh while you use the drive". Report this condition with the results.
 param(
-    [ValidateSet('probe', 'all', 'ssd-refresh', 'diskfresh', 'volume-loss')][string]$Run = 'all',
+    [ValidateSet('probe', 'all', 'ssd-refresh', 'diskfresh', 'volume-loss', 'cost')][string]$Run = 'all',
     [string]$Vhdx = (Join-Path $PSScriptRoot '..\scratch\safety.vhdx'),
     [string]$Results = (Join-Path $PSScriptRoot ('..\scratch\safety-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))),
     [string]$Cli = (Join-Path $PSScriptRoot '..\target\release\ssd-refresh.exe'),
@@ -35,7 +44,11 @@ param(
     [ValidateRange(0.05, 0.95)][double]$CutFraction = 0.25
 )
 $ErrorActionPreference = 'Stop'
+if ($Run -eq 'cost' -and -not $PSBoundParameters.ContainsKey('SizeGB')) { $SizeGB = 16 }
 $Vhdx = [IO.Path]::GetFullPath($Vhdx)
+# Cost mode: $Vhdx is the differencing child of each round. The parent keeps the start data.
+$CostParent = Join-Path (Split-Path $Vhdx) 'cost-parent.vhdx'
+$script:CostHashes = $null
 $Results = [IO.Path]::GetFullPath($Results)
 $Label = 'SSDSAFE'
 New-Item -ItemType Directory -Force $Results | Out-Null
@@ -77,9 +90,75 @@ function Remove-TestVhdx {
     }
 }
 
+function Invoke-Diskpart([string]$command) {
+    $dp = Join-Path $env:TEMP 'ssd-refresh-safety-vdisk.txt'
+    $command | Set-Content $dp -Encoding ascii
+    diskpart /s $dp | Out-Null
+    $code = $LASTEXITCODE
+    Remove-Item $dp
+    if ($code -ne 0) { throw "diskpart failed (exit code $code): $command" }
+}
+
+function Write-CostData([string]$root) {
+    # About 5.75 GiB: 8 x 256 MiB, 512 x 4 MiB, 4096 x 64 KiB, and 64 x 24 MiB fragmented files.
+    $rand = [Random]::new(21)
+    foreach ($d in 'large', 'medium', 'small', 'frag') { New-Item -ItemType Directory -Force "$($root)static\$d" | Out-Null }
+    $buf = [byte[]]::new(64MB)
+    for ($i = 0; $i -lt 8; $i++) {
+        $fs = [IO.File]::Create("$($root)static\large\l$i.bin")
+        try { for ($k = 0; $k -lt 4; $k++) { $rand.NextBytes($buf); $fs.Write($buf, 0, $buf.Length) } } finally { $fs.Dispose() }
+    }
+    $b4 = [byte[]]::new(4MB)
+    for ($i = 0; $i -lt 512; $i++) { $rand.NextBytes($b4); [IO.File]::WriteAllBytes("$($root)static\medium\m$i.bin", $b4) }
+    $b64 = [byte[]]::new(64KB)
+    for ($i = 0; $i -lt 4096; $i++) { $rand.NextBytes($b64); [IO.File]::WriteAllBytes("$($root)static\small\s$i.bin", $b64) }
+    # Write the 64 files in turns of 1 MiB, with a flush after each piece. NTFS then puts the pieces
+    # of each file in different places.
+    $b1 = [byte[]]::new(1MB)
+    $streams = @(for ($i = 0; $i -lt 64; $i++) { [IO.FileStream]::new("$($root)static\frag\f$i.bin", 'Create', 'Write', 'None', 4096, [IO.FileOptions]::WriteThrough) })
+    try {
+        for ($k = 0; $k -lt 24; $k++) { foreach ($fs in $streams) { $rand.NextBytes($b1); $fs.Write($b1, 0, $b1.Length); $fs.Flush($true) } }
+    } finally { $streams | ForEach-Object { $_.Dispose() } }
+    $hashes = @{}
+    foreach ($f in Get-ChildItem -LiteralPath "$($root)static" -Recurse -File) {
+        $hashes[$f.FullName.Substring($root.Length)] = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash
+    }
+    return $hashes
+}
+
+function New-CostParent {
+    # A fixed VHDX: the empty space is real space in the file. A full-disk tool reads and writes it.
+    if (Test-Path -LiteralPath $CostParent) {
+        $img = Get-DiskImage -ImagePath $CostParent -ErrorAction SilentlyContinue
+        if ($img -and $img.Attached) { Dismount-DiskImage -ImagePath $CostParent | Out-Null }
+        Remove-Item -LiteralPath $CostParent
+    }
+    New-Item -ItemType Directory -Force (Split-Path $CostParent) | Out-Null
+    $t = Get-Date
+    Invoke-Diskpart "create vdisk file=`"$CostParent`" maximum=$($SizeGB * 1024) type=fixed"
+    $disk = Mount-DiskImage -ImagePath $CostParent -NoDriveLetter -PassThru | Get-Disk
+    Initialize-Disk -Number $disk.Number -PartitionStyle GPT
+    $part = New-Partition -DiskNumber $disk.Number -UseMaximumSize -AssignDriveLetter
+    Format-Volume -Partition $part -FileSystem NTFS -NewFileSystemLabel $Label -AllocationUnitSize 4096 -Confirm:$false | Out-Null
+    $part = Get-Partition -DiskNumber $disk.Number -PartitionNumber $part.PartitionNumber
+    $script:CostHashes = Write-CostData "$($part.DriveLetter):\"
+    Write-VolumeCache -DriveLetter $part.DriveLetter
+    Dismount-DiskImage -ImagePath $CostParent | Out-Null
+    Say ("Parent VHDX: {0} GiB fixed, {1} files, made in {2:N0} s" -f $SizeGB, $script:CostHashes.Count, ((Get-Date) - $t).TotalSeconds)
+}
+
 function New-TestVhdx {
     Remove-TestVhdx
     New-Item -ItemType Directory -Force (Split-Path $Vhdx) | Out-Null
+    if ($Run -eq 'cost') {
+        # A new differencing child on the parent. The parent stays the same in all rounds.
+        Invoke-Diskpart "create vdisk file=`"$Vhdx`" parent=`"$CostParent`""
+        Mount-DiskImage -ImagePath $Vhdx | Out-Null
+        Start-Sleep -Seconds 2
+        $vol = Get-TestVolume
+        Write-VolumeCache -DriveLetter $vol.Letter
+        return $script:CostHashes.Clone()
+    }
     $dp = Join-Path $env:TEMP 'ssd-refresh-safety-vdisk.txt'
     "create vdisk file=`"$Vhdx`" maximum=$($SizeGB * 1024) type=expandable" | Set-Content $dp -Encoding ascii
     diskpart /s $dp | Out-Null
@@ -246,8 +325,31 @@ function Start-Tool([string]$tool, [string]$letter, [string]$dir) {
         Assert-TestLetter $letter
         return Start-Process -FilePath $DiskFresh -ArgumentList '/RW', "$letter`:" -PassThru
     }
-    # ssd-refresh: scan, then move every measured file (--select all --force).
     $scan = Join-Path $dir 'scan.csv'
+    if ($Run -eq 'cost') {
+        # R3: measure the scan too. It is part of the cost: ssd-refresh reads the files to find the slow ones.
+        $diskNo = (Get-DiskImage -ImagePath $Vhdx | Get-Disk).Number
+        $b = Get-DiskIo $diskNo
+        $t = Get-Date
+        & $Cli scan "$letter`:\" --after-wait 0 --out $scan *> (Join-Path $dir 'scan.log')
+        $script:ScanSecs = ((Get-Date) - $t).TotalSeconds
+        $a = Get-DiskIo $diskNo
+        $script:ScanReadMB = ($a.Read - $b.Read) / 1MB
+        Say ("  scan: {0:N1} s, test disk read {1:N0} MB, write {2:N0} MB" -f $script:ScanSecs, $script:ScanReadMB, (($a.Write - $b.Write) / 1MB))
+        # Mark every 10th file (sorted by path) as slow. All other files are not slow.
+        $rows = @(Import-Csv -LiteralPath $scan)
+        foreach ($r in $rows) { $r.slow = '0'; $r.slow_bytes = '0' }
+        $ok = @($rows | Where-Object status -eq 'OK' | Sort-Object path)
+        $picked = 0; $pickedBytes = 0
+        for ($i = 0; $i -lt $ok.Count; $i += 10) { $ok[$i].slow = '1'; $ok[$i].slow_bytes = $ok[$i].size; $picked++; $pickedBytes += [double]$ok[$i].size }
+        $rows | Export-Csv -LiteralPath $scan -UseQuotes AsNeeded -Encoding utf8NoBOM
+        $allBytes = ($ok | Measure-Object -Property size -Sum).Sum
+        Say ("  marked as slow: {0} of {1} files, {2:N0} of {3:N0} MB ({4:P1})" -f $picked, $ok.Count, ($pickedBytes / 1MB), ($allBytes / 1MB), ($pickedBytes / $allBytes))
+        $cliArgs = "refresh --from `"$scan`" --force --confirm $letter`: --out `"$(Join-Path $dir 'refresh.csv')`""
+        return Start-Process -FilePath $Cli -ArgumentList $cliArgs -PassThru -NoNewWindow `
+            -RedirectStandardOutput (Join-Path $dir 'refresh.log') -RedirectStandardError (Join-Path $dir 'refresh.err')
+    }
+    # ssd-refresh: scan, then move every measured file (--select all --force).
     & $Cli scan "$letter`:\" --hash --parallel 1 --after-wait 0 --out $scan *> (Join-Path $dir 'scan.log')
     $cliArgs = "refresh --from `"$scan`" --select all --force --confirm $letter`: --out `"$(Join-Path $dir 'refresh.csv')`""
     return Start-Process -FilePath $Cli -ArgumentList $cliArgs -PassThru -NoNewWindow `
@@ -275,8 +377,9 @@ function Test-Round([string]$tool, [string]$round, [hashtable]$expected, [string
     $static = @($bad | Where-Object { $_ -like 'static*' }).Count
     $live = @($bad | Where-Object { $_ -like 'live*' }).Count
     $result = if ($bad.Count -eq 0 -and $missing.Count -eq 0 -and $chkCode -eq 0) { 'YES' } else { 'NO' }
-    Say ("RESULT {0} {1}: {2} static_bad={3}/100 live_bad={4}/{5} missing={6} chkdsk_exit={7}" -f `
-        $tool, $round, $result, $static, $live, @($expected.Keys | Where-Object { $_ -like 'live*' }).Count, $missing.Count, $chkCode)
+    Say ("RESULT {0} {1}: {2} static_bad={3}/{4} live_bad={5}/{6} missing={7} chkdsk_exit={8}" -f `
+        $tool, $round, $result, $static, @($expected.Keys | Where-Object { $_ -like 'static*' }).Count, $live,
+        @($expected.Keys | Where-Object { $_ -like 'live*' }).Count, $missing.Count, $chkCode)
     return $result
 }
 
@@ -378,16 +481,29 @@ function Invoke-Round([string]$tool, [string]$kind, [int]$n, [double]$cutSecs) {
     }
     $d = Get-DiskIo $diskNo
     if ($d) { $diskLast = $d }
+    $readMB = $null; $writeMB = $null
     if ($diskBefore -and $diskLast) {
-        Say ("  test disk I/O during the run: read {0:N0} MB, write {1:N0} MB" -f `
-            (($diskLast.Read - $diskBefore.Read) / 1MB), (($diskLast.Write - $diskBefore.Write) / 1MB))
+        $readMB = ($diskLast.Read - $diskBefore.Read) / 1MB
+        $writeMB = ($diskLast.Write - $diskBefore.Write) / 1MB
+        # In cost mode, the ssd-refresh values include the scan: the counters start before Start-Tool.
+        $scope = if ($Run -eq 'cost' -and $tool -eq 'ssd-refresh') { 'scan + refresh' } else { 'the run' }
+        Say ("  test disk I/O during {0}: read {1:N0} MB, write {2:N0} MB" -f $scope, $readMB, $writeMB)
     }
+    # CPU time of the tool process (user + kernel). DiskFresh does most work in its driver,
+    # so this value does not show all of its CPU use.
+    $cpu = if ($io) { ([double]$io.KernelModeTime + [double]$io.UserModeTime) / 1e7 } else { $null }
     Say ("  VHDX file: before {0:N0} MB, after {1:N0} MB" -f ($vhdxBefore / 1MB), ((Get-Item -LiteralPath $Vhdx).Length / 1MB))
     if ($cutSecs -gt 0 -and -not $cut) { Say '  NOTE: the tool finished before the cut. This round does not test the cut.' }
     if (-not (Get-DiskImage -ImagePath $Vhdx).Attached) { Mount-DiskImage -ImagePath $Vhdx | Out-Null }
     $ok = Test-Round $tool $round $expected $dir
     $cutText = if ($cutSecs -le 0) { '-' } elseif ($cut) { 'YES' } else { 'NO' }
-    $script:Tally += [pscustomobject]@{ Tool = $tool; Kind = $kind; N = $n; Data = $ok; CutDone = $cutText; Secs = [math]::Round($secs, 1) }
+    $script:Tally += [pscustomobject]@{
+        Tool = $tool; Kind = $kind; N = $n; Data = $ok; CutDone = $cutText; Secs = [math]::Round($secs, 1)
+        ReadMB = $(if ($null -ne $readMB) { [math]::Round($readMB) }); WriteMB = $(if ($null -ne $writeMB) { [math]::Round($writeMB) })
+        CpuSecs = $(if ($null -ne $cpu) { [math]::Round($cpu, 1) })
+        ScanSecs = $(if ($Run -eq 'cost' -and $tool -eq 'ssd-refresh') { [math]::Round($script:ScanSecs, 1) })
+        ScanReadMB = $(if ($Run -eq 'cost' -and $tool -eq 'ssd-refresh') { [math]::Round($script:ScanReadMB) })
+    }
     return $secs
 }
 
@@ -481,11 +597,21 @@ function Invoke-RoundRetry([string]$tool, [string]$kind, [int]$n, [double]$cutSe
 
 try {
     Say "Results: $Results"
-    if ($Run -in 'probe', 'all', 'diskfresh') {
+    if ($Run -in 'probe', 'all', 'diskfresh', 'cost') {
         if (-not (Test-Path $DiskFresh)) { throw "$DiskFresh does not exist." }
         if (Get-Process DiskFresh -ErrorAction SilentlyContinue) { throw 'DiskFresh is open. Close it, then start this script again.' }
     }
-    if ($Run -in 'all', 'ssd-refresh', 'volume-loss' -and -not (Test-Path $Cli)) { throw "$Cli does not exist. Build it first." }
+    if ($Run -in 'all', 'ssd-refresh', 'volume-loss', 'cost' -and -not (Test-Path $Cli)) { throw "$Cli does not exist. Build it first." }
+    if ($Run -eq 'cost') {
+        Say "Settings: R3 cost, fixed VHDX $SizeGB GiB, $Repeat rounds per tool, 10% of the files marked as slow"
+        New-CostParent
+        for ($n = 1; $n -le $Repeat; $n++) {
+            # Change the order in each round. A slower host disk later in the test then affects both tools.
+            $order = if ($n % 2) { 'ssd-refresh', 'diskfresh' } else { 'diskfresh', 'ssd-refresh' }
+            foreach ($tool in $order) { Invoke-RoundRetry $tool 'R3' $n 0 | Out-Null }
+        }
+        return
+    }
     if ($Run -eq 'volume-loss') {
         Say "Settings: VHDX $SizeGB GiB, $Repeat repeats, detach during the read before the move"
         for ($n = 1; $n -le $Repeat; $n++) { Invoke-VolumeLoss $n }
@@ -526,6 +652,21 @@ try {
     }
 } finally {
     Remove-TestVhdx
+    if ($Run -eq 'cost' -and (Test-Path -LiteralPath $CostParent)) {
+        $img = Get-DiskImage -ImagePath $CostParent -ErrorAction SilentlyContinue
+        if ($img -and $img.Attached) { Dismount-DiskImage -ImagePath $CostParent | Out-Null }
+        Remove-Item -LiteralPath $CostParent
+    }
+    $r3 = @($script:Tally | Where-Object Kind -eq 'R3')
+    if ($r3.Count) {
+        Say 'COST R3 (each value: one round, in round order). ssd-refresh: run s is the refresh only; disk MB include the scan.'
+        foreach ($g in $r3 | Group-Object Tool) {
+            $v = { param($name) ($g.Group | ForEach-Object $name) -join ', ' }
+            Say ("  {0,-11} run s: {1} | disk read MB: {2} | disk write MB: {3} | CPU s: {4}" -f `
+                $g.Name, (& $v Secs), (& $v ReadMB), (& $v WriteMB), (& $v CpuSecs))
+            if ($g.Name -eq 'ssd-refresh') { Say ("  {0,-11} scan s: {1} | scan read MB: {2}" -f '', (& $v ScanSecs), (& $v ScanReadMB)) }
+        }
+    }
     if ($script:Tally.Count) {
         Say 'TALLY (data YES = all hashes match and chkdsk exit 0; cut = the cut occurred before the tool finished)'
         foreach ($g in $script:Tally | Group-Object Tool, Kind) {
