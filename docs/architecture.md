@@ -78,7 +78,11 @@ Scheduled Verify tries the lock 31 times, one minute apart (`wait_process_lock` 
 Why: Task Scheduler restarts a task only when the task cannot start. An exit code other than 0 is not a start failure.
 An owner test on Windows 10 19045 (2026-11-02) showed 1 run in 4.5 minutes after code `6`, with a 1-minute restart interval.
 The task settings still request three restarts. They apply only to start failures.
-Each plan runs its own program copy. Existing tasks need removal and creation to receive the wait.
+Each plan runs its own program copy, so a moved or replaced app does not break the plan.
+At each GUI start, a background thread runs `update_plan_copies`. It replaces copies from older versions (`verify.version` beside each copy; no file = oldest).
+It keeps copies from newer versions, so an old app cannot downgrade a plan. It writes `verify.exe.new` first, then renames it over the copy.
+A copy that runs now cannot be replaced and stays until a later start. The update skips the folder when a schedule change holds its lock.
+Removal deletes all plan copies except copies in use. The tasks and copies stay after a user deletes the portable app, so the panel says this.
 For refresh logs, code `0` requires `YES`.
 A complete scan-report check can return `0` with `NOT_CHECKED`.
 Scheduled Verify keeps Windows `RunLevel Limited`. It cannot check files that need administrator rights.

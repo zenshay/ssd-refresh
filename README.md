@@ -89,7 +89,9 @@ Missed checks can run later. Two app operations cannot run at the same time for 
 If another app operation holds the slot, scheduled Verify tries again each minute for 30 minutes.
 If the slot is still busy, it returns code `6` (busy). Then run Verify manually.
 Windows does not run the task again after code `6`. The task setting "restart 3 times after failure" applies only when the task cannot start (measured on Windows 10 19045, 2026-11-02).
-Each plan keeps its own copy of the program. Remove existing plans and create them again to get the new wait.
+Each plan keeps its own copy of the program in `%LOCALAPPDATA%\com.ssdrefresh.app\scheduler`. Windows can then run the plan after you move or replace the app.
+At each start, the app replaces older copies with its own version. It does not replace a copy from a newer version or a copy that runs now.
+The tasks and copies stay after you delete the app folder. Before you delete the app, click **Remove all schedules and copies**.
 Scheduled Verify runs without administrator rights. It cannot check files that need those rights.
 Run Verify manually with administrator rights to check those files.
 
@@ -108,7 +110,7 @@ Windows can also return its own task error codes.
 Each plan keeps a copy of the app in the data folder. Moving the main app does not change the plan.
 App updates do not replace this copy. Remove and create plans again to use the updated app.
 The copy uses extra disk space for each plan. The size depends on the app build.
-Click **Remove all schedules** to remove all verify tasks for your Windows user and unused program copies.
+Click **Remove all schedules and copies** to remove all verify tasks for your Windows user and all program copies. A copy that a running verify uses stays. Click again after it ends.
 A verify that already started can finish. Its program copy can remain until you remove the app data folder.
 Remove schedules before you delete the app data folder. Windows Optimize keeps its own schedule.
 

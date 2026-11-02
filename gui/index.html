@@ -121,12 +121,12 @@
           <p>Scheduled Verify cannot read files that need administrator rights. Run Verify manually for those files.</p>
           <p>Runs while you are signed in, on AC power and idle. The app can be closed. Missed checks wait for Windows.</p>
           <p>A check can continue when you return. Battery use stops it. Each check has a 2-hour limit.</p>
-          <p>The plan stores a copy of this app in its data folder. Updates do not replace this copy. Remove and recreate plans after an update.</p>
+          <p>Each plan keeps 1 to 3 Windows tasks and a copy of this app in %LOCALAPPDATA%\com.ssdrefresh.app\scheduler. They stay after you delete the app. At each start, the app replaces old copies with this version. Before you delete the app, remove all schedules and copies.</p>
           <p id="schedule-target">Select one drive with a refresh log.</p>
           <div class="schedule-buttons">
             <button id="schedule-create" type="button" class="btn btn-primary" disabled>Schedule 1 / 7 / 30 days</button>
             <button id="schedule-reload" type="button" class="btn btn-secondary">Read status</button>
-            <button id="schedule-remove" type="button" class="btn btn-danger" disabled>Remove all schedules</button>
+            <button id="schedule-remove" type="button" class="btn btn-danger" disabled>Remove all schedules and copies</button>
           </div>
           <p id="schedule-message" role="status"></p>
           <ul id="schedule-list"></ul>

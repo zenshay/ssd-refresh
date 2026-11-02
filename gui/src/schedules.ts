@@ -43,12 +43,12 @@ export function createSchedules(
     create: (path: string) =>
       request(
         () => api.createVerifySchedule(path),
-        "Schedule saved. Only future checks remain: 1, 7 and 30 days after the refresh.",
+        "Schedule saved. Only future checks remain: 1, 7 and 30 days after the refresh. The tasks and the app copy stay after you delete the app. Remove them first.",
       ),
     remove: () =>
       request(
         () => api.removeSchedules(),
-        "All verify schedules removed. A verify that already started can finish.",
+        "All verify schedules and app copies removed. A verify that already started can finish. Its copy stays. Click again after it ends.",
       ),
   };
 }

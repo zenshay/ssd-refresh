@@ -38,7 +38,8 @@ export function mountSchedules(store: Store, model: Schedules): void {
   model.subscribe((state) => {
     busy = state.busy;
     paint();
-    remove.disabled = busy || state.tasks.length === 0;
+    // Copies can stay without tasks (a running verify, or tasks removed in Windows).
+    remove.disabled = busy;
     reload.disabled = busy;
     $("schedule-message").textContent = state.message;
     const list = $("schedule-list");
