@@ -15,7 +15,8 @@ pub struct ReadOptions {
     pub chunk: usize,
     /// Read requests in flight per file
     pub qd: usize,
-    /// An extent slower than this is slow (MB = 10^6 bytes)
+    /// An extent (or a group of small extents, see GROUP_BYTES) slower than this is slow
+    /// (MB = 10^6 bytes)
     pub threshold_mbps: f64,
     /// Extra time allowed per extent, so the fixed latency of small reads does not count as slowness
     pub allowance_ms: f64,
@@ -126,16 +127,12 @@ impl ReadResult {
             return;
         }
         let score = |r: &ReadResult| {
-            (
-                r.extents
-                    .iter()
-                    .filter(|e| is_slow(e.bytes, e.secs, opt))
-                    .count(),
-                r.extents
-                    .iter()
-                    .map(|e| e.excess_secs(opt).max(0.0))
-                    .sum::<f64>(),
-            )
+            group_excess(&r.extents, opt)
+                .into_iter()
+                .filter(|(_, excess)| *excess > 0.0)
+                .fold((0usize, 0.0f64), |(n, sum), (g, excess)| {
+                    (n + g.len(), sum + excess)
+                })
         };
         let (a, b) = (score(self), score(other));
         let hash = self.sha256;
@@ -147,9 +144,7 @@ impl ReadResult {
         self.sha256 = hash;
         self.short_read = short_read;
         self.file_bytes = file_bytes;
-        for e in &mut self.extents {
-            e.slow = is_slow(e.bytes, e.secs, opt);
-        }
+        mark_slow(&mut self.extents, opt);
     }
 
     pub fn complete_read(&self, size: u64) -> io::Result<()> {
@@ -207,8 +202,71 @@ fn limit_secs(bytes: u64, opt: &ReadOptions) -> f64 {
     bytes as f64 / (opt.threshold_mbps * 1e6) + opt.allowance_ms / 1000.0
 }
 
-fn is_slow(bytes: u64, secs: f64, opt: &ReadOptions) -> bool {
-    secs > limit_secs(bytes, opt)
+/// The tool measures extents smaller than this together, in groups of this size or more.
+///
+/// Why: one read request can wait some ms more than usual (timer, scheduler, antivirus).
+/// A small extent needs only one request, so that one delay can make it slow. A file with
+/// many small extents gives many chances for such a delay. Slow old data is slow in all of
+/// its requests, so a group of these extents is still slow.
+const GROUP_BYTES: u64 = 4 << 20;
+
+/// Splits the extents (in file order) into the groups that decide slowness.
+/// An extent of GROUP_BYTES or more is alone. Adjacent smaller extents go into one group
+/// until the group has GROUP_BYTES or more. A small group at the end joins the small group
+/// before it.
+fn slow_groups(extents: &[ExtentTiming]) -> Vec<std::ops::Range<usize>> {
+    let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
+    // Index in `groups` of the last group of small extents, if it is the last group.
+    let mut last_small: Option<usize> = None;
+    let mut start: Option<usize> = None;
+    let mut bytes = 0u64;
+    for (i, e) in extents.iter().enumerate() {
+        if e.bytes >= GROUP_BYTES {
+            if let Some(s) = start.take() {
+                groups.push(s..i);
+            }
+            groups.push(i..i + 1);
+            last_small = None;
+            bytes = 0;
+            continue;
+        }
+        let s = *start.get_or_insert(i);
+        bytes += e.bytes;
+        if bytes >= GROUP_BYTES {
+            groups.push(s..i + 1);
+            last_small = Some(groups.len() - 1);
+            start = None;
+            bytes = 0;
+        }
+    }
+    if let Some(s) = start {
+        match last_small {
+            Some(g) if g == groups.len() - 1 => groups[g].end = extents.len(),
+            _ => groups.push(s..extents.len()),
+        }
+    }
+    groups
+}
+
+/// Each group and its read time above its limit. Above 0 = slow. The limit of a group is the
+/// sum of the limits of its extents.
+fn group_excess(extents: &[ExtentTiming], opt: &ReadOptions) -> Vec<(std::ops::Range<usize>, f64)> {
+    slow_groups(extents)
+        .into_iter()
+        .map(|g| {
+            let excess = extents[g.clone()].iter().map(|e| e.excess_secs(opt)).sum();
+            (g, excess)
+        })
+        .collect()
+}
+
+/// Sets `slow` on each extent: true if the group of the extent is slow.
+fn mark_slow(extents: &mut [ExtentTiming], opt: &ReadOptions) {
+    for (g, excess) in group_excess(extents, opt) {
+        for e in &mut extents[g] {
+            e.slow = excess > 0.0;
+        }
+    }
 }
 
 const ALIGN: u64 = 4096;
@@ -374,7 +432,9 @@ pub fn read_file(
         e.begin_unix_ms = t0_unix_ms + begin.saturating_duration_since(t0).as_secs_f64() * 1000.0;
         e.secs = extent_duration(begin, ld, paused[i]).as_secs_f64();
         res.disk_secs += e.secs;
-        e.slow = measure && is_slow(e.bytes, e.secs, opt);
+    }
+    if measure {
+        mark_slow(&mut res.extents, opt);
     }
     res.sha256 = hasher.map(|h| h.finalize().into());
     Ok(res)
@@ -612,23 +672,32 @@ mod tests {
         assert!(ReadResult::default().worst_extent(&opt).is_none());
     }
 
+    /// Extents of 5 MB: more than GROUP_BYTES, thus the tool measures each extent alone.
+    const BIG: u64 = 5_000_000;
+    /// 5 MB at 100 MB/s takes 40 ms more than 1 MB. With this extra time, each value in
+    /// `secs` has the excess time of a 1 MB extent (limit 12 ms).
+    const PAD: f64 = 0.040;
+
     fn result(secs: &[f64]) -> ReadResult {
         let opt = ReadOptions::default();
         let extents: Vec<ExtentTiming> = secs
             .iter()
-            .map(|&s| ExtentTiming {
-                slow: is_slow(1_000_000, s, &opt),
-                ..ext(1_000_000, s)
+            .map(|&s| {
+                let e = ext(BIG, s + PAD);
+                ExtentTiming {
+                    slow: e.excess_secs(&opt) > 0.0,
+                    ..e
+                }
             })
             .collect();
         ReadResult {
             source: Some(ReadSource {
                 id: (1, 2),
-                size: 1_000_000 * secs.len() as u64,
+                size: BIG * secs.len() as u64,
                 layout: Layout::default(),
             }),
-            disk_bytes: 1_000_000 * secs.len() as u64,
-            disk_secs: secs.iter().sum(),
+            disk_bytes: BIG * secs.len() as u64,
+            disk_secs: extents.iter().map(|e| e.secs).sum(),
             extents,
             ..Default::default()
         }
@@ -636,7 +705,7 @@ mod tests {
 
     #[test]
     fn a_file_slow_only_in_the_first_read_is_not_slow() {
-        let opt = ReadOptions::default(); // 1 MB: limit 12 ms
+        let opt = ReadOptions::default(); // excess as for 1 MB: limit 12 ms
                                           // The first extent has 8 ms more in the first read only, as after an antivirus scan.
         let mut first = result(&[0.018, 0.005]);
         assert!(first.is_slow());
@@ -644,7 +713,7 @@ mod tests {
             keep_faster_if_slow(&mut first, &opt, || Ok(result(&[0.006, 0.005]))).unwrap();
         assert!(was_slow);
         assert!(!first.is_slow());
-        assert!((first.disk_secs - 0.011).abs() < 1e-9);
+        assert!((first.disk_secs - (0.011 + 2.0 * PAD)).abs() < 1e-9);
     }
 
     #[test]
@@ -678,8 +747,8 @@ mod tests {
         let second = result(&[0.003, 0.019]);
         first.keep_faster(&second, &ReadOptions::default());
         assert!(first.is_slow());
-        assert_eq!(first.extents[0].secs, 0.003);
-        assert_eq!(first.extents[1].secs, 0.019);
+        assert_eq!(first.extents[0].secs, second.extents[0].secs);
+        assert_eq!(first.extents[1].secs, second.extents[1].secs);
         assert_eq!(first.disk_secs, second.disk_secs);
         assert_eq!(first.extents[0].begin_unix_ms, 0.0);
         assert_eq!(first.sha256, Some([7; 32]));
@@ -758,6 +827,81 @@ mod tests {
             assert_eq!(first.disk_secs, second.disk_secs);
             assert_eq!(first.sha256, None);
         }
+    }
+
+    const KIB128: u64 = 128 * 1024;
+
+    fn measured(extents: Vec<ExtentTiming>, opt: &ReadOptions) -> ReadResult {
+        let mut res = ReadResult {
+            disk_bytes: extents.iter().map(|e| e.bytes).sum(),
+            disk_secs: extents.iter().map(|e| e.secs).sum(),
+            extents,
+            ..Default::default()
+        };
+        mark_slow(&mut res.extents, opt);
+        res
+    }
+
+    #[test]
+    fn small_extents_form_groups_of_4_mib_or_more() {
+        let small = |n: usize| vec![ext(KIB128, 0.001); n];
+        // 32 x 128 KiB = 4 MiB: one group.
+        assert_eq!(slow_groups(&small(32)), vec![0..32]);
+        // 40 small extents: the 8 at the end join the group before them.
+        assert_eq!(slow_groups(&small(40)), vec![0..40]);
+        // A large extent is alone and ends the small group before it.
+        let mut v = small(3);
+        v.push(ext(GROUP_BYTES, 0.01));
+        v.extend(small(33));
+        assert_eq!(slow_groups(&v), vec![0..3, 3..4, 4..37]);
+        assert!(slow_groups(&[]).is_empty());
+    }
+
+    #[test]
+    fn a_short_delay_in_one_small_extent_does_not_make_a_new_file_slow() {
+        // Scenario E of test/run-ext4-sim.sh (2026-11-02): threshold 70.233 MB/s, 1 ms
+        // dm-delay, default allowance. 133 extents of 128 KiB read in about 1.5 ms. Two of them
+        // read at 31.6 MB/s (4.15 ms). One extent of 7.7 MB read at full speed.
+        let opt = ReadOptions {
+            threshold_mbps: 70.233,
+            ..ReadOptions::default()
+        };
+        let mut v = vec![ext(KIB128, 0.0015); 5];
+        v.push(ext(1888 * 4096, 0.030));
+        v.extend(vec![ext(KIB128, 0.0015); 128]);
+        v[40].secs = 0.00415;
+        v[90].secs = 0.00415;
+        // The old rule judged each extent alone. These two extents are above their limits.
+        assert!(v[40].excess_secs(&opt) > 0.0 && v[90].excess_secs(&opt) > 0.0);
+        let mut first = measured(v, &opt);
+        assert!(!first.is_slow());
+        assert_eq!(first.slow_bytes(), 0);
+        let was_slow = keep_faster_if_slow(&mut first, &opt, || -> io::Result<ReadResult> {
+            panic!("no second read for a fast file")
+        })
+        .unwrap();
+        assert!(!was_slow);
+    }
+
+    #[test]
+    fn old_slow_data_in_small_extents_stays_slow() {
+        // 64 x 128 KiB at 20 MB/s: 6.6 ms per extent, limit 3.3 ms (100 MB/s + 2 ms).
+        let opt = ReadOptions::default();
+        let res = measured(vec![ext(KIB128, KIB128 as f64 / 20e6); 64], &opt);
+        assert!(res.is_slow());
+        assert_eq!(res.slow_bytes(), 64 * KIB128);
+    }
+
+    #[test]
+    fn a_large_slow_extent_is_judged_alone() {
+        // 8 MiB at 50 MB/s between fast small extents. The small extents stay fast.
+        let opt = ReadOptions::default();
+        let mut v = vec![ext(KIB128, 0.0005); 32];
+        v.push(ext(2 * GROUP_BYTES, 2.0 * GROUP_BYTES as f64 / 50e6));
+        v.extend(vec![ext(KIB128, 0.0005); 32]);
+        let res = measured(v, &opt);
+        assert_eq!(res.slow_bytes(), 2 * GROUP_BYTES);
+        assert!(res.extents[32].slow && !res.extents[0].slow && !res.extents[33].slow);
     }
 
     #[test]

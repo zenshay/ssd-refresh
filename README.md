@@ -358,7 +358,7 @@ ssd-refresh scan <folder or file> [--out report.csv] [--resume] [--hash] [--para
 The scan has three steps. Before each step, the tool shows what it will do.
 
 1. **Find the files.** The scan looks in all folders. It does not follow symbolic links, junctions or mount points. It stays on one volume.
-2. **Read each file one time.** The scan reads each file directly from the disk, not from the OS cache. It measures the time for each extent. An extent is one continuous part of the file on the disk. If one extent is slower than `--threshold` (100 MB/s), the file goes on the **check list**.
+2. **Read each file one time.** The scan reads each file directly from the disk, not from the OS cache. It measures the time for each extent. An extent is one continuous part of the file on the disk. If one extent is slower than `--threshold` (100 MB/s), the file goes on the **check list**. Extents smaller than 4 MiB are measured together, in groups of 4 MiB or more. A group is slow if its total time is more than the sum of the limits of its extents. Thus one short delay of one small read request cannot make a file slow.
 3. **Check the files on the check list again.** The scan reads each file alone, at normal I/O priority. It does this two times. Round 2 starts 30 s or more after round 1. If a read is slow, the scan reads the file again at once. The scan keeps one whole read. It selects fewer slow extents, then less total time above their limits. Equal results keep the earlier read. A file is **slow** only if it is slow after this step.
 
 Read comparisons require the same file ID, size, and full extent map, including offsets, lengths, and disk locations.
@@ -677,7 +677,7 @@ The method is a control group. The tool refreshes a part of the slow files. It o
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--threshold` | 100 | An extent slower than this (MB/s, 10^6 bytes) is slow |
+| `--threshold` | 100 | An extent (or a group of small extents) slower than this (MB/s, 10^6 bytes) is slow |
 | `--allowance-ms` | 2 | Extra time for each extent. Small reads always have some delay. This delay must not count as slow |
 | `--parallel` | 8 | The number of files to read at the same time in scan step 2 |
 | `--chunk-kb` | 1024 | The size of each read request |
