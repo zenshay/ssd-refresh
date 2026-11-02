@@ -73,9 +73,12 @@ The core accepts old CSV reports. A missing metadata baseline blocks `YES` only 
 Verify returns `Incomplete` for `UNKNOWN` or a failed summary-log write. A mismatch takes priority and returns `DataMismatch`.
 CLI and scheduled verify share exit codes: `0` Completed, `1` InvalidInput, `2` Unsupported, `3` DataMismatch, `4` Stopped, `5` Incomplete.
 Code `1` covers errors and cancellation. Code `2` covers missing administrator or root rights and unsupported platforms.
-Scheduled Verify also returns `6` when another app operation holds the lock. Codes `0` through `5` keep their meanings.
-Task settings request three restarts after failure, with 30 minutes between attempts.
-Existing tasks need removal and creation to receive these settings.
+Scheduled Verify also returns `6` when another app operation holds the lock for 30 minutes. Codes `0` through `5` keep their meanings.
+Scheduled Verify tries the lock 31 times, one minute apart (`wait_process_lock` in `gui/src-tauri/src/schedule.rs`).
+Why: Task Scheduler restarts a task only when the task cannot start. An exit code other than 0 is not a start failure.
+An owner test on Windows 10 19045 (2026-11-02) showed 1 run in 4.5 minutes after code `6`, with a 1-minute restart interval.
+The task settings still request three restarts. They apply only to start failures.
+Each plan runs its own program copy. Existing tasks need removal and creation to receive the wait.
 For refresh logs, code `0` requires `YES`.
 A complete scan-report check can return `0` with `NOT_CHECKED`.
 Scheduled Verify keeps Windows `RunLevel Limited`. It cannot check files that need administrator rights.

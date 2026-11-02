@@ -134,8 +134,39 @@ fn valid_stem(stem: &str) -> bool {
         && stamp.bytes().all(|c| c.is_ascii_digit())
 }
 
+/// Scheduled verify tries this many times to get the lock: one try, then one try each minute.
+///
+/// Why: Task Scheduler restarts a task only if the task cannot start. It does not restart a
+/// task that returns an exit code other than 0 (measured on Windows 10 19045, 2026-11-02).
+/// Thus a busy scheduled verify must wait itself, or this check does not occur.
+const LOCK_TRIES: u32 = 31;
+const LOCK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+const BUSY_MESSAGE: &str =
+    "Busy: another operation held the lock for 30 minutes. Run Verify manually.";
+
+/// Tries to get the lock `tries` times. Calls `wait` between two tries.
+fn wait_process_lock(
+    dir: &Path,
+    tries: u32,
+    mut wait: impl FnMut(),
+) -> Result<Option<std::fs::File>, String> {
+    for i in 0..tries {
+        if i > 0 {
+            wait();
+        }
+        if let Some(file) = try_process_lock(dir)? {
+            return Ok(Some(file));
+        }
+    }
+    Ok(None)
+}
+
 /// A headless run returns before Tauri or WebView2 starts.
 pub fn headless(args: &[String], data: &Path) -> i32 {
+    headless_with(args, data, LOCK_TRIES, || std::thread::sleep(LOCK_INTERVAL))
+}
+
+fn headless_with(args: &[String], data: &Path, tries: u32, wait: impl FnMut()) -> i32 {
     use ssd_refresh::{
         control::Control,
         verify::{self, VerifyOptions},
@@ -159,11 +190,8 @@ pub fn headless(args: &[String], data: &Path) -> i32 {
         {
             return Err("The refresh log is not in the reports folder.".into());
         }
-        let Some(_lock) = try_process_lock(data)? else {
-            let _ = std::fs::write(
-                data.join("scheduled-verify-error.log"),
-                "Busy: another operation holds the lock.",
-            );
+        let Some(_lock) = wait_process_lock(data, tries, wait)? else {
+            let _ = std::fs::write(data.join("scheduled-verify-error.log"), BUSY_MESSAGE);
             return Ok(6);
         };
         let opts = VerifyOptions {
@@ -213,6 +241,21 @@ mod tests {
         std::fs::remove_dir(dir).unwrap();
     }
     #[test]
+    fn scheduled_verify_waits_30_minutes_for_the_lock() {
+        assert_eq!((LOCK_TRIES - 1) * LOCK_INTERVAL.as_secs() as u32, 30 * 60);
+        let dir = std::env::temp_dir().join(format!("ssd-lock-wait-{}", std::process::id()));
+        let held = process_lock(&dir).unwrap();
+        let mut waits = 0;
+        assert!(wait_process_lock(&dir, 4, || waits += 1).unwrap().is_none());
+        assert_eq!(waits, 3);
+        drop(held);
+        let mut waits = 0;
+        assert!(wait_process_lock(&dir, 4, || waits += 1).unwrap().is_some());
+        assert_eq!(waits, 0);
+        std::fs::remove_file(dir.join("operation.lock")).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
     fn process_lock_does_not_treat_io_errors_as_busy() {
         let dir = std::env::temp_dir().join(format!("ssd-lock-error-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("operation.lock")).unwrap();
@@ -253,12 +296,23 @@ mod tests {
             source.to_string_lossy().into_owned(),
         ];
         let lock = process_lock(&dir).unwrap();
-        assert_eq!(headless(&args, &dir), 6);
+        let mut waits = 0;
+        assert_eq!(headless_with(&args, &dir, 3, || waits += 1), 6);
+        assert_eq!(waits, 2);
         assert_eq!(
             std::fs::read_to_string(dir.join("scheduled-verify-error.log")).unwrap(),
-            "Busy: another operation holds the lock."
+            BUSY_MESSAGE
         );
-        drop(lock);
+        // The other operation ends during the wait. Verify then runs.
+        let mut lock = Some(lock);
+        let mut waits = 0;
+        let code = headless_with(&args, &dir, LOCK_TRIES, || {
+            waits += 1;
+            if waits == 2 {
+                lock = None;
+            }
+        });
+        assert_eq!((code, waits), (5, 2));
         assert_eq!(headless(&args, &dir), 5);
         let outside = dir.join("scan-x-123.refresh.csv");
         std::fs::copy(&source, &outside).unwrap();

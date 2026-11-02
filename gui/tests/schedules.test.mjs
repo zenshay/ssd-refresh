@@ -67,9 +67,9 @@ test("task completion never claims that file data is safe", () => {
   assert.equal(taskResult({ ...task, lastRun: "" }), "Not run");
 });
 
-test("a busy task shows the lock and retry policy", () => {
+test("a busy task shows the lock wait and the manual step", () => {
   assert.equal(
     taskResult({ state: "Ready", lastRun: "2026-11-01", result: 6 }),
-    "Busy: another operation holds the lock. Windows can retry up to 3 times at 30-minute intervals.",
+    "Busy: another operation held the lock for 30 minutes. Run Verify manually.",
   );
 });

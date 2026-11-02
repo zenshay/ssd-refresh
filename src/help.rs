@@ -428,14 +428,16 @@ Exit codes (CLI and scheduled Verify):
   4 stopped.
   5 incomplete: the tool could not check all data or could not write
     the summary log.
-  6 busy: another operation holds the lock (scheduled Verify only).
+  6 busy: another operation held the lock for 30 minutes (scheduled
+    Verify only).
 
 Refresh and verify lock output files. A second writer returns code 1.
 Scan has no global operation lock. Refresh reserves its output before
 confirmation. The run removes its new empty output on an early return.
 It keeps existing files and files with any bytes.
-Scheduled tasks request 3 restarts after failure, 30 minutes apart.
-Recreate existing schedules to apply these settings.
+Scheduled Verify tries to get the lock each minute for 30 minutes.
+Windows does not run a task again after an exit code other than 0.
+Recreate existing schedules to get this wait.
 
 Scheduled Verify runs without administrator rights. It cannot check files
 that need those rights. Run Verify manually with administrator rights.
