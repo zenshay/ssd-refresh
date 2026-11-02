@@ -5,8 +5,11 @@
 ### Added
 
 - Add a slow-read simulation for Linux ext4 (`test/run-ext4-sim.sh`, `test/run-ext4-sim.ps1`). It uses device-mapper delay ranges in five scenarios. See `docs/simulation.md`.
+- Add `test/safety-compare.ps1`. It compares ssd-refresh and DiskFresh on a test VHDX: other writes during the run, a forced stop, and a removed disk. Administrator only. It does not touch other volumes.
 
 ### Fixed
+
+- Refresh stops when the volume is not available (exit code `4`). Before, a removed disk gave 1 `ERROR` and 200 or more `SKIP_MISSING` rows, and the exit code was `0`. Measured: 3 of 5 runs on an 8 GiB VHDX. Now the file of that moment gets `SKIP_CHECK`, and `--resume` tries it again.
 
 - Wording: refresh and verify say "New data is often fast at first", not "always". Refresh adds "A rewrite does not always make data fast" (simulation scenario C).
 - Wording: a speed change of less than 5% shows as "about the same speed", not "1.0 times slower" (CLI and GUI).
