@@ -129,3 +129,26 @@ Read the logs when a fixture or speed assertion fails before you infer a product
 The test proves behavior only for its generated data and measured conditions.
 Physical SSD retention tests still need hours or days and real hardware.
 Stopping the test triggers cleanup. A failed cleanup needs manual review of the printed image path.
+
+## Volume loss test
+
+`test/volume-loss-linux.sh` checks that refresh stops when its ext4 volume goes away.
+The script makes a new 2 GiB image and puts a 192 MiB file first in the scan list.
+After 48 MiB of reads on the loop device, it runs `umount -l`.
+The mount point folder stays, but it is on another device.
+Refresh must stop with exit code 4 and log only the large file, as `SKIP_CHECK`.
+Then the script mounts the image again and runs `--resume`.
+The large file must get `OK`. All SHA-256 values must match, and `e2fsck -fn` must return 0.
+
+Run it in Docker. The container needs privileged mode for the loop device:
+
+```powershell
+docker run --rm --privileged --mount "type=bind,source=F:\ssd-refresh\target\x86_64-unknown-linux-musl\release\ssd-refresh,target=/sim/cli,readonly" --mount "type=bind,source=F:\ssd-refresh\test,target=/sim/scripts,readonly" --mount "type=bind,source=F:\sim-reports\loss-001,target=/reports" alpine:3.20 sh -c "apk add -q --no-cache util-linux coreutils e2fsprogs && sh /sim/scripts/volume-loss-linux.sh /sim/cli /reports/run 5"
+```
+
+Measured on 2026-11-02 (Docker Desktop 29.8.2, Windows 10 19045 host):
+
+| Build | Result | Exit code | Rows before the stop |
+|---|---|---|---|
+| This fix | `VOLUME LOSS LINUX: 5 of 5 YES` | 4 in 5 of 5 | 1 |
+| Commit `c04ecbd` (checks only that the root exists) | `0 of 3 YES` | 0 in 3 of 3 | 11 (no stop) |

@@ -320,6 +320,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             ctl.clone(),
         );
         let root = vol.root.clone();
+        let root_at_start = root_device(&root).ok();
         let outcome = process_files(
             &todo,
             o.stop_after,
@@ -327,7 +328,7 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
             &prog,
             |path, log| r.process(path, log),
             |row| w.refresh_row(row.values(width)),
-            || std::fs::metadata(&root).is_ok(),
+            || root_at_start.is_some() && root_device(&root).ok() == root_at_start,
         )?;
         prog.finish();
 
@@ -369,6 +370,23 @@ pub fn run(o: &RefreshOptions, ctl: Arc<Control>) -> io::Result<RefreshOutcome> 
     })
 }
 
+/// The device of the volume root. After an unmount on Linux, the mount point folder can stay,
+/// but its device is different. On Windows, the root of a removed volume cannot be read, so the
+/// value is always 0.
+fn root_device(root: &Path) -> io::Result<u64> {
+    let meta = std::fs::metadata(root)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Ok(meta.dev())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = meta;
+        Ok(0)
+    }
+}
+
 /// The work closure includes all move handles and file operations.
 fn run_confirmed(
     dry_run: bool,
@@ -390,8 +408,7 @@ fn run_confirmed(
 /// Stop before the next file after a mismatch, a write error, a lost volume, or a stop request.
 /// `volume_ok` tells if the volume is still available. The tool calls it after a file that
 /// did not finish normally. Without this check, the files after a removed volume get
-/// SKIP_MISSING, and the run seems complete. On Linux, an empty mount point folder can stay
-/// after an unmount, so this check finds only a removed folder there.
+/// SKIP_MISSING, and the run seems complete.
 fn process_files(
     todo: &[(String, u64)],
     stop_after: usize,

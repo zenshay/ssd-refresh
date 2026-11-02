@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- Refresh stops when the volume is not available (exit code `4`). Before, a removed disk gave 1 `ERROR` and 200 or more `SKIP_MISSING` rows, and the exit code was `0`. Measured: 3 of 5 runs on an 8 GiB VHDX. Now the file of that moment gets `SKIP_CHECK`, and `--resume` tries it again.
+- Refresh stops when the volume is not available (exit code `4`). Before, a removed disk gave 1 `ERROR` and 200 or more `SKIP_MISSING` rows, and the exit code was `0`. Measured: 3 of 5 runs on an 8 GiB VHDX. Now the file of that moment gets `SKIP_CHECK`, and `--resume` tries it again. On Linux, the tool compares the device of the mount point, so an unmount with an empty mount point folder also stops the run. Tests: `safety-compare.ps1 -Run volume-loss` (Windows VHDX) and `test/volume-loss-linux.sh` (ext4 in Docker, 5 of 5 YES).
 
 - Wording: refresh and verify say "New data is often fast at first", not "always". Refresh adds "A rewrite does not always make data fast" (simulation scenario C).
 - Wording: a speed change of less than 5% shows as "about the same speed", not "1.0 times slower" (CLI and GUI).
