@@ -18,6 +18,15 @@ pub fn run() {
     if !startup::webview_ready() {
         std::process::exit(1);
     }
+    // Give old schedule plans the program of this app. The window does not wait for this.
+    if let (Some(local), Ok(exe)) = (std::env::var_os("LOCALAPPDATA"), std::env::current_exe()) {
+        std::thread::spawn(move || {
+            let root = std::path::PathBuf::from(local)
+                .join("com.ssdrefresh.app")
+                .join("scheduler");
+            let _ = schedule::update_plan_copies(&root, &exe, env!("CARGO_PKG_VERSION"));
+        });
+    }
     let result = tauri::Builder::default()
         .manage(state::AppState::default())
         .invoke_handler(tauri::generate_handler![

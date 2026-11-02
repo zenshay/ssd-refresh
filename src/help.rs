@@ -437,7 +437,8 @@ confirmation. The run removes its new empty output on an early return.
 It keeps existing files and files with any bytes.
 Scheduled Verify tries to get the lock each minute for 30 minutes.
 Windows does not run a task again after an exit code other than 0.
-Recreate existing schedules to get this wait.
+Each plan runs its own program copy. The app replaces older copies when it
+starts. Remove all schedules and copies before you delete the app.
 
 Scheduled Verify runs without administrator rights. It cannot check files
 that need those rights. Run Verify manually with administrator rights.

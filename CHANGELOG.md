@@ -8,7 +8,9 @@
 
 ### Fixed
 
-- Scheduled Verify waits for a busy lock: one try each minute for 30 minutes. Before, it returned code `6` at once, and Windows did not run it again. Task Scheduler restarts only tasks that cannot start, not tasks with exit code `6` (measured on Windows 10 19045). The GUI and README no longer say that Windows retries. Remove and create existing plans to get the wait.
+- Scheduled Verify waits for a busy lock: one try each minute for 30 minutes. Before, it returned code `6` at once, and Windows did not run it again. Task Scheduler restarts only tasks that cannot start, not tasks with exit code `6` (measured on Windows 10 19045). The GUI and README no longer say that Windows retries.
+- At each start, the GUI replaces the program copies of older schedule plans with its own version. Existing plans get new fixes without removal. A copy from a newer version or a copy that runs now stays.
+- The schedule panel says that tasks and app copies stay after you delete the app, and where the copies are. **Remove all schedules** is now **Remove all schedules and copies**. It is available also when no task is listed, to remove copies that have no task.
 - A new file with many small extents no longer shows as slow because of one late read request. Extents smaller than 4 MiB are measured together, in groups of 4 MiB or more. A group is slow if its total time is more than the sum of the limits of its extents. Extents of 4 MiB or more are measured alone, as before. CSV columns and CLI options do not change. Simulation scenario E now requires `fragmented_slow_default=0`.
 
 - Add exit code `5` for incomplete verify checks and failed summary-log writes. CLI and scheduled checks use the same codes.

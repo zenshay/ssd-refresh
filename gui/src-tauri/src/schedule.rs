@@ -32,6 +32,88 @@ fn try_process_lock(dir: &Path) -> Result<Option<std::fs::File>, String> {
     }
 }
 
+/// Beside each plan copy, this file records the app version of the copy.
+const COPY_VERSION_FILE: &str = "verify.version";
+
+/// The result of `update_plan_copies`.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct CopyUpdate {
+    pub updated: usize,
+    /// Copies that could not be replaced, for example because a verify runs now.
+    pub kept: usize,
+    /// Copies from a newer app version. They stay.
+    pub newer: usize,
+}
+
+fn parse_version(text: &str) -> (u64, u64, u64) {
+    let mut parts = text.trim().split('.').map(|p| p.parse().unwrap_or(0));
+    (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    )
+}
+
+fn plan_dirs(root: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| {
+            e.file_name().to_string_lossy().starts_with("plan-")
+                && e.file_type().is_ok_and(|t| t.is_dir() && !t.is_symlink())
+        })
+        .map(|e| e.path())
+        .collect()
+}
+
+/// Replaces the program copy of each plan with the running app, so old plans get new fixes.
+/// A copy from a newer version stays. A copy that Windows runs now stays until the next start.
+/// The new program goes to a temporary file first. A rename then replaces the copy in one step.
+pub fn update_plan_copies(
+    root: &Path,
+    current_exe: &Path,
+    version: &str,
+) -> Result<CopyUpdate, String> {
+    let mut done = CopyUpdate::default();
+    // Do not create the folder for a user without plans.
+    if !root.is_dir() {
+        return Ok(done);
+    }
+    // A schedule change in progress owns the folder. Try again at the next start.
+    let Some(_lock) = try_process_lock(root)? else {
+        return Ok(done);
+    };
+    let current = std::fs::read(current_exe).map_err(|e| e.to_string())?;
+    let new = parse_version(version);
+    for plan in plan_dirs(root) {
+        let copy = plan.join("verify.exe");
+        if !copy.is_file() {
+            continue;
+        }
+        let old = std::fs::read_to_string(plan.join(COPY_VERSION_FILE))
+            .map_or((0, 0, 0), |v| parse_version(&v));
+        if old > new {
+            done.newer += 1;
+            continue;
+        }
+        if old == new && std::fs::read(&copy).is_ok_and(|b| b == current) {
+            continue;
+        }
+        let temp = plan.join("verify.exe.new");
+        let replaced = std::fs::write(&temp, &current).and_then(|()| std::fs::rename(&temp, &copy));
+        if replaced.is_ok() {
+            let _ = std::fs::write(plan.join(COPY_VERSION_FILE), version);
+            done.updated += 1;
+        } else {
+            let _ = std::fs::remove_file(&temp);
+            done.kept += 1;
+        }
+    }
+    Ok(done)
+}
+
 #[cfg(windows)]
 pub fn manage(
     dir: &Path,
@@ -72,7 +154,10 @@ pub fn manage(
         std::fs::create_dir(&plan).map_err(|e| e.to_string())?;
         let runner = plan.join("verify.exe");
         if let Err(e) = std::fs::copy(std::env::current_exe().map_err(|e| e.to_string())?, &runner)
+            .and_then(|_| std::fs::write(plan.join(COPY_VERSION_FILE), env!("CARGO_PKG_VERSION")))
         {
+            let _ = std::fs::remove_file(&runner);
+            let _ = std::fs::remove_file(plan.join(COPY_VERSION_FILE));
             let _ = std::fs::remove_dir(&plan);
             return Err(e.to_string());
         }
@@ -86,6 +171,7 @@ pub fn manage(
     if !success {
         if let Some((runner, plan)) = copied {
             let _ = std::fs::remove_file(runner);
+            let _ = std::fs::remove_file(plan.join(COPY_VERSION_FILE));
             let _ = std::fs::remove_dir(plan);
         }
     }
@@ -95,18 +181,14 @@ pub fn manage(
     }
     if operation == "remove" {
         // Keep a copy that Windows still uses. Never traverse another folder.
-        for entry in std::fs::read_dir(&root)
-            .map_err(|e| e.to_string())?
-            .flatten()
-        {
-            if entry.file_name().to_string_lossy().starts_with("plan-")
-                && entry
-                    .file_type()
-                    .is_ok_and(|t| t.is_dir() && !t.is_symlink())
-            {
-                let _ = std::fs::remove_file(entry.path().join("verify.exe"));
-                let _ = std::fs::remove_dir(entry.path());
+        for plan in plan_dirs(&root) {
+            let copy = plan.join("verify.exe");
+            let _ = std::fs::remove_file(&copy);
+            if !copy.exists() {
+                let _ = std::fs::remove_file(plan.join(COPY_VERSION_FILE));
+                let _ = std::fs::remove_file(plan.join("verify.exe.new"));
             }
+            let _ = std::fs::remove_dir(&plan);
         }
     }
     serde_json::from_slice(&output.stdout)
@@ -254,6 +336,72 @@ mod tests {
         assert_eq!(waits, 0);
         std::fs::remove_file(dir.join("operation.lock")).unwrap();
         std::fs::remove_dir(dir).unwrap();
+    }
+    #[test]
+    fn startup_replaces_old_plan_copies_only() {
+        let root = std::env::temp_dir().join(format!("ssd-copies-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let plan = |name: &str, exe: &[u8], version: Option<&str>| {
+            let dir = root.join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("verify.exe"), exe).unwrap();
+            if let Some(v) = version {
+                std::fs::write(dir.join(COPY_VERSION_FILE), v).unwrap();
+            }
+            dir
+        };
+        let old = plan("plan-1", b"old", None);
+        let newer = plan("plan-2", b"future", Some("9.0.0"));
+        let same = plan("plan-3", b"app", Some("1.2.0"));
+        // A folder in place of the copy is not a copy. The update skips it.
+        let stuck = root.join("plan-4");
+        std::fs::create_dir_all(stuck.join("verify.exe")).unwrap();
+        // A copy that cannot be replaced (here: the temporary name is in use) stays.
+        let busy = plan("plan-5", b"old", Some("1.1.1"));
+        std::fs::create_dir(busy.join("verify.exe.new")).unwrap();
+        std::fs::create_dir_all(root.join("other")).unwrap();
+        std::fs::write(root.join("other/verify.exe"), b"other").unwrap();
+        let app = root.join("app.exe");
+        std::fs::write(&app, b"app").unwrap();
+
+        let done = update_plan_copies(&root, &app, "1.2.0").unwrap();
+        assert_eq!(
+            done,
+            CopyUpdate {
+                updated: 1,
+                kept: 1,
+                newer: 1
+            }
+        );
+        assert_eq!(std::fs::read(old.join("verify.exe")).unwrap(), b"app");
+        assert_eq!(
+            std::fs::read_to_string(old.join(COPY_VERSION_FILE)).unwrap(),
+            "1.2.0"
+        );
+        assert!(!old.join("verify.exe.new").exists());
+        assert_eq!(std::fs::read(newer.join("verify.exe")).unwrap(), b"future");
+        assert_eq!(std::fs::read(same.join("verify.exe")).unwrap(), b"app");
+        assert_eq!(std::fs::read(busy.join("verify.exe")).unwrap(), b"old");
+        assert_eq!(
+            std::fs::read(root.join("other/verify.exe")).unwrap(),
+            b"other"
+        );
+        // The second start has nothing to do.
+        let again = update_plan_copies(&root, &app, "1.2.0").unwrap();
+        assert_eq!((again.updated, again.newer), (0, 1));
+        std::fs::remove_dir_all(&root).unwrap();
+        // No folder: nothing happens and no folder is created.
+        assert_eq!(
+            update_plan_copies(&root, &app, "1.2.0").unwrap(),
+            CopyUpdate::default()
+        );
+        assert!(!root.exists());
+    }
+    #[test]
+    fn versions_compare_as_numbers() {
+        assert!(parse_version("1.10.0") > parse_version("1.9.9"));
+        assert_eq!(parse_version("1.1.1\n"), (1, 1, 1));
+        assert_eq!(parse_version("bad"), (0, 0, 0));
     }
     #[test]
     fn process_lock_does_not_treat_io_errors_as_busy() {
