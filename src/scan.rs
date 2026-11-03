@@ -853,13 +853,17 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
                 agree(links, "is a name", "are names")
             ));
         }
+        text.push(
+            "This is a limit of the tool and of the file system. These files are not damaged. You do not have to do anything."
+                .into(),
+        );
         ctl.paragraph(4, &text.join(" "));
     }
     if result.error_files > 0 {
         let (in_use, gone) = (result.in_use_files as u64, result.gone_files as u64);
         let other = result.error_files as u64 - in_use - gone;
         ctl.message(&format!(
-            "  Not read: {}. The scan does not write to files. Thus it did not damage these files.",
+            "  Not read: {}. This is normal.",
             fmt_count(result.error_files as u64)
         ));
         let mut text = Vec::new();
@@ -882,14 +886,14 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
             ));
         }
         text.push(
-            "The column error of the report gives the cause of each file. A new scan reads these files again."
+            "This is a limit of the programs and the hardware at the time of the scan. The scan does not write to files. These files are not damaged. You do not have to do anything. The column error of the report gives the cause of each file."
                 .into(),
         );
         ctl.paragraph(4, &text.join(" "));
     }
     if result.slow_files.is_empty() {
         ctl.message("");
-        ctl.message("No file is slow. You do not have to refresh files.");
+        ctl.message("Result: no file is slow. You do not have to do anything.");
         return;
     }
     let shown = result.slow_files.len().min(10);
@@ -919,6 +923,11 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
             "The rows with slow = 1 in the report give all slow files.",
         );
     }
+    ctl.message("");
+    ctl.message(&format!(
+        "Result: {} slow. Only the slow files need a refresh. The other files need no action.",
+        agree_count(result.slow_total as u64, "file is", "files are")
+    ));
     ctl.cli_note(
         0,
         &format!(

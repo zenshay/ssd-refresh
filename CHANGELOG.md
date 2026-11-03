@@ -8,6 +8,7 @@
 
 ### Changed
 
+- The scan summary ends with a `Result` line. It says that only slow files need a refresh. For `No speed` and `Not read` files, it says that they are limits of the tool, the programs and the hardware, that the files are not damaged, and that you do not have to do anything.
 - The scan summary gives the causes. `No speed` replaces `Not measured`: the files are too small, empty, compressed, links, or more names of a file. `Not read` replaces `Errors`: it counts files in use by another program, files deleted during the scan, and other causes. The scan does not write to files.
 - The scan summary lists the slow files with the speed of the slowest part, the slow data, the file size and the round 3 result. The path is on its own line. When files are slow, the summary gives the `refresh --from` command.
 - The progress line says `not read` in place of `errors`. The time shows units and a label: `left 17 min 20 s, end time 11:05`. The narrow form shows `left 17m20s`. The wide form needs 96 columns (before: 90).
