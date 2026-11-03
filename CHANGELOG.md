@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 1.2.1 — 2026-11-03
+
+### Fixed
+
+- Scan: a file is slow only after a slow read in step 3. Before, when the step 3 read failed (the file was deleted or in use), the file kept `slow = 1` from step 2. On a 254 GB system drive, 20 of 21 slow files had this cause.
+- GUI: the scan notice said "with normal read speeds" for all files. Files without a speed and files that the scan could not read were in that count.
+
+### Changed (check your scripts)
+
+- The scan summary and the progress line use new words. A script that reads this text must change: `No speed` replaces `Not measured`, `Not read` replaces `Errors`, and the progress line says `not read` in place of `errors`. The CSV report columns and the exit codes do not change.
+
 ### Added
 
 - `safety-compare.ps1 -Run cost` (R3): compare the cost of ssd-refresh and DiskFresh when 10% of the files are slow. It uses a fixed 16 GiB VHDX with 5.75 GiB of data and a new differencing VHDX for each round. Measured on 2026-11-02 (3 rounds each): ssd-refresh scan 27–28 s plus refresh 11–14 s, 657 MB written; DiskFresh 32–36 s, 16,367 MB written.
@@ -14,11 +25,6 @@
 - The progress line says `not read` in place of `errors`. The time shows units and a label: `left 17 min 20 s, end time 11:05`. The narrow form shows `left 17m20s`. The wide form needs 96 columns (before: 90).
 - GUI: the scan notice gives the count of measured files, not only the count of all files. When no file is slow, it gives the `No speed` and `Not read` counts, says that these files are not damaged, and says that you do not have to do anything. When files are slow, it says that only the slow files need a rewrite. The notice stays one paragraph, so the slow files table keeps its height.
 - GUI: the slow files table shows the speed of the slowest part of each file, the same speed as the command line summary.
-
-### Fixed
-
-- GUI: the scan notice said "with normal read speeds" for all files. Files without a speed and files that the scan could not read were in that count.
-- Scan: a file is slow only after a slow read in step 3. Before, when the step 3 read failed (the file was deleted or in use), the file kept `slow = 1` from step 2. On a 254 GB system drive, 20 of 21 slow files had this cause.
 
 ## 1.2.0 — 2026-11-02
 
