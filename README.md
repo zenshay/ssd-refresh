@@ -402,8 +402,8 @@ The tool writes the line again at the same place. The line fits the width of the
 Step 2:
 
 ```
-12.3%  35.2G of 290G  245 MB/s  check 17  errors 0  left 17m20s (done ~11:05)
-12.3% 35.2G/290G 245MB/s chk 17 17m20s
+12.3%  35.2G of 290G  245 MB/s  check 17  not read 0  left 17 min 20 s, end time 11:05
+12.3% 35.2G/290G 245MB/s chk 17 left 17m20s
 ```
 
 | Field | Meaning |
@@ -412,15 +412,16 @@ Step 2:
 | `35.2G of 290G` | Bytes read / all bytes to read (1G = 10^9 bytes) |
 | `245 MB/s` | The average speed since the start of step 2 |
 | `check 17` | Files on the check list. This is not the result |
-| `errors 0` | Files that the scan could not open or read |
-| `left` | The time until the end at the average speed, and the clock time at the end |
+| `not read 0` | Files that the scan could not open or read. Usually another program used or deleted the file. The scan does not write to files, so these files are not damaged |
+| `left` | The time until the end at the average speed (`h` = hours, `min` = minutes, `s` = seconds) |
+| `end time` | The clock time at the end (hour:minute) |
 
 Folders with many small files make the percentage go up slowly. Small files have few bytes, but the scan must open each file.
 
 Step 3:
 
 ```
-Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
+Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2 min 10 s, end time 11:20
 ```
 
 `slow` counts the files in this round that are still slow. Round 3 shows `Check after the wait` in place of `Check again`.
@@ -468,7 +469,7 @@ Why the second read at once: when a program opens a file, an antivirus program (
 Progress line:
 
 ```
-Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3m20s
+Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3 min 20 s, end time 11:30
 ```
 
 `moved` includes `changed`. `skipped`: not slow now, cannot move, not found, or dry run.

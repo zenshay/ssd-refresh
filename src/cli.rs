@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 const MIN_WIDTH: usize = 2;
 const FALLBACK_WIDTH: usize = 48;
-const VERBOSE_WIDTH: usize = 90;
+const VERBOSE_WIDTH: usize = 96;
 
 pub fn exit_code(status: RunStatus) -> i32 {
     status.exit_code()
@@ -153,7 +153,7 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
     }
     let of_files = noun(update.total_files, "file");
     if update.stage == Stage::Settle {
-        return format!("Wait {} s", update.eta_secs.unwrap_or(0));
+        return format!("Wait: {} s left", update.eta_secs.unwrap_or(0));
     }
     let phase = match update.stage {
         Stage::Read => Phase::Scan,
@@ -175,7 +175,7 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
     match (phase, verbose) {
             (Phase::Find, _) => format!("Found {f} {}, {}", noun(f, "file"), fmt_bytes(b)),
             (Phase::Scan, true) => format!(
-                "{}{pct:5.1}%  {} of {}  {rate:.0} MB/s  check {}  errors {}  {eta}",
+                "{}{pct:5.1}%  {} of {}  {rate:.0} MB/s  check {}  not read {}  {eta}",
                 if paused { "PAUSED  " } else { "" },
                 fmt_bytes(b),
                 fmt_bytes(update.total_bytes),
@@ -253,22 +253,28 @@ fn line(update: &ProgressUpdate, verbose: bool) -> String {
         }
 }
 
-/// "left 1h18m (done ~10:55)" in the wide form, "1h18m" in the short form.
+/// "left 1 h 18 min, end time 10:55" in the wide form, "left 1h18m" in the short form.
 fn eta(seconds: Option<u64>, verbose: bool) -> String {
     let Some(s) = seconds else {
         return String::new();
     };
-    let short = if s >= 3600 {
-        format!("{}h{:02}m", s / 3600, s / 60 % 60)
-    } else {
-        format!("{}m{:02}s", s / 60, s % 60)
-    };
     if !verbose {
-        return short;
+        return if s >= 3600 {
+            format!("left {}h{:02}m", s / 3600, s / 60 % 60)
+        } else {
+            format!("left {}m{:02}s", s / 60, s % 60)
+        };
     }
+    let long = if s >= 3600 {
+        format!("{} h {:02} min", s / 3600, s / 60 % 60)
+    } else if s >= 60 {
+        format!("{} min {:02} s", s / 60, s % 60)
+    } else {
+        format!("{s} s")
+    };
     match sys::local_clock_after(s) {
-        Some(at) => format!("left {short} (done ~{at})"),
-        None => format!("left {short}"),
+        Some(at) => format!("left {long}, end time {at}"),
+        None => format!("left {long}"),
     }
 }
 
