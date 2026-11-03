@@ -18,6 +18,9 @@ import { mutationStatus } from "./mutation-status.mjs";
 const scan = (root) => ({
   reportPath: `${root}-synthetic.csv`,
   totalFiles: 10,
+  measuredFiles: 10,
+  skippedFiles: 0,
+  errorFiles: 0,
   slowTotal: 2,
   fastAfterWait: 0,
   stillSlowAfterWait: 0,
@@ -717,11 +720,74 @@ test("the scan notice does not offer a locked Step 2", async () => {
   };
   assert.match(
     await run({}),
-    /Step 2 can rewrite only the slow files safely\./,
+    /Only the slow files need a rewrite\. Step 2 can rewrite them safely\./,
   );
   const locked = await run({ elevated: false });
   assert.match(locked, /Step 2 is locked\. Needs administrator rights\./);
   assert.doesNotMatch(locked, /Step 2 can rewrite/);
+});
+
+test("the scan notice counts only measured files and says that no action is needed", async () => {
+  const run = async (patch) => {
+    const store = createStore({
+      ...initialState,
+      volumes: [volume("X:")],
+      selectedRoots: ["X:"],
+      elevated: true,
+    });
+    const result = { ...scan("X:"), ...patch };
+    await createActions(
+      store,
+      async () => true,
+      backend({ startScan: async () => result }),
+    ).runScan();
+    return store.get().notice;
+  };
+  const clean = await run({
+    totalFiles: 600,
+    measuredFiles: 280,
+    skippedFiles: 300,
+    errorFiles: 20,
+    slowTotal: 0,
+    stillSlowAfterWait: 0,
+  });
+  assert.equal(clean.kind, "ok");
+  assert.equal(
+    clean.body,
+    [
+      "Measured 280 of 600 files across 1 drive.",
+      "No speed: 300. Not read: 20. This is normal. These files are not damaged. The Diagnostics log gives the causes.",
+      "No file is slow. You do not have to do anything.",
+    ].join("\n"),
+  );
+  assert.doesNotMatch(clean.body, /normal read speeds/);
+
+  // Without files that have no result, the notice has no line for them.
+  const all = await run({ slowTotal: 0, stillSlowAfterWait: 0 });
+  assert.doesNotMatch(all.body, /No speed|Not read/);
+  const onlyNotRead = await run({
+    measuredFiles: 9,
+    errorFiles: 1,
+    slowTotal: 0,
+    stillSlowAfterWait: 0,
+  });
+  assert.match(onlyNotRead.body, /\nNot read: 1\. This is normal\./);
+
+  const waited = await run({ slowTotal: 2, fastAfterWait: 2 });
+  assert.equal(waited.title, "No file stays slow");
+  assert.match(
+    waited.body,
+    /No file needs a rewrite\. You do not have to do anything\.$/,
+  );
+
+  const slow = await run({ errorFiles: 1 });
+  assert.equal(slow.kind, "warn");
+  assert.match(
+    slow.body,
+    /^Measured 10 of 10 files across 1 drive\. Only the slow files need a rewrite\./,
+  );
+  assert.doesNotMatch(slow.body, /\n/);
+  assert.doesNotMatch(slow.body, /You do not have to do anything/);
 });
 
 test("refresh with error files is a warning, not a success", async () => {

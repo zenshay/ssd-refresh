@@ -70,6 +70,9 @@ const demo = {
   scan: {
     reportPath: "D:\\ssd-refresh-logs\\scan-D-demo.csv",
     totalFiles: 48213,
+    measuredFiles: 19107,
+    skippedFiles: 29094,
+    errorFiles: 12,
     slowTotal: 5,
     fastAfterWait: 0,
     stillSlowAfterWait: 5,
@@ -83,6 +86,7 @@ const demo = {
       path,
       size: Math.round(size),
       mbps,
+      minMbps: mbps,
       fastAfterWait: false,
     })),
     stopped: false,

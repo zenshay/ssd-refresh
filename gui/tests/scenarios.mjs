@@ -27,6 +27,9 @@ const refreshed = refreshedAgo(21 * DAY);
 const scanOf = (root, slow, total) => ({
   reportPath: `${root}ssd-refresh-logs\\scan-${root[0]}-synthetic.csv`,
   totalFiles: total,
+  measuredFiles: Math.round(total * 0.4),
+  skippedFiles: total - Math.round(total * 0.4) - 3,
+  errorFiles: 3,
   slowTotal: slow,
   fastAfterWait: 0,
   stillSlowAfterWait: slow,
@@ -34,6 +37,7 @@ const scanOf = (root, slow, total) => ({
     path: `${root}Photos\\${2016 + (i % 5)}\\IMG_${String(4000 + i).padStart(5, "0")}.jpg`,
     size: 2_000_000 + ((i * 7919) % 9_000_000),
     mbps: 5 + ((i * 37) % 55),
+    minMbps: 2 + ((i * 37) % 20),
     fastAfterWait: false,
   })),
   stopped: false,

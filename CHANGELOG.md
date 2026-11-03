@@ -12,9 +12,12 @@
 - The scan summary gives the causes. `No speed` replaces `Not measured`: the files are too small, empty, compressed, links, or more names of a file. `Not read` replaces `Errors`: it counts files in use by another program, files deleted during the scan, and other causes. The scan does not write to files.
 - The scan summary lists the slow files with the speed of the slowest part, the slow data, the file size and the round 3 result. The path is on its own line. When files are slow, the summary gives the `refresh --from` command.
 - The progress line says `not read` in place of `errors`. The time shows units and a label: `left 17 min 20 s, end time 11:05`. The narrow form shows `left 17m20s`. The wide form needs 96 columns (before: 90).
+- GUI: the scan notice gives the count of measured files, not only the count of all files. When no file is slow, it gives the `No speed` and `Not read` counts, says that these files are not damaged, and says that you do not have to do anything. When files are slow, it says that only the slow files need a rewrite. The notice stays one paragraph, so the slow files table keeps its height.
+- GUI: the slow files table shows the speed of the slowest part of each file, the same speed as the command line summary.
 
 ### Fixed
 
+- GUI: the scan notice said "with normal read speeds" for all files. Files without a speed and files that the scan could not read were in that count.
 - Scan: a file is slow only after a slow read in step 3. Before, when the step 3 read failed (the file was deleted or in use), the file kept `slow = 1` from step 2. On a 254 GB system drive, 20 of 21 slow files had this cause.
 
 ## 1.2.0 — 2026-11-02
