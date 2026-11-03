@@ -19,7 +19,24 @@
 
 </div>
 
-**Old files read slowly? Start with a read-only scan.**
+**Your PC freezes. Task Manager shows 100% disk, but the SSD reads only 1 MB/s? Start with a read-only scan.**
+
+## Does your PC freeze?
+
+<p align="center">
+  <img src="docs/images/task-manager-stall.png" width="480" alt="Windows Task Manager showing 100% disk active time, 50 ms response time, but only 1 MB/s throughput on an SSD.">
+</p>
+<p align="center"><sub>The problem that started this project: drive C: (Crucial BX500 480 GB) at 100% active time, 49.8 ms response time, 1.0 MB/s read.</sub></p>
+
+Do you see these signs?
+
+- Programs and games stop for some seconds when they open or load.
+- Task Manager shows **100% active time** for the disk, but the read speed is only about **1 MB/s**.
+- The SSD health (SMART) still shows "Good".
+
+Then old files on the SSD can be the cause. Stored charge fades inside the SSD, and old data reads slowly.
+ssd-refresh finds the slow files and reads them.
+Reading may trigger internal work in an SSD. Measure your own drive; results are not guaranteed.
 
 <p align="center">
   <img src="docs/images/qwen/step1.png" width="49%" alt="Step 1: a monitor shows CrystalDiskMark with Good 100% health on the left and Task Manager with Disk 100% on the right.">
@@ -28,7 +45,7 @@
   <img src="docs/images/qwen/step4.png" width="49%" alt="Step 4: a monitor with a fast speed gauge and a check mark. Files read fast again.">
 </p>
 
-Results depend on the drive.
+Results depend on the drive. The pictures show a possible result.
 
 ## At a glance
 
@@ -50,14 +67,6 @@ flowchart TD
     D -- "YES" --> E["3. Back up.<br>refresh."]
     E --> F["4. verify after<br>1, 7 and 30 days."]
 ```
-
-## Does your PC freeze?
-
-Windows may show **100% disk use**, but reads reach only **1 MB/s**.
-Old files can cause this problem when stored charge fades inside the SSD.
-ssd-refresh finds slow files and reads them.
-Reading may trigger internal work in an SSD. Measure your own drive; results are not guaranteed.
-Results depend on the drive. The diagram shows a possible result.
 
 ## Download and start
 
@@ -156,8 +165,6 @@ Flash cells lose charge, and the drive must correct many errors. Windows Optimiz
 
 <details>
 <summary>Read the full explanation</summary>
-
-<img src="docs/images/task-manager-stall.png" width="360" alt="Windows Task Manager showing 100% disk active time, 50 ms response time, but only 1 MB/s throughput on an SSD.">
 
 #### The Problem
 Your SSD SMART health says "100% Good". But your computer freezes when you open programs or start games. Windows Task Manager shows **100% disk active time**, but the read speed is only **1 MB/s**.
