@@ -32,6 +32,8 @@ pub struct SlowFile {
     pub path: String,
     pub size: u64,
     pub mbps: f64,
+    /// The speed of the slowest extent. None = not in the report.
+    pub min_mbps: Option<f64>,
     pub slow_bytes: u64,
     /// Step 3, round 3: Some(false) = fast after the wait. None = not read after the wait.
     pub after_wait_slow: Option<bool>,
@@ -42,8 +44,15 @@ pub struct ScanOutcome {
     pub status: RunStatus,
     pub total_files: usize,
     pub measured_files: usize,
+    /// Files without a speed: too small, empty, compressed, links and more hard links.
     pub skipped_files: usize,
+    /// Of the skipped files: more names of a file that the scan read one time only.
+    pub dup_link_files: usize,
     pub error_files: usize,
+    /// Of the error files: another program used the file at that time.
+    pub in_use_files: usize,
+    /// Of the error files: the file was deleted during the scan.
+    pub gone_files: usize,
     pub slow_total: usize,
     pub slow_file_bytes: u64,
     pub slow_bytes: u64,

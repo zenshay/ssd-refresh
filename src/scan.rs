@@ -373,7 +373,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
         let mut round_start = Instant::now();
         for round in 1..=2u8 {
             let todo: Vec<usize> = (0..to_check.len())
-                .filter(|&i| to_check[i].1.is_slow())
+                .filter(|&i| to_check[i].0.slow)
                 .collect();
             if todo.is_empty() || stopped {
                 break;
@@ -427,7 +427,7 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
                 }
             }
             prog.finish();
-            let still = to_check.iter().filter(|s| s.1.is_slow()).count();
+            let still = to_check.iter().filter(|s| s.0.slow).count();
             ctl.message(&format!(
                 "  Round {round} finished in {}. Slow files: {}.",
                 fmt_duration(round_start.elapsed()),
@@ -484,9 +484,9 @@ pub fn run(o: &ScanOptions, ctl: Arc<Control>) -> io::Result<ScanOutcome> {
 fn fmt_duration(d: Duration) -> String {
     let s = d.as_secs();
     if s >= 3600 {
-        format!("{}h {:02}m", s / 3600, s / 60 % 60)
+        format!("{} h {:02} min", s / 3600, s / 60 % 60)
     } else if s >= 60 {
-        format!("{}m {:02}s", s / 60, s % 60)
+        format!("{} min {:02} s", s / 60, s % 60)
     } else {
         format!("{:.1} s", d.as_secs_f64())
     }
@@ -521,8 +521,10 @@ impl Row {
             kind: self.kind.clone(),
             status: self.status.clone(),
             mbps: self.mbps,
+            min_mbps: self.min_mbps,
             slow: self.slow,
             slow_bytes: self.slow_bytes,
+            error: self.error.clone(),
             after_wait_slow: self.after_wait_slow,
         }
     }
@@ -573,7 +575,7 @@ fn after_wait_round(
     ctl: &Arc<Control>,
 ) -> bool {
     let todo: Vec<usize> = (0..to_check.len())
-        .filter(|&i| to_check[i].1.is_slow())
+        .filter(|&i| to_check[i].0.slow)
         .collect();
     if o.after_wait.is_zero() || todo.is_empty() {
         return false;
@@ -728,14 +730,31 @@ fn recheck(
         row.kind = Kind::classify(&m, &l).name().into();
         Ok(res)
     })();
-    match r {
+    finish_recheck(row, first, r, &o.read);
+}
+
+/// Step 3: put the result of one more read into the row.
+fn finish_recheck(
+    row: &mut Row,
+    first: &mut ReadResult,
+    second: io::Result<ReadResult>,
+    opt: &ReadOptions,
+) {
+    let failed = match second {
         Ok(second) => {
-            first.keep_faster(&second, &o.read);
+            first.keep_faster(&second, opt);
             row.confirmed = true;
+            None
         }
-        Err(e) => row.error = format!("the second read failed: {e}"),
-    }
+        Err(e) => Some(format!("the second read failed: {e}")),
+    };
     let _ = fill_result(row, first);
+    if let Some(e) = failed {
+        // Only a slow read in step 3 makes a file slow. Without that read, the file is not slow.
+        row.error = e;
+        row.slow = false;
+        row.slow_bytes = 0;
+    }
 }
 
 /// Step 2 for one file. If the file goes on the check list, it also gives the read result.
@@ -799,8 +818,8 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
     ));
     ctl.message(&format!(
         "  Slow files: {}, {} in total",
-        result.slow_total,
-        fmt_bytes(result.slow_file_bytes)
+        fmt_count(result.slow_total as u64),
+        fmt_size(result.slow_file_bytes)
     ));
     if result.fast_after_wait + result.still_slow_after_wait > 0 {
         ctl.message(&format!(
@@ -811,23 +830,156 @@ pub fn report_summary(result: &ScanOutcome, path: &Path, threshold: f64, ctl: &C
     }
     ctl.message(&format!(
         "  Slow data: {} (slower than {threshold} MB/s)",
-        fmt_bytes(result.slow_bytes)
+        fmt_size(result.slow_bytes)
     ));
-    ctl.message(&format!("  Not measured: {}", result.skipped_files));
-    ctl.message(&format!("  Errors: {}", result.error_files));
-    for file in result.slow_files.iter().take(10) {
+    if result.skipped_files > 0 {
         ctl.message(&format!(
-            "    {:7.1} MB/s  {:>6}  {}",
-            file.mbps,
-            fmt_bytes(file.slow_bytes),
-            file.path
+            "  No speed: {}. This is normal.",
+            fmt_count(result.skipped_files as u64)
         ));
+        let small = (result.skipped_files - result.dup_link_files) as u64;
+        let links = result.dup_link_files as u64;
+        let mut text = Vec::new();
+        if small > 0 {
+            text.push(format!(
+                "{} too small, empty, compressed or a link. The tool cannot measure the speed of such files.",
+                agree_count(small, "file is", "files are")
+            ));
+        }
+        if links > 0 {
+            text.push(format!(
+                "{} more {} of files that the scan read one time.",
+                fmt_count(links),
+                agree(links, "is a name", "are names")
+            ));
+        }
+        ctl.paragraph(4, &text.join(" "));
+    }
+    if result.error_files > 0 {
+        let (in_use, gone) = (result.in_use_files as u64, result.gone_files as u64);
+        let other = result.error_files as u64 - in_use - gone;
+        ctl.message(&format!(
+            "  Not read: {}. The scan does not write to files. Thus it did not damage these files.",
+            fmt_count(result.error_files as u64)
+        ));
+        let mut text = Vec::new();
+        if in_use > 0 {
+            text.push(format!(
+                "Another program used {} at that time.",
+                count_of(in_use, "file")
+            ));
+        }
+        if gone > 0 {
+            text.push(format!(
+                "{} deleted during the scan.",
+                agree_count(gone, "file was", "files were")
+            ));
+        }
+        if other > 0 {
+            text.push(format!(
+                "{} had another cause.",
+                agree_count(other, "file", "files")
+            ));
+        }
+        text.push(
+            "The column error of the report gives the cause of each file. A new scan reads these files again."
+                .into(),
+        );
+        ctl.paragraph(4, &text.join(" "));
+    }
+    if result.slow_files.is_empty() {
+        ctl.message("");
+        ctl.message("No file is slow. You do not have to refresh files.");
+        return;
+    }
+    let shown = result.slow_files.len().min(10);
+    ctl.message("");
+    ctl.message(&format!(
+        "Slow files: {shown} of {}, the files that stay slow after the wait first",
+        fmt_count(result.slow_total as u64)
+    ));
+    for (n, file) in result.slow_files.iter().take(shown).enumerate() {
+        let wait = match file.after_wait_slow {
+            Some(true) => ", still slow after the wait",
+            Some(false) => ", fast after the wait",
+            None => "",
+        };
+        ctl.message(&format!(
+            "  {}. Slowest part: {:.1} MB/s. Slow data: {} of {}{wait}.",
+            n + 1,
+            file.min_mbps.unwrap_or(file.mbps),
+            fmt_size(file.slow_bytes),
+            fmt_size(file.size),
+        ));
+        ctl.message(&format!("     {}", file.path));
+    }
+    if result.slow_total > shown {
+        ctl.paragraph(
+            2,
+            "The rows with slow = 1 in the report give all slow files.",
+        );
+    }
+    ctl.cli_note(
+        0,
+        &format!(
+            "To refresh the slow files, run: ssd-refresh refresh --from \"{}\"",
+            path.display()
+        ),
+    );
+}
+
+/// "1 file was" or "3 files were".
+fn agree_count(n: u64, one: &'static str, many: &'static str) -> String {
+    format!("{} {}", fmt_count(n), agree(n, one, many))
+}
+
+/// A size with its unit for the summary: "512 KB", "8.7 MB", "7.7 GB" (1 KB = 1000 bytes).
+fn fmt_size(b: u64) -> String {
+    let v = b as f64;
+    if v >= 1e9 {
+        format!("{:.1} GB", v / 1e9)
+    } else if v >= 1e6 {
+        format!("{:.1} MB", v / 1e6)
+    } else {
+        format!("{:.0} KB", (v / 1e3).ceil())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_is_not_slow_if_the_second_read_fails() {
+        let mut row = Row {
+            size: 8192,
+            status: "OK".into(),
+            ..Default::default()
+        };
+        let mut first = ReadResult {
+            file_bytes: 8192,
+            disk_bytes: 8192,
+            disk_secs: 1.0,
+            sha256: Some([7; 32]),
+            extents: vec![crate::reader::ExtentTiming {
+                bytes: 8192,
+                secs: 1.0,
+                slow: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let gone = io::Error::from(io::ErrorKind::NotFound);
+        finish_recheck(&mut row, &mut first, Err(gone), &ReadOptions::default());
+        assert_eq!(row.status, "OK");
+        assert!(!row.slow);
+        assert_eq!(row.slow_bytes, 0);
+        assert!(!row.confirmed);
+        assert!(row.error.starts_with("the second read failed"));
+        let mut outcome = ScanOutcome::default();
+        outcome.record(&row.record());
+        assert_eq!(outcome.slow_total, 0);
+    }
 
     #[test]
     fn cached_scan_results_are_not_fast_or_slow_measurements() {

@@ -11,8 +11,11 @@ pub struct ScanRecord {
     pub kind: String,
     pub status: String,
     pub mbps: f64,
+    /// The speed of the slowest extent. None = not measured.
+    pub min_mbps: Option<f64>,
     pub slow: bool,
     pub slow_bytes: u64,
+    pub error: String,
     /// Step 3, round 3: Some(true) = still slow after the wait, Some(false) = fast after the
     /// wait, None = not read in round 3 (or an old report without this column)
     pub after_wait_slow: Option<bool>,
@@ -102,8 +105,13 @@ impl ScanRecord {
             kind: kind.into(),
             status: status.into(),
             mbps,
+            min_mbps: row
+                .get("min_extent_mbps")
+                .and_then(|v| v.parse::<f64>().ok())
+                .filter(|v| v.is_finite() && *v >= 0.0),
             slow: flag(row, "slow")?,
             slow_bytes: integer(row, "slow_bytes")?,
+            error: required(row, "error")?.into(),
             after_wait_slow: optional_flag(row, "after_wait_slow")?,
         })
     }
@@ -156,12 +164,42 @@ pub fn read_for_verify(path: &Path, is_log: bool) -> io::Result<Vec<Row>> {
     }
 }
 
+enum ErrorReason {
+    InUse,
+    Gone,
+    Other,
+}
+
+/// Sort a read error by its cause. The OS error codes are the codes of Windows and Linux.
+fn error_reason(error: &str) -> ErrorReason {
+    // Windows: 32 = used by another process, 33 = locked part.
+    if cfg!(windows) && (error.contains("(os error 32)") || error.contains("(os error 33)")) {
+        return ErrorReason::InUse;
+    }
+    // 2 = no such file. 3 = no such path (Windows only).
+    if error.contains("(os error 2)") || cfg!(windows) && error.contains("(os error 3)") {
+        return ErrorReason::Gone;
+    }
+    ErrorReason::Other
+}
+
 impl ScanOutcome {
     pub fn record(&mut self, row: &ScanRecord) {
         self.total_files += 1;
         match row.status.as_str() {
             "OK" => self.measured_files += 1,
-            "ERROR" => self.error_files += 1,
+            "ERROR" => {
+                self.error_files += 1;
+                match error_reason(&row.error) {
+                    ErrorReason::InUse => self.in_use_files += 1,
+                    ErrorReason::Gone => self.gone_files += 1,
+                    ErrorReason::Other => {}
+                }
+            }
+            "DUP_LINK" => {
+                self.skipped_files += 1;
+                self.dup_link_files += 1;
+            }
             _ => self.skipped_files += 1,
         }
         if row.status == "OK" && row.slow {
@@ -177,6 +215,7 @@ impl ScanOutcome {
                 path: row.path.clone(),
                 size: row.size,
                 mbps: row.mbps,
+                min_mbps: row.min_mbps,
                 slow_bytes: row.slow_bytes,
                 after_wait_slow: row.after_wait_slow,
             });
@@ -408,8 +447,10 @@ mod tests {
                 kind: "normal".into(),
                 status: "OK".into(),
                 mbps: (700 - i) as f64,
+                min_mbps: None,
                 slow: true,
                 slow_bytes: 1024,
+                error: String::new(),
                 after_wait_slow: None,
             });
         }
@@ -430,8 +471,10 @@ mod tests {
                 kind: "normal".into(),
                 status: "OK".into(),
                 mbps: (i + 1) as f64,
+                min_mbps: None,
                 slow: true,
                 slow_bytes: 1024,
+                error: String::new(),
                 after_wait_slow: Some(i == 600),
             });
         }

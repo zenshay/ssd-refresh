@@ -6,6 +6,16 @@
 
 - `safety-compare.ps1 -Run cost` (R3): compare the cost of ssd-refresh and DiskFresh when 10% of the files are slow. It uses a fixed 16 GiB VHDX with 5.75 GiB of data and a new differencing VHDX for each round. Measured on 2026-11-02 (3 rounds each): ssd-refresh scan 27–28 s plus refresh 11–14 s, 657 MB written; DiskFresh 32–36 s, 16,367 MB written.
 
+### Changed
+
+- The scan summary gives the causes. `No speed` replaces `Not measured`: the files are too small, empty, compressed, links, or more names of a file. `Not read` replaces `Errors`: it counts files in use by another program, files deleted during the scan, and other causes. The scan does not write to files.
+- The scan summary lists the slow files with the speed of the slowest part, the slow data, the file size and the round 3 result. The path is on its own line. When files are slow, the summary gives the `refresh --from` command.
+- The progress line says `not read` in place of `errors`. The time shows units and a label: `left 17 min 20 s, end time 11:05`. The narrow form shows `left 17m20s`. The wide form needs 96 columns (before: 90).
+
+### Fixed
+
+- Scan: a file is slow only after a slow read in step 3. Before, when the step 3 read failed (the file was deleted or in use), the file kept `slow = 1` from step 2. On a 254 GB system drive, 20 of 21 slow files had this cause.
+
 ## 1.2.0 — 2026-11-02
 
 ### Changed (check your scripts)

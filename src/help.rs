@@ -82,22 +82,25 @@ Why round 3 is in step 3
   not move a file that is fast (SKIP_FAST).
 
 Progress line in step 2 (wide window, then narrow window)
-  12.3%  35.2G of 290G  245 MB/s  check 17  errors 0  left 17m20s (done ~11:05)
-  12.3% 35.2G/290G 245MB/s chk 17 17m20s
+  12.3%  35.2G of 290G  245 MB/s  check 17  not read 0  left 17 min 20 s, end time 11:05
+  12.3% 35.2G/290G 245MB/s chk 17 left 17m20s
 
     12.3%           the part of all bytes that the scan has read
     35.2G of 290G   bytes read / all bytes to read (1G = 10^9 bytes)
     245 MB/s        the average speed since step 2 started
     check 17        files on the check list. This is NOT the result.
-    errors 0        files that the scan could not open or read
-    left            the time until the end at the average speed, and the clock
-                    time at the end
+    not read 0      files that the scan could not open or read. Usually another
+                    program used the file, or deleted it. The scan does not
+                    write to files. Thus these files are not damaged.
+    left            the time until the end at the average speed (h = hours,
+                    min = minutes, s = seconds)
+    end time        the clock time at the end (hour:minute)
 
   Folders with many small files make the percentage go up slowly. Small files
   have few bytes, but the scan must open each file.
 
 Progress line in step 3
-  Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
+  Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2 min 10 s, end time 11:20
     slow            files in this round that are still slow
   Round 3 shows \"Check after the wait\" in place of \"Check again\".
 
@@ -208,7 +211,7 @@ Steps
       d. Read it again. Compare the SHA-256. Write the new speed to the log.
 
 Progress line in step 3 (wide window, then narrow window)
-  Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3m20s
+  Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3 min 20 s, end time 11:30
   12/340 1.2G/4.5G mv 10 chg 1 fail 0 3m20s
     moved     files at a new place now (includes changed)
     changed   moved, and another program wrote the file during the move. This

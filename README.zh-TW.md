@@ -396,8 +396,8 @@ CSV 欄位不變。速度與時間欄位描述選中的一次完整讀取。
 第 2 步：
 
 ```
-12.3%  35.2G of 290G  245 MB/s  check 17  errors 0  left 17m20s (done ~11:05)
-12.3% 35.2G/290G 245MB/s chk 17 17m20s
+12.3%  35.2G of 290G  245 MB/s  check 17  not read 0  left 17 min 20 s, end time 11:05
+12.3% 35.2G/290G 245MB/s chk 17 left 17m20s
 ```
 
 | 欄位 | 意思 |
@@ -406,15 +406,16 @@ CSV 欄位不變。速度與時間欄位描述選中的一次完整讀取。
 | `35.2G of 290G` | 已讀／要讀的位元組（1G = 10^9 位元組） |
 | `245 MB/s` | 第 2 步開始以來的平均速度 |
 | `check 17` | 待確認清單上的檔案數。這不是結果 |
-| `errors 0` | 開不了或讀不了的檔案數 |
-| `left` | 照目前平均速度估計的剩餘時間，以及預計完成時刻 |
+| `not read 0` | 開不了或讀不了的檔案數。通常是其他程式正在使用或刪除了這個檔案。scan 不寫入檔案，所以這些檔案沒有損壞 |
+| `left` | 照目前平均速度估計的剩餘時間（`h` 小時、`min` 分鐘、`s` 秒） |
+| `end time` | 預計完成的時鐘時刻（時:分） |
 
 小檔很多的資料夾，百分比會前進得很慢。這些檔案位元組少，但每個都要開一次。
 
 第 3 步：
 
 ```
-Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2m10s
+Check again 1/2  120 of 3,020 files  1.2G of 3.4G  slow 15  left 2 min 10 s, end time 11:20
 ```
 
 `slow` 是這一輪目前仍然慢的檔案數。第 3 輪顯示 `Check after the wait`，不是 `Check again`。
@@ -462,7 +463,7 @@ ssd-refresh refresh --from 報告.csv [--dry-run] [--allow-system-volume] [--res
 進度列：
 
 ```
-Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3m20s
+Refresh 12 of 340 files  1.2G of 4.5G  30 MB/s  moved 10  changed 1  skipped 1  failed 0  left 3 min 20 s, end time 11:30
 ```
 
 `moved` 包含 `changed`。`skipped` 是已經不慢、不能搬、已不存在或試跑的檔案。
