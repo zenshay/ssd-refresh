@@ -412,7 +412,7 @@ Step 2:
 | `35.2G of 290G` | Bytes read / all bytes to read (1G = 10^9 bytes) |
 | `245 MB/s` | The average speed since the start of step 2 |
 | `check 17` | Files on the check list. This is not the result |
-| `not read 0` | Files that the scan could not open or read. Usually another program used or deleted the file. The scan does not write to files, so these files are not damaged |
+| `not read 0` | Files that the scan could not open or read. Usually another program used or deleted the file. The scan does not write to files, so these files are not damaged. You do not have to do anything. Only slow files need a refresh |
 | `left` | The time until the end at the average speed (`h` = hours, `min` = minutes, `s` = seconds) |
 | `end time` | The clock time at the end (hour:minute) |
 

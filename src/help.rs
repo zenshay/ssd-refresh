@@ -92,6 +92,7 @@ Progress line in step 2 (wide window, then narrow window)
     not read 0      files that the scan could not open or read. Usually another
                     program used the file, or deleted it. The scan does not
                     write to files. Thus these files are not damaged.
+                    You do not have to do anything.
     left            the time until the end at the average speed (h = hours,
                     min = minutes, s = seconds)
     end time        the clock time at the end (hour:minute)
