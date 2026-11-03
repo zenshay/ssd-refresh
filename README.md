@@ -30,6 +30,27 @@
 
 Results depend on the drive.
 
+## At a glance
+
+| Question | Answer |
+|---|---|
+| What does it do? | It finds the files that read slowly on an SSD. It rewrites only those files. |
+| What do you get? | Old files can read fast again. Example: old files read at 5–35 MB/s, and a new copy read at about 500 MB/s. |
+| What does it cost? | `scan` only reads. In the [cost test](#comparison-ssd-refresh-vs-diskfresh-vs-windows-optimize), `refresh` wrote 657 MB. A full volume tool wrote 16,367 MB. |
+| What can go wrong? | `refresh` moves files. Make a backup first. The tool cannot repair a failing drive. See [Risks](#risks). |
+| What do we recommend? | Start with `scan`. On some drives, one read is enough. Use `refresh` only if files stay slow after 1 day. |
+
+```mermaid
+flowchart LR
+    A["1. scan<br>(read only)"] --> B{"Slow files?"}
+    B -- "NO" --> S1["Stop.<br>Nothing to do."]
+    B -- "YES" --> C["2. Wait 1 day.<br>scan again."]
+    C --> D{"Still slow?"}
+    D -- "NO" --> S2["Stop.<br>One read was enough."]
+    D -- "YES" --> E["3. Back up.<br>refresh."]
+    E --> F["4. verify after<br>1, 7 and 30 days."]
+```
+
 ## Does your PC freeze?
 
 Windows may show **100% disk use**, but reads reach only **1 MB/s**.
@@ -61,12 +82,17 @@ See [all packages](#download) for other systems and command-line tools.
 3. After 1 day, scan again. If the files read fast, stop here.
 4. If files remain slow, read the [refresh instructions](#refresh) and [risks](#risks) before you use `refresh`.
 
-**Does scan rewrite your files? NO.** The tool reads files and saves a report.
-The SSD may rewrite data internally after a read.
-**Does refresh write data? YES.** It moves slow files. It skips empty space.
-This tool cannot repair a failing drive.
+> [!NOTE]
+> **Does scan rewrite your files? NO.** The tool reads files and saves a report.
+> The SSD may rewrite data internally after a read.
 
-**Where does the desktop app save its files?** In `%LOCALAPPDATA%\com.ssdrefresh.app`, not next to the app.
+> [!WARNING]
+> **Does refresh write data? YES.** It moves slow files. It skips empty space.
+> This tool cannot repair a failing drive.
+
+<details>
+<summary><b>Where does the desktop app save its files?</b> In <code>%LOCALAPPDATA%\com.ssdrefresh.app</code>, not next to the app.</summary>
+
 The `Folder` button in the app opens this folder.
 
 | Folder | Content |
@@ -78,6 +104,8 @@ The `Folder` button in the app opens this folder.
 - Each Windows user has a different folder.
 - To remove all data of the app, remove schedules first. Then delete the app and this folder.
 
+</details>
+
 ### Scheduled Verify (Windows)
 
 Click **Scheduled Verify** beside **Operations**. Select one drive with a refresh log.
@@ -85,6 +113,10 @@ Click **Schedule 1 / 7 / 30 days** to create read-only checks. Past dates are om
 Windows runs each check after 1, 7 or 30 days from the last change to the refresh log.
 The app can be closed. You must be signed in. Windows waits for AC power and an idle computer.
 A check can continue when you return. Battery use stops it. Each check has a two-hour limit.
+
+<details>
+<summary>Busy app, exit codes, and program copies</summary>
+
 Missed checks can run later. Two app operations cannot run at the same time for the same Windows user.
 If another app operation holds the slot, scheduled Verify tries again each minute for 30 minutes.
 If the slot is still busy, it returns code `6` (busy). Then run Verify manually.
@@ -107,18 +139,23 @@ For a refresh log, code `0` requires Data safe `YES`.
 A scan report has Data safe `n/a` and can return `0` when complete.
 Windows can also return its own task error codes.
 
-Each plan keeps a copy of the app in the data folder. Moving the main app does not change the plan.
-App updates do not replace this copy. Remove and create plans again to use the updated app.
 The copy uses extra disk space for each plan. The size depends on the app build.
 Click **Remove all schedules and copies** to remove all verify tasks for your Windows user and all program copies. A copy that a running verify uses stays. Click again after it ends.
-A verify that already started can finish. Its program copy can remain until you remove the app data folder.
-Remove schedules before you delete the app data folder. Windows Optimize keeps its own schedule.
+A verify that already started can finish. Windows Optimize keeps its own schedule.
+
+</details>
 
 ---
 
-## For developers
+## Background and evidence
 
 ### Symptom and scan details
+
+The SSD health can show "100% Good", but old files read at only 1 MB/s.
+Flash cells lose charge, and the drive must correct many errors. Windows Optimize does not fix this.
+
+<details>
+<summary>Read the full explanation</summary>
 
 <img src="docs/images/task-manager-stall.png" width="360" alt="Windows Task Manager showing 100% disk active time, 50 ms response time, but only 1 MB/s throughput on an SSD.">
 
@@ -142,6 +179,8 @@ ssd-refresh finds only the slow files and tells the operating system to rewrite 
 2. **Selective Refresh**: If files stay slow, it rewrites only the slow files. It skips fast files and empty space.
 3. **File system moves**: It uses operating system APIs, such as `FSCTL_MOVE_FILE` on Windows. These APIs coordinate file access. They cannot prevent all failures.
 
+</details>
+
 ---
 
 ### Comparison: ssd-refresh vs DiskFresh vs Windows Optimize
@@ -158,12 +197,19 @@ ssd-refresh finds only the slow files and tells the operating system to rewrite 
 | **Source code** | Open (MIT OR Apache-2.0) | Closed (freeware) | Part of Windows |
 | **Program size** | CLI 855 KB, GUI 8.4 MB (v1.0.2, Windows x64) | Not measured | Part of Windows |
 
+Result: ssd-refresh wrote 25 times less data than DiskFresh. It took about 6 s more, because its time includes the scan.
+
+<details>
+<summary>How we measured data written and run time</summary>
+
 Test for data written and run time (2026-11-02, 3 rounds for each tool): a fixed 16 GiB VHDX with 5.75 GiB of data. 10% of the files are slow. Each round uses a new differencing VHDX.
 DiskFresh wrote 25 times more data. It writes all sectors because it cannot find the slow files. The ssd-refresh run time includes the scan.
 To run the test again (administrator): `test\safety-compare.ps1 -Run cost`.
 
 The difference changes with the drive. A full volume tool writes the size of the volume each time. ssd-refresh writes the size of the slow files.
 Example (calculation, not measured): on a 480 GB drive with a limit of 120 TB written, one full volume pass uses 0.40% of the limit.
+
+</details>
 
 ---
 
@@ -184,6 +230,9 @@ Flash cells lose charge slowly. Old data that did not change for a long time is 
 
 Example: on a Crucial BX500 480 GB that is 5.4 years old, old files read at 5–35 MB/s. A new copy of the same files read at approximately 500 MB/s.
 
+<details>
+<summary>Why sector tools write more, and how refresh checks each file</summary>
+
 Disk refresh tools like DiskFresh read each sector and write it back. This has two problems:
 
 1. On a disk in use, a program can change a sector after the tool reads it. Then the tool writes the old data over the new data.
@@ -203,6 +252,8 @@ The differences from other tools:
 - DiskFresh, SpinRite, Hard Disk Sentinel and `chkdsk /r` work on sectors. They do not show which files are slow. To write sectors back on a disk in use is not safe.
 - Sysinternals Contig uses the same move API. But it does not move files that are in one piece. Thus it cannot refresh them.
 - Some tools choose files by age (modification date). They cannot see which files are slow. Old files are not always slow, and slow files are not always old.
+
+</details>
 
 ### When to use it
 
@@ -245,6 +296,8 @@ Results: *read-only pass enough* (one read made the files fast), *rewrite needed
 Use the [drive report](https://github.com/zenshay/ssd-refresh/issues/new?template=drive-report.yml) template for non-sensitive results.
 Remove private file names, user names, and paths from summaries. Do not attach a full log or CSV.
 
+## Install and build
+
 ### Download
 
 Get pre-compiled binaries from the [latest release](https://github.com/zenshay/ssd-refresh/releases/latest).
@@ -278,6 +331,11 @@ Cross-compilation does not confirm operation on a physical device.
 | macOS | `Apple Silicon`, `Intel` | APFS | yes | no (APFS has no block move API) |
 
 ### Build
+
+The CLI needs Rust 1.85 or newer. The GUI needs Rust 1.90 or newer, Node.js 24 and pnpm 12.14.0.
+
+<details>
+<summary>Build requirements and commands</summary>
 
 For daily edits, use development mode. It reuses local incremental data.
 Use `--release` when you need the release binary. It uses ThinLTO and 16 code generation units.
@@ -335,6 +393,10 @@ pnpm --dir C:\src\ssd-refresh\gui run app
 
 On Linux or macOS, build the CLI from the repository root with `cargo build --locked --release --bin ssd-refresh`.
 
+</details>
+
+## Command-line use
+
 ### Quick start (Windows)
 
 Open PowerShell with "Run as administrator". Then:
@@ -376,6 +438,12 @@ ssd-refresh verify --from C-scan-refresh.csv
 ```
 ssd-refresh scan <folder or file> [--out report.csv] [--resume] [--hash] [--parallel 8]
 ```
+
+Scan reads each file and does not write file data.
+A file is **slow** only when it stays slow in two more reads, 30 s or more apart.
+
+<details>
+<summary>How scan measures, progress lines, and report columns</summary>
 
 The scan has three steps. Before each step, the tool shows what it will do.
 
@@ -456,6 +524,8 @@ If Linux or macOS cannot bypass the OS cache, the file has status `SKIP_CACHED`.
 Scan does not call it fast or slow. Verify excludes it from the speed verdict.
 Refresh skips it, including with `--force`. The CSV columns do not change.
 
+</details>
+
 ### Refresh
 
 ```
@@ -463,6 +533,11 @@ ssd-refresh refresh --from report.csv [--dry-run] [--allow-system-volume] [--res
 ```
 
 Refresh needs administrator (Windows) or root (Linux).
+By default, refresh moves only the files that are still slow. It compares the SHA-256 before and after each move.
+A failed data check stops the run before the next file.
+
+<details>
+<summary>Refresh steps, progress line, and log statuses</summary>
 
 1. **Choose the files and check the volume.** By default, the tool takes only the slow files (`--select all` takes all measured files). It checks the file system and your rights. For the system volume, you must give `--allow-system-volume`.
 2. **Show and confirm.** The tool shows what it will do, how much data it will write, and the warnings (for example about Windows restore points). Type the drive letter to continue. Other text cancels. For scripts, `--confirm X:` does not ask.
@@ -532,6 +607,8 @@ The tool checks the flush handle's file ID before it calls `FlushFileBuffers` on
 If the flush fails, the status is `SKIP_FLUSH`. The file is not moved.
 The flush does not create new file content. It writes data that is already in the OS cache.
 
+</details>
+
 ### Verify: is the refresh good?
 
 Use `verify` after a refresh. Run it 1 day or more after the refresh, and then for example each month. It reads the files in the refresh log again. It answers three questions:
@@ -550,6 +627,9 @@ You must wait. The refresh log also has the speed right after the move (`after_m
    ```
 
 3. Run the same command again later, for example each month. When the refreshed files become slow again, do a new scan.
+
+<details>
+<summary>What can change the result, the summary table, and the log</summary>
 
 Two more things can change the result:
 
@@ -671,9 +751,14 @@ Read the `MiB/s` in the table "Read IO". Run it one time before the refresh, and
 - Do not use `-c`. It makes or overwrites the target. Do not use `-w` with a value more than 0 on a file that you want to keep. A write test destroys the data without a warning.
 - The result is the average of all passes. For a slow file, the first pass is the slowest. Thus a short `-d` shows the difference best.
 
+</details>
+
 ### Help test your drive
 
 This part is optional. Normal use does not need it. It answers one question for one SSD model: **is one read of the old data enough, or must the data be written again?** The answer is different for different SSDs. It shows if `refresh` is useful on this model.
+
+<details>
+<summary>Steps for a test with a control group</summary>
 
 The method is a control group. The tool refreshes a part of the slow files. It only reads the other files.
 
@@ -687,7 +772,14 @@ The method is a control group. The tool refreshes a part of the slow files. It o
 3. After 1 day or more, run `verify --from C-scan-refresh.csv`. Its summary compares the rewritten group with the read-only group. It shows a conclusion in one line.
 4. Use the [drive report](https://github.com/zenshay/ssd-refresh/issues/new?template=drive-report.yml) template for the model, firmware, and measured summaries. Remove private names and paths. Do not attach full logs or CSV files.
 
+</details>
+
 ### Pause, stop, resume
+
+`p` + Enter pauses. `q` + Enter stops after the current work. `--resume` continues.
+
+<details>
+<summary>Details about stop, resume and saved data</summary>
 
 - `p` + Enter: pause. Push again to continue. The requests that the tool sent already finish first.
 - `q` + Enter, or Ctrl+C: request a stop after current work. A second Ctrl+C stops immediately. Forced termination can leave an incomplete report. It does not establish data integrity.
@@ -696,7 +788,12 @@ The method is a control group. The tool refreshes a part of the slow files. It o
 - Refresh calls `sync_data` after each log row, before the next file starts. Scan calls it every 128 rows, after step 2, and when the run ends or stops. These calls ask storage to save file data. They cannot guarantee device behavior during power loss. A move can finish before its log row is saved.
 - Linux refresh releases each donor range after the move request, including unused blocks. Temporary allocation stays within the move chunk. A release error stops further moves for that file.
 
+</details>
+
 ### Options
+
+<details>
+<summary>All options and their default values</summary>
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -714,11 +811,22 @@ The method is a control group. The tool refreshes a part of the slow files. It o
 | `--log` | `<source>.verify.log` | verify: the text log |
 | `--out` | none | verify: also write a CSV with one row for each file |
 
+</details>
+
+## Safety and limits
+
 ### How the move works
+
+The tool asks the file system to move the data. Windows uses `FSCTL_MOVE_FILE`. Linux ext4 uses `EXT4_IOC_MOVE_EXT`.
+
+<details>
+<summary>How the move works on each file system</summary>
 
 **Windows NTFS.** The tool reads the cluster bitmap of the volume (`FSCTL_GET_VOLUME_BITMAP`). It does not use the MFT zone. It moves each piece of the file to free clusters with `FSCTL_MOVE_FILE`. If another program took the target first, the tool reads the bitmap again and tries a different place. The Windows defragmenter uses the same API.
 
 **Linux ext4.** The tool makes a temporary file without a name on the same file system (`O_TMPFILE`). It reserves space in this file. Then it changes the data blocks of the two files with `EXT4_IOC_MOVE_EXT`. `e4defrag` uses the same API. The kernel locks the pages of the file during the change. When the tool closes the temporary file, the old blocks become free.
+
+</details>
 
 ### Limits
 
@@ -743,6 +851,9 @@ First, make a backup of important data.
 
 ### Slow-read test (Linux ext4)
 
+<details>
+<summary>A simulation with synthetic files on Linux ext4</summary>
+
 The [slow-read simulation](docs/simulation.md) checks five scenarios with synthetic files and device-mapper delay ranges.
 It checks file selection, moves, controls, hashes, early verify verdicts, and fragmentation cost.
 It does not simulate charge loss or prove speed on a physical SSD.
@@ -755,9 +866,15 @@ Run with PowerShell 7 and a privileged Linux Docker engine. Use absolute paths a
 Change the paths to match your computer. Reports stay in the `run` subfolder.
 See the simulation guide for the root Linux command, calibration, costs, cleanup, and limits.
 
+</details>
+
 ### Safety test (Windows)
 
 Normal users do not need this test. It is for developers, and for persons who want to check the safety themselves.
+Latest result: 44 of 44 checks passed (2026-11-01). See [the result](#result-with-file-id-and-writer-checks-2026-11-01).
+
+<details>
+<summary>How to run the test and what it checks</summary>
 
 The test uses synthetic files in a VHDX, which Windows mounts as an NTFS volume.
 It compares files after selected concurrent writes, stops, and resumed operations.
@@ -799,6 +916,8 @@ The test does these steps:
 
 The volume is in a folder. Thus the test also checks that ssd-refresh sees the folder mount point as a different NTFS volume.
 
+</details>
+
 #### Result with file ID and writer checks (2026-11-01)
 
 All 44 checks passed with the source prepared for v1.1.1 on Windows NTFS.
@@ -818,6 +937,9 @@ The VHDX was detached and deleted after the test.
 The [test script](test/run-vhdx-test.ps1) checks these conditions and writes a summary for each run.
 This single run does not prove safety for every concurrent writer, physical SSD, driver, or power failure.
 It does not measure long-term SSD speed or the added checks' effect on normal run time.
+
+<details>
+<summary>Older results (2026-10-15)</summary>
 
 #### Result with the flush and the regression test (2026-10-15 16:44)
 
@@ -851,6 +973,10 @@ All 15 checks passed (the test before `verify`).
 - The 7 `CHANGED` files were large files (199 MB or less). The other program wrote them during their move. The tool found each one through its times or USN.
 - The program that changed files did not get a sharing error.
 - One time, another write took the target of a move first. The tool read the bitmap again and the move then worked.
+
+</details>
+
+## Development
 
 ### Development checks
 
