@@ -41,7 +41,7 @@
 | 建議怎麼做？ | 先跑 `scan`。有些磁碟讀一遍就恢復。隔 1 天檔案仍然慢，才用 `refresh`。 |
 
 ```mermaid
-flowchart LR
+flowchart TD
     A["1. scan<br>（只讀）"] --> B{"有慢檔？"}
     B -- "NO" --> S1["停止。<br>不用做任何事。"]
     B -- "YES" --> C["2. 隔 1 天<br>再 scan 一次"]

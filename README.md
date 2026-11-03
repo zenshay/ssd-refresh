@@ -41,7 +41,7 @@ Results depend on the drive.
 | What do we recommend? | Start with `scan`. On some drives, one read is enough. Use `refresh` only if files stay slow after 1 day. |
 
 ```mermaid
-flowchart LR
+flowchart TD
     A["1. scan<br>(read only)"] --> B{"Slow files?"}
     B -- "NO" --> S1["Stop.<br>Nothing to do."]
     B -- "YES" --> C["2. Wait 1 day.<br>scan again."]
