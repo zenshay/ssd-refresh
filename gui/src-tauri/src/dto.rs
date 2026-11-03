@@ -112,6 +112,8 @@ pub struct SlowFileDto {
     pub path: String,
     pub size: u64,
     pub mbps: f64,
+    /// The speed of the slowest part of the file. None = the report does not give it.
+    pub min_mbps: Option<f64>,
     /// true = fast when the scan read the file again after the wait. None = not read again.
     pub fast_after_wait: Option<bool>,
 }
@@ -121,6 +123,12 @@ pub struct SlowFileDto {
 pub struct ScanOutcome {
     pub report_path: String,
     pub total_files: usize,
+    /// Files with a speed.
+    pub measured_files: usize,
+    /// Files without a speed: too small, empty, compressed, links and more hard links.
+    pub skipped_files: usize,
+    /// Files that the scan could not read: in use, deleted or another cause.
+    pub error_files: usize,
     /// The real number of slow files.
     pub slow_total: usize,
     /// Of the slow files: fast or still slow when the scan read them again after the wait.
@@ -207,6 +215,9 @@ impl ScanOutcome {
         Self {
             report_path: path.to_string_lossy().into_owned(),
             total_files: result.total_files,
+            measured_files: result.measured_files,
+            skipped_files: result.skipped_files,
+            error_files: result.error_files,
             slow_total: result.slow_total,
             fast_after_wait: result.fast_after_wait,
             still_slow_after_wait: result.still_slow_after_wait,
@@ -217,6 +228,7 @@ impl ScanOutcome {
                     path: file.path,
                     size: file.size,
                     mbps: file.mbps,
+                    min_mbps: file.min_mbps,
                     fast_after_wait: file.after_wait_slow.map(|slow| !slow),
                 })
                 .collect(),
@@ -302,11 +314,22 @@ mod tests {
             missing,
             ssd_refresh::outcome::ScanOutcome {
                 total_files: 12,
+                measured_files: 7,
+                skipped_files: 4,
+                error_files: 1,
                 slow_total: 3,
                 ..Default::default()
             },
         );
         assert_eq!(result.total_files, 12);
+        assert_eq!(
+            (
+                result.measured_files,
+                result.skipped_files,
+                result.error_files
+            ),
+            (7, 4, 1)
+        );
         assert_eq!(result.slow_total, 3);
         let mut refresh = ssd_refresh::outcome::RefreshOutcome::default();
         refresh.record("OK", 10);

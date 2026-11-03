@@ -124,6 +124,9 @@ try {
           return {
             reportPath: "synthetic.csv",
             totalFiles: 2,
+            measuredFiles: 2,
+            skippedFiles: 0,
+            errorFiles: 0,
             slowTotal: 1,
             fastAfterWait: 0,
             stillSlowAfterWait: 1,
@@ -132,6 +135,7 @@ try {
                 path: slowPath,
                 size: 1024,
                 mbps: 12,
+                minMbps: 12,
                 fastAfterWait: false,
               },
             ],

@@ -89,7 +89,11 @@ export function mountSlowFiles(store: Store): void {
           attrs: { title: file.path },
         }),
         el("td", { class: "slow-cell-size", text: fmtBytes(file.size) }),
-        el("td", { class: "slow-cell-speed", text: fmtRate(file.mbps) }),
+        // The same speed as the command line summary: the slowest part of the file.
+        el("td", {
+          class: "slow-cell-speed",
+          text: fmtRate(file.minMbps ?? file.mbps),
+        }),
       );
     });
 

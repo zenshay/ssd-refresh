@@ -46,6 +46,8 @@ export interface SlowFile {
   path: string;
   size: number;
   mbps: number;
+  /** The speed of the slowest part of the file. null = the report does not give it. */
+  minMbps: number | null;
   /** true = fast when the scan read it again after the wait. null = not read again. */
   fastAfterWait: boolean | null;
 }
@@ -53,6 +55,12 @@ export interface SlowFile {
 export interface ScanOutcome {
   reportPath: string;
   totalFiles: number;
+  /** Files with a speed. */
+  measuredFiles: number;
+  /** Files without a speed: too small, empty, compressed or links. */
+  skippedFiles: number;
+  /** Files that the scan could not read: in use, deleted or another cause. */
+  errorFiles: number;
   slowTotal: number;
   /** Of the slow files: fast when the scan read them again after the wait. */
   fastAfterWait: number;

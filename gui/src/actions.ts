@@ -31,6 +31,11 @@ function scanNotice(
     (acc, r) => acc + r.outcome.fastAfterWait,
     0,
   );
+  const sum = (pick: (o: ScanOutcome) => number) =>
+    results.reduce((acc, r) => acc + pick(r.outcome), 0);
+  const measured = sum((o) => o.measuredFiles);
+  const noSpeed = sum((o) => o.skippedFiles);
+  const notRead = sum((o) => o.errorFiles);
   const waitNote =
     fastAfterWait > 0
       ? ` ${countOf(fastAfterWait, "other file")} ${wasWere(fastAfterWait)} slow at first and fast after the wait.`
@@ -44,30 +49,45 @@ function scanNotice(
     };
   }
 
-  if (totalSlow === 0 && fastAfterWait > 0) {
-    return {
-      kind: "ok",
-      title: "No file stays slow",
-      body: `Checked ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")}.${waitNote} No file needs a rewrite.`,
-    };
+  // Line 1: what the scan measured. Line 2: the files without a result, and that they
+  // are not damaged. Line 3: what the user must do.
+  const lines = [
+    `Measured ${fmtCount(measured)} of ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")}.${waitNote}`,
+  ];
+  if (noSpeed + notRead > 0) {
+    const parts = [
+      noSpeed > 0 ? `No speed: ${fmtCount(noSpeed)}.` : "",
+      notRead > 0 ? `Not read: ${fmtCount(notRead)}.` : "",
+    ].filter(Boolean);
+    lines.push(
+      `${parts.join(" ")} This is normal. These files are not damaged. The Diagnostics log gives the causes.`,
+    );
   }
 
   if (totalSlow === 0) {
+    lines.push(
+      fastAfterWait > 0
+        ? "No file needs a rewrite. You do not have to do anything."
+        : "No file is slow. You do not have to do anything.",
+    );
     return {
       kind: "ok",
-      title: "No slow files detected",
-      body: `Checked ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")} with normal read speeds.`,
+      title:
+        fastAfterWait > 0 ? "No file stays slow" : "No slow files detected",
+      body: lines.join("\n"),
     };
   }
 
+  // One short paragraph: the slow files table needs the height. The Diagnostics log
+  // gives the No speed and Not read counts.
   return {
     kind: "warn",
     title: `${countOf(totalSlow, "slow file")} detected`,
-    body: `Scanned ${countOf(totalFiles, "file")} across ${countOf(results.length, "drive")}.${waitNote} ${
-      // Only the first sentence of the reason: the notice stays one line, and the card has the rest.
+    body: `${lines[0]} ${
+      // Only the first sentence of the reason: the card has the rest.
       refresh.state === "locked"
         ? `Step 2 is locked. ${refresh.hint.split(". ")[0].replace(/\.$/, "")}.`
-        : "Step 2 can rewrite only the slow files safely."
+        : "Only the slow files need a rewrite. Step 2 can rewrite them safely."
     }`,
   };
 }
