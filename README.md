@@ -151,11 +151,19 @@ ssd-refresh finds only the slow files and tells the operating system to rewrite 
 | **Approach** | File level. Refresh moves only slow files | Disk sectors (the full drive) | TRIM of free space only |
 | **Writes empty space?** | **NO** | YES (refresh mode writes all sectors) | NO |
 | **Concurrent access** | Windows: skips busy or unknown files; checks file IDs and hashes. OS coordinates moves. See [tests and limits](#safety-test-windows) | Depends on tool and mode | Managed by Windows |
-| **Run time** | Not measured. Scan reads all files. Refresh writes only slow files | Not measured. Reads all sectors | Not measured |
+| **Data written** (test below) | **657 MB** (only the slow files) | 16,367 MB (DiskFresh `/RW`, the full volume) | Not measured |
+| **Run time** (test below) | 38–42 s (scan 27–28 s + refresh 11–14 s) | 32–36 s (DiskFresh `/RW`) | Not measured |
 | **Read-only mode?** | **YES** (`scan` does not write file data) | YES (read-only mode) | NO |
 | **Shows slow files?** | **YES** (file paths) | NO (works on sectors) | NO |
 | **Source code** | Open (MIT OR Apache-2.0) | Closed (freeware) | Part of Windows |
 | **Program size** | CLI 855 KB, GUI 8.4 MB (v1.0.2, Windows x64) | Not measured | Part of Windows |
+
+Test for data written and run time (2026-11-02, 3 rounds for each tool): a fixed 16 GiB VHDX with 5.75 GiB of data. 10% of the files are slow. Each round uses a new differencing VHDX.
+DiskFresh wrote 25 times more data. It writes all sectors because it cannot find the slow files. The ssd-refresh run time includes the scan.
+To run the test again (administrator): `test\safety-compare.ps1 -Run cost`.
+
+The difference changes with the drive. A full volume tool writes the size of the volume each time. ssd-refresh writes the size of the slow files.
+Example (calculation, not measured): on a 480 GB drive with a limit of 120 TB written, one full volume pass uses 0.40% of the limit.
 
 ---
 
