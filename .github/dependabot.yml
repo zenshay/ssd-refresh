@@ -5,7 +5,7 @@ updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     groups:
       cargo-minor-patch:
@@ -22,7 +22,7 @@ updates:
   - package-ecosystem: npm
     directory: /gui
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     groups:
       npm-minor-patch:
@@ -35,7 +35,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     open-pull-requests-limit: 5
     groups:
       actions-minor-patch:
