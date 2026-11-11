@@ -1,20 +1,32 @@
 version: 2
+# Each group puts all minor and patch updates of one ecosystem in one PR.
+# Major updates still open one PR each, because they need a review.
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
     ignore:
       # sha2 0.11.1 requires Rust 1.88. The CLI minimum Rust version is 1.85.
       # Remove this entry when the CLI minimum Rust version is 1.88 or newer.
       - dependency-name: sha2
         versions: ["0.11.1"]
+      # rfd 0.18 requires Rust 1.92. The GUI minimum Rust version is 1.90.
+      # Remove this entry when the GUI minimum Rust version is 1.92 or newer.
+      - dependency-name: rfd
+        versions: [">=0.18"]
   - package-ecosystem: npm
     directory: /gui
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
     ignore:
       # TypeScript 7 removes the JavaScript API. tests/typescript-loader.mjs
       # uses ts.transpileModule. Remove this entry after the loader changes.
@@ -25,3 +37,6 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
