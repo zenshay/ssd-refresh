@@ -20,7 +20,7 @@
     "screens": "node tests/screens.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.3",
+    "@biomejs/biome": "2.6.6",
     "@tauri-apps/cli": "^2.12.4",
     "puppeteer-core": "^25.16.0",
     "typescript": "^6.0.3",
